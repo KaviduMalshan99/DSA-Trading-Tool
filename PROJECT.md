@@ -179,8 +179,10 @@ DSA-Trading-Tool/
 - [x] Frontend: Vite + React + Zustand bootstrap
 - [x] TradingChart renders live candles via WebSocket
 
-### Sprint 2 — Analytics Engine (Weeks 3–4)
-- [ ] Delta / CVD calculation + REST endpoint
+### Sprint 2 — Analytics Engine (Weeks 3–4) — Delta completed 2025-06-25
+- [x] Delta / CVD calculation + WebSocket endpoint (`/ws/delta/{symbol}/{interval}`)
+- [x] Delta panel rendering below chart (histogram: green/red bars)
+- [x] CVD line synced with delta histogram (shared time-scale, bidirectional scroll)
 - [ ] Volume Profile with POC + Value Area
 - [ ] Footprint chart data generation
 - [ ] Order book depth streaming → Heatmap data
