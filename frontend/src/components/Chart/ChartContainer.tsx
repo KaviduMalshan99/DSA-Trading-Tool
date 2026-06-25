@@ -35,9 +35,14 @@ export function ChartContainer() {
             sharedSeriesRef={sharedSeriesRef}
           />
         )}
-        {visibleOverlays.has('heatmap')       && <HeatmapCanvas />}
-        {visibleOverlays.has('volumeProfile') && <VolumeProfile />}
-        {visibleOverlays.has('whaleMarkers')  && <WhaleMarkers />}
+        {visibleOverlays.has('heatmap') && <HeatmapCanvas />}
+        {visibleOverlays.has('volumeProfile') && (
+          <VolumeProfile
+            sharedChartRef={sharedChartRef}
+            sharedSeriesRef={sharedSeriesRef}
+          />
+        )}
+        {visibleOverlays.has('whaleMarkers') && <WhaleMarkers />}
       </div>
 
       {/* Delta panel — 20% */}

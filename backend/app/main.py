@@ -12,6 +12,7 @@ from app.api.indicators import router as indicators_router
 from app.websocket.candle_stream import router as candle_stream_router
 from app.websocket.delta_stream import router as delta_stream_router
 from app.websocket.footprint_stream import router as footprint_stream_router
+from app.websocket.volume_profile_stream import router as vprofile_stream_router
 from app.websocket.routes import router as ws_router
 
 logger = logging.getLogger(__name__)
@@ -60,6 +61,7 @@ app.include_router(indicators_router, prefix="/api/v1")
 app.include_router(candle_stream_router)    # specific routes before the catch-all
 app.include_router(delta_stream_router)
 app.include_router(footprint_stream_router)
+app.include_router(vprofile_stream_router)
 app.include_router(ws_router)
 
 
