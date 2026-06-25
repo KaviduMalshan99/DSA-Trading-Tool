@@ -9,6 +9,7 @@ interface MarketState {
   isLoading: boolean;
 
   setSymbol: (symbol: string) => void;
+  setActiveSymbol: (symbol: string) => void;
   setMarket: (market: MarketType) => void;
   setInterval: (interval: CandleInterval) => void;
   setCandles: (candles: Candle[]) => void;
@@ -23,7 +24,8 @@ export const useMarketStore = create<MarketState>((set) => ({
   candles: [],
   isLoading: false,
 
-  setSymbol: (symbol) => set({ activeSymbol: symbol, candles: [] }),
+  setSymbol:       (symbol) => set({ activeSymbol: symbol, candles: [] }),
+  setActiveSymbol: (symbol) => set({ activeSymbol: symbol, candles: [] }),
   setMarket: (market) => set({ activeMarket: market }),
   setInterval: (interval) => set({ activeInterval: interval, candles: [] }),
   setCandles: (candles) => set({ candles }),

@@ -9,9 +9,11 @@ const WS_BASE = import.meta.env.VITE_WS_URL ?? 'ws://localhost:8000';
 interface TradingChartProps {
   /** Lifted ref so ChartContainer can share it with sibling panels for time-scale sync. */
   sharedChartRef?: React.MutableRefObject<IChartApi | null>;
+  /** Lifted ref so FootprintCanvas can call priceToCoordinate on the candlestick series. */
+  sharedSeriesRef?: React.MutableRefObject<ISeriesApi<'Candlestick'> | null>;
 }
 
-export function TradingChart({ sharedChartRef }: TradingChartProps) {
+export function TradingChart({ sharedChartRef, sharedSeriesRef }: TradingChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
@@ -71,7 +73,8 @@ export function TradingChart({ sharedChartRef }: TradingChartProps) {
 
     chartRef.current = chart;
     seriesRef.current = series;
-    if (sharedChartRef) sharedChartRef.current = chart;
+    if (sharedChartRef)  sharedChartRef.current  = chart;
+    if (sharedSeriesRef) sharedSeriesRef.current = series;
 
     const observer = new ResizeObserver(() => {
       if (!containerRef.current) return;
@@ -87,11 +90,17 @@ export function TradingChart({ sharedChartRef }: TradingChartProps) {
       chart.remove();
       chartRef.current = null;
       seriesRef.current = null;
-      if (sharedChartRef) sharedChartRef.current = null;
+      if (sharedChartRef)  sharedChartRef.current  = null;
+      if (sharedSeriesRef) sharedSeriesRef.current = null;
     };
-  }, [onRangeChange, onCrosshairMove, sharedChartRef]);
+  }, [onRangeChange, onCrosshairMove, sharedChartRef, sharedSeriesRef]);
 
   useEffect(() => {
+    // Clear stale data immediately so the old symbol doesn't linger
+    seriesRef.current?.setData([]);
+    setCurrentPrice(null);
+    setConnected(false);
+
     let ws: WebSocket | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let stopped = false;

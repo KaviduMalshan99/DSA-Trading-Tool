@@ -1,35 +1,80 @@
+import { useEffect, useState } from 'react';
 import { useMarketStore } from '../../store/marketStore';
 import { useChartStore } from '../../store/chartStore';
 
+interface Ticker24hr {
+  lastPrice: string;
+  priceChange: string;
+  priceChangePercent: string;
+  highPrice: string;
+  lowPrice: string;
+  volume: string;
+}
+
 export function MarketInfo() {
-  const { activeSymbol, candles } = useMarketStore();
+  const { activeSymbol } = useMarketStore();
   const { crosshairPrice } = useChartStore();
+  const [ticker, setTicker] = useState<Ticker24hr | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  const latest = candles.at(-1);
-  const prev = candles.at(-2);
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
 
-  const change = latest && prev ? latest.c - prev.c : 0;
-  const changePct = prev && prev.c !== 0 ? (change / prev.c) * 100 : 0;
-  const isPositive = change >= 0;
+    async function fetchTicker() {
+      try {
+        const res = await fetch(
+          `https://api.binance.com/api/v3/ticker/24hr?symbol=${activeSymbol}`
+        );
+        if (!res.ok) return;
+        const data = await res.json() as Ticker24hr;
+        if (!cancelled) { setTicker(data); setLoading(false); }
+      } catch { /* ignore network errors */ }
+    }
+
+    fetchTicker();
+    const interval = setInterval(fetchTicker, 10_000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [activeSymbol]);
+
+  const price      = ticker ? parseFloat(ticker.lastPrice)         : null;
+  const change     = ticker ? parseFloat(ticker.priceChange)       : null;
+  const changePct  = ticker ? parseFloat(ticker.priceChangePercent): null;
+  const high       = ticker ? parseFloat(ticker.highPrice)         : null;
+  const low        = ticker ? parseFloat(ticker.lowPrice)          : null;
+  const isPositive = changePct !== null && changePct >= 0;
+
+  const fmt = (n: number) =>
+    n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  const displayPrice = crosshairPrice ?? price;
 
   return (
     <div className="p-3 border-b border-[#30363d] bg-[#0d1117]">
-      <div className="text-xs text-gray-500 uppercase tracking-wider mb-1">{activeSymbol}</div>
-      {latest ? (
+      <div className="text-xs text-gray-500 uppercase tracking-wider mb-1">
+        {activeSymbol}
+      </div>
+
+      {loading ? (
+        <div className="text-gray-600 text-sm">Loading...</div>
+      ) : displayPrice !== null ? (
         <>
           <div className="text-xl font-mono font-bold text-white">
-            {crosshairPrice?.toFixed(2) ?? latest.c.toFixed(2)}
+            {fmt(displayPrice)}
           </div>
-          <div className={`text-xs font-mono mt-0.5 ${isPositive ? 'text-green-400' : 'text-red-400'}`}>
-            {isPositive ? '+' : ''}{change.toFixed(2)} ({isPositive ? '+' : ''}{changePct.toFixed(2)}%)
-          </div>
+
+          {changePct !== null && change !== null && (
+            <div className={`text-xs font-mono mt-0.5 ${isPositive ? 'text-green-400' : 'text-red-400'}`}>
+              {isPositive ? '+' : ''}{fmt(change)}
+              {' '}({isPositive ? '+' : ''}{changePct.toFixed(2)}%)
+            </div>
+          )}
+
           <div className="mt-2 grid grid-cols-2 gap-x-2 gap-y-0.5 text-xs">
-            <span className="text-gray-500">H</span>
-            <span className="text-gray-300 font-mono text-right">{latest.h.toFixed(2)}</span>
-            <span className="text-gray-500">L</span>
-            <span className="text-gray-300 font-mono text-right">{latest.l.toFixed(2)}</span>
-            <span className="text-gray-500">Vol</span>
-            <span className="text-gray-300 font-mono text-right">{latest.v.toFixed(2)}</span>
+            <span className="text-gray-500">24H H</span>
+            <span className="text-gray-300 font-mono text-right">{high !== null ? fmt(high) : '—'}</span>
+            <span className="text-gray-500">24H L</span>
+            <span className="text-gray-300 font-mono text-right">{low !== null ? fmt(low) : '—'}</span>
           </div>
         </>
       ) : (

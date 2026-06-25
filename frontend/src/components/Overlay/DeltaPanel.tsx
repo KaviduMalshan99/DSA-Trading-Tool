@@ -137,6 +137,12 @@ export function DeltaPanel({ sharedChartRef }: DeltaPanelProps) {
 
   // ── WebSocket: historical + live delta updates ─────────────────────────
   useEffect(() => {
+    // Clear stale series data immediately on symbol/interval change
+    histoRef.current?.setData([]);
+    cvdRef.current?.setData([]);
+    setCurrentDelta(null);
+    setCurrentCvd(null);
+
     let ws: WebSocket | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let stopped = false;
