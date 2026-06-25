@@ -1,5 +1,3 @@
-import { useCandles } from '../../hooks/useCandles';
-import { useMarketSocket } from '../../hooks/useMarketSocket';
 import { useChartStore } from '../../store/chartStore';
 import { TradingChart } from './TradingChart';
 import { ChartToolbar } from './ChartToolbar';
@@ -9,8 +7,6 @@ import { VolumeProfile } from '../Overlay/VolumeProfile';
 import { WhaleMarkers } from '../Overlay/WhaleMarkers';
 
 export function ChartContainer() {
-  useCandles();
-  useMarketSocket();
   const { visibleOverlays } = useChartStore();
 
   return (

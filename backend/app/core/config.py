@@ -5,9 +5,10 @@ from functools import lru_cache
 class Settings(BaseSettings):
     app_name: str = "DSA Trading Tool"
     debug: bool = False
+    environment: str = "development"
 
     # Database
-    database_url: str = "postgresql+asyncpg://user:password@localhost:5432/dsa_trading"
+    database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/dsa_trading"
 
     # Redis
     redis_url: str = "redis://localhost:6379"
@@ -16,6 +17,7 @@ class Settings(BaseSettings):
     binance_api_key: str = ""
     binance_api_secret: str = ""
     binance_ws_url: str = "wss://stream.binance.com:9443/ws"
+    binance_rest_url: str = "https://api.binance.com"
 
     # Forex (e.g., Alpha Vantage)
     forex_api_key: str = ""
