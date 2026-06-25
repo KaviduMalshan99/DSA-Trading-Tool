@@ -175,19 +175,21 @@ DSA-Trading-Tool/
 - [x] PostgreSQL + Redis Docker setup running
 - [x] Binance WebSocket provider + candle collector working
 - [x] FastAPI server with `/health`, `/candles`, `/symbols` routes
-- [ ] ConnectionManager Redis → WebSocket fan-out working
+- [x] ConnectionManager Redis → WebSocket fan-out working
 - [x] Frontend: Vite + React + Zustand bootstrap
 - [x] TradingChart renders live candles via WebSocket
 
-### Sprint 2 — Analytics Engine (Weeks 3–4) — Delta completed 2025-06-25
+### Sprint 2 — Analytics Engine (Weeks 3–4) ✅ Completed 2025-06-25
 - [x] Delta / CVD calculation + WebSocket endpoint (`/ws/delta/{symbol}/{interval}`)
 - [x] Delta panel rendering below chart (histogram: green/red bars)
 - [x] CVD line synced with delta histogram (shared time-scale, bidirectional scroll)
-- [ ] Volume Profile with POC + Value Area
-- [ ] Footprint chart data generation
-- [ ] Order book depth streaming → Heatmap data
-- [ ] Whale trade detection (notional threshold)
-- [ ] All analytics endpoints tested with real data
+- [x] Volume Profile with POC + Value Area (`/ws/vprofile/{symbol}/{interval}`)
+- [x] Symbol switching — all 15 crypto USDT pairs wired end-to-end
+- [x] Market info panel with real 24h stats from Binance ticker API
+- [x] Search filter in symbol sidebar
+- [x] Footprint chart overlay (canvas, per-price-level buy/sell) ⚠️ needs UI polish
+- [ ] Whale trade detection (notional threshold) ⏳
+- [ ] Timeframe switching UI wired end-to-end ⏳
 
 ### Sprint 3 — Overlay Rendering (Weeks 5–6)
 - [ ] HeatmapCanvas: 2D colour-mapped liquidity over price/time
@@ -282,10 +284,10 @@ docker compose up postgres redis
 | Candle collector | **Done** | Redis pub/sub wired |
 | Trade collector | **Done** | Whale threshold configurable |
 | Depth collector | **Done** | 5s cache TTL |
-| Delta analytics | **Done** | 1-min bar grouping |
-| Footprint analytics | **Done** | Imbalance detection |
+| Delta analytics | ✅ Done | Live `/ws/delta/` endpoint, CVD line synced |
+| Footprint analytics | ⚠️ Partial | Canvas overlay working, needs UI polish |
 | Heatmap analytics | **Done** | NumPy matrix, needs perf test |
-| Volume Profile | **Done** | POC + VA calculation |
+| Volume Profile | ✅ Done | Canvas overlay, POC/VAH/VAL lines + bars |
 | SMC: Order Blocks | **Done** | Basic impulse detection |
 | SMC: Fair Value Gaps | **Done** | 3-candle pattern |
 | WebSocket manager | **Done** | Auto-cleanup on disconnect |
@@ -300,12 +302,47 @@ docker compose up postgres redis
 | TradingChart | **Done** | Lightweight Charts, resize-aware |
 | ChartToolbar | **Done** | Interval + overlay toggles |
 | HeatmapCanvas | Stub | Placeholder; needs backend data |
-| FootprintCanvas | Stub | Basic bar render; needs polish |
-| VolumeProfile | Stub | Basic side-panel; needs scaling |
-| WhaleMarkers | **Done** | Live from WS whale channel |
-| SymbolList | **Done** | Search + market tabs |
-| MarketInfo | **Done** | OHLV + crosshair price |
+| FootprintCanvas | ⚠️ Partial | Canvas overlay live, UI polish needed |
+| VolumeProfile | ✅ Done | Canvas overlay, POC/VAH/VAL dashed lines |
+| WhaleMarkers | Stub | Pending whale detection backend |
+| SymbolList | ✅ Done | 15 USDT pairs, search filter, Coming Soon tabs |
+| MarketInfo | ✅ Done | Real 24h stats from Binance ticker REST API |
 | docker-compose.yml | **Done** | 4-service stack |
 | Dockerfiles | **Done** | backend + frontend |
 | .env.example | **Done** | |
 | .gitignore | **Done** | |
+
+---
+
+## Session Log
+
+### Session 1 — June 25, 2025
+
+**What we built:**
+- Full project scaffold (64 files) — backend, frontend, Docker config
+- Docker setup: PostgreSQL + Redis running via `docker compose up postgres redis`
+- Live BTCUSDT candle chart with real Binance WebSocket data
+- Delta histogram + CVD line panel below chart, bidirectional time-scale sync
+- Footprint chart canvas overlay (per-price-level buy/sell volume with imbalance highlighting)
+- Symbol switching for 15 USDT crypto pairs with instant chart clear on switch
+- Volume Profile canvas overlay — POC (yellow), Value Area (blue), dashed reference lines
+- Market info sidebar with real 24h stats (price change %, 24H high/low) from Binance ticker API
+
+**Stack confirmed working:**
+- Frontend: React + TypeScript + Vite on http://localhost:5173
+- Backend: FastAPI + Python on http://localhost:8000
+- Database: PostgreSQL in Docker
+- Cache: Redis in Docker
+- Data: Live Binance WebSocket streams (`@kline_1m`, `@aggTrade`)
+
+**Key technical decisions made:**
+- Volume profile built from klines REST (OHLCV approximation), not aggTrade stream — simpler and sufficient
+- Footprint imbalance threshold: 5× ratio AND both sides ≥ 0.5 BTC (eliminates single-side false positives)
+- Canvas overlay pattern: stable `scheduleDraw` ref + `drawFnRef.current` for stale-closure-free animation
+- Route ordering: specific WS routes registered before catch-all `/ws/{channel:path}` in FastAPI
+
+**Next Session Tasks:**
+- Footprint chart UI polish (better text layout, cleaner colours)
+- Whale trade detector (aggTrade notional threshold → `/ws/whales/{symbol}`)
+- Heatmap overlay (order book depth → 2D colour grid)
+- Timeframe switching fully wired (already in toolbar, needs interval propagation fix)
