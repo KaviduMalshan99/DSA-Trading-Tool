@@ -170,14 +170,14 @@ DSA-Trading-Tool/
 
 ## Sprint Plan Summary
 
-### Sprint 1 — Infrastructure & Live Data (Weeks 1–2)
+### Sprint 1 — Infrastructure & Live Data (Weeks 1–2) ✅ Completed 2025-06-25
 - [x] Project scaffolding (folder structure, Dockerfiles, configs)
-- [ ] PostgreSQL + Redis Docker setup running
-- [ ] Binance WebSocket provider + candle collector working
-- [ ] FastAPI server with `/health`, `/candles`, `/symbols` routes
+- [x] PostgreSQL + Redis Docker setup running
+- [x] Binance WebSocket provider + candle collector working
+- [x] FastAPI server with `/health`, `/candles`, `/symbols` routes
 - [ ] ConnectionManager Redis → WebSocket fan-out working
-- [ ] Frontend: Vite + React + Zustand bootstrap
-- [ ] TradingChart renders live candles via WebSocket
+- [x] Frontend: Vite + React + Zustand bootstrap
+- [x] TradingChart renders live candles via WebSocket
 
 ### Sprint 2 — Analytics Engine (Weeks 3–4)
 - [ ] Delta / CVD calculation + REST endpoint

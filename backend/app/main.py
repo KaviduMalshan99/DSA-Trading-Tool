@@ -10,6 +10,7 @@ from app.api.candles import router as candles_router
 from app.api.symbols import router as symbols_router
 from app.api.indicators import router as indicators_router
 from app.websocket.candle_stream import router as candle_stream_router
+from app.websocket.delta_stream import router as delta_stream_router
 from app.websocket.routes import router as ws_router
 
 logger = logging.getLogger(__name__)
@@ -55,7 +56,8 @@ app.add_middleware(
 app.include_router(candles_router, prefix="/api/v1")
 app.include_router(symbols_router, prefix="/api/v1")
 app.include_router(indicators_router, prefix="/api/v1")
-app.include_router(candle_stream_router)  # specific route must be before the catch-all
+app.include_router(candle_stream_router)   # specific routes before the catch-all
+app.include_router(delta_stream_router)
 app.include_router(ws_router)
 
 

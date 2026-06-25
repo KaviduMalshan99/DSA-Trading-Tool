@@ -6,7 +6,12 @@ import type { Candle } from '../../types/market';
 
 const WS_BASE = import.meta.env.VITE_WS_URL ?? 'ws://localhost:8000';
 
-export function TradingChart() {
+interface TradingChartProps {
+  /** Lifted ref so ChartContainer can share it with sibling panels for time-scale sync. */
+  sharedChartRef?: React.MutableRefObject<IChartApi | null>;
+}
+
+export function TradingChart({ sharedChartRef }: TradingChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
@@ -66,6 +71,7 @@ export function TradingChart() {
 
     chartRef.current = chart;
     seriesRef.current = series;
+    if (sharedChartRef) sharedChartRef.current = chart;
 
     const observer = new ResizeObserver(() => {
       if (!containerRef.current) return;
@@ -81,8 +87,9 @@ export function TradingChart() {
       chart.remove();
       chartRef.current = null;
       seriesRef.current = null;
+      if (sharedChartRef) sharedChartRef.current = null;
     };
-  }, [onRangeChange, onCrosshairMove]);
+  }, [onRangeChange, onCrosshairMove, sharedChartRef]);
 
   useEffect(() => {
     let ws: WebSocket | null = null;
