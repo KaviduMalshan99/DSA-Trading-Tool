@@ -22,11 +22,20 @@ export function ChartContainer() {
       <ChartToolbar />
 
       {/* Main candlestick area — 80% */}
-      <div className="relative" style={{ flex: '4 4 0%', minHeight: 0 }}>
+      <div className="relative bg-[#0d1117]" style={{ flex: '4 4 0%', minHeight: 0 }}>
         <TradingChart
           sharedChartRef={sharedChartRef}
           sharedSeriesRef={sharedSeriesRef}
         />
+
+        {/* Heatmap: renders AFTER TradingChart so refs are populated (React effects run in DOM order).
+            z-0 keeps it below TradingChart's z-10; transparent chart bg lets it show through. */}
+        {visibleOverlays.has('heatmap') && (
+          <HeatmapCanvas
+            sharedChartRef={sharedChartRef}
+            sharedSeriesRef={sharedSeriesRef}
+          />
+        )}
 
         {/* Canvas overlays — positioned absolutely over the chart */}
         {visibleOverlays.has('footprint') && (
@@ -35,7 +44,6 @@ export function ChartContainer() {
             sharedSeriesRef={sharedSeriesRef}
           />
         )}
-        {visibleOverlays.has('heatmap') && <HeatmapCanvas />}
         {visibleOverlays.has('volumeProfile') && (
           <VolumeProfile
             sharedChartRef={sharedChartRef}

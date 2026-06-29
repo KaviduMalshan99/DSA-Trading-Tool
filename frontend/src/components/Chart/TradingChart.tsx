@@ -28,7 +28,7 @@ export function TradingChart({ sharedChartRef, sharedSeriesRef }: TradingChartPr
 
     const chart = createChart(containerRef.current, {
       layout: {
-        background: { color: '#0d1117' },
+        background: { color: 'rgba(13,17,23,0)' },
         textColor: '#c9d1d9',
       },
       grid: {
@@ -178,7 +178,7 @@ export function TradingChart({ sharedChartRef, sharedSeriesRef }: TradingChartPr
   }, [activeSymbol, activeInterval, setCandles, appendCandle]);
 
   return (
-    <div className="relative w-full h-full">
+    <div className="relative w-full h-full z-10">
       <div className="absolute top-2 left-3 z-10 flex items-center gap-3 pointer-events-none select-none">
         <span className="text-[#c9d1d9] text-sm font-semibold tracking-wider">
           {activeSymbol}

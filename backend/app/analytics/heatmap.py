@@ -1,58 +1,106 @@
-from dataclasses import dataclass
-import numpy as np
+"""
+HeatmapAccumulator — collects Binance order-book depth snapshots and
+exposes them as normalised (0.0–1.0) heatmap cells ready for the frontend.
+"""
+
+import time
+from collections import deque
+
+MAX_SNAPSHOTS = 2000
+DEFAULT_STEP  = 10     # price rounding granularity — suitable for BTC ≈ $100 k
+SNAPSHOT_SECS = 1      # interval between snapshots (seconds)
 
 
-@dataclass
-class HeatmapSlice:
-    timestamp: int
-    price_levels: list[float]
-    bid_liquidity: list[float]
-    ask_liquidity: list[float]
-
-
-def build_heatmap_slice(depth: dict, num_levels: int = 50) -> HeatmapSlice:
+class HeatmapAccumulator:
     """
-    Convert an order book depth snapshot into a heatmap slice.
-    Normalises liquidity values to [0, 1] range for rendering.
+    Rolling order-book snapshot store.
+    Not thread-safe; call exclusively from one asyncio task.
     """
-    bids = sorted(depth["bids"], key=lambda x: x[0], reverse=True)[:num_levels]
-    asks = sorted(depth["asks"], key=lambda x: x[0])[:num_levels]
 
-    bid_prices = [b[0] for b in bids]
-    ask_prices = [a[0] for a in asks]
-    bid_qty = [b[1] for b in bids]
-    ask_qty = [a[1] for a in asks]
+    def __init__(self, price_step: int = DEFAULT_STEP) -> None:
+        self._step      : int              = price_step
+        self._book      : dict[int, float] = {}     # rounded_price → raw_qty
+        self._snapshots : deque[dict]      = deque(maxlen=MAX_SNAPSHOTS)
 
-    all_qty = bid_qty + ask_qty
-    max_qty = max(all_qty) if all_qty else 1.0
+    # ── internal ──────────────────────────────────────────────────────────────
 
-    return HeatmapSlice(
-        timestamp=depth.get("t", 0),
-        price_levels=bid_prices + ask_prices,
-        bid_liquidity=[q / max_qty for q in bid_qty],
-        ask_liquidity=[q / max_qty for q in ask_qty],
-    )
+    def _round(self, price: float) -> int:
+        return round(price / self._step) * self._step
 
+    def _global_max(self) -> float:
+        m = 0.0
+        for s in self._snapshots:
+            for q in s["levels"].values():
+                if q > m:
+                    m = q
+        return m
 
-def aggregate_heatmap_history(slices: list[HeatmapSlice]) -> dict:
-    """
-    Aggregate multiple slices into a 2D liquidity matrix for the heatmap canvas.
-    Returns {timestamps, price_levels, matrix} where matrix[t][p] = liquidity.
-    """
-    if not slices:
-        return {}
+    # ── public ────────────────────────────────────────────────────────────────
 
-    all_prices = sorted({p for s in slices for p in s.price_levels})
-    price_index = {p: i for i, p in enumerate(all_prices)}
-    matrix = np.zeros((len(slices), len(all_prices)))
+    def update(self, bids: list, asks: list) -> None:
+        """Merge a depth-update message into the live order book."""
+        book: dict[int, float] = {}
+        for p_str, q_str in bids:
+            q = float(q_str)
+            if q > 0:
+                p = self._round(float(p_str))
+                book[p] = book.get(p, 0.0) + q
+        for p_str, q_str in asks:
+            q = float(q_str)
+            if q > 0:
+                p = self._round(float(p_str))
+                book[p] = book.get(p, 0.0) + q
+        self._book = book
 
-    for t_idx, s in enumerate(slices):
-        for price, liq in zip(s.price_levels, s.bid_liquidity + s.ask_liquidity):
-            if price in price_index:
-                matrix[t_idx][price_index[price]] = liq
+    def take_snapshot(self) -> None:
+        """Commit the current book state into the rolling history."""
+        if self._book:
+            self._snapshots.append({
+                "time":   int(time.time()),
+                "levels": dict(self._book),
+            })
 
-    return {
-        "timestamps": [s.timestamp for s in slices],
-        "price_levels": all_prices,
-        "matrix": matrix.tolist(),
-    }
+    def normalized_snapshots(self) -> tuple[list[dict], float, float]:
+        """
+        Return (snapshots, price_min, price_max).
+        Quantities are normalised to [0, 1] by dividing by the global max
+        across all stored snapshots.
+        """
+        if not self._snapshots:
+            return [], 0.0, 0.0
+
+        gmax = self._global_max()
+        if gmax == 0:
+            return [], 0.0, 0.0
+
+        all_prices = [p for s in self._snapshots for p in s["levels"]]
+        price_min  = float(min(all_prices))
+        price_max  = float(max(all_prices))
+
+        result = [
+            {
+                "time":   s["time"],
+                "levels": {
+                    str(p): round(q / gmax, 4)
+                    for p, q in s["levels"].items()
+                },
+            }
+            for s in self._snapshots
+        ]
+        return result, price_min, price_max
+
+    def normalized_latest(self) -> dict | None:
+        """Latest snapshot with normalised quantities, or None if empty."""
+        if not self._snapshots:
+            return None
+        gmax = self._global_max()
+        if gmax == 0:
+            return None
+        s = self._snapshots[-1]
+        return {
+            "time":   s["time"],
+            "levels": {
+                str(p): round(q / gmax, 4)
+                for p, q in s["levels"].items()
+            },
+        }

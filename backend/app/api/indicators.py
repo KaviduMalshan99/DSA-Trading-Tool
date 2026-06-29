@@ -3,7 +3,6 @@ from app.core.redis import get_redis
 from app.analytics.delta import compute_delta
 from app.analytics.volume_profile import build_volume_profile
 from app.analytics.footprint import build_footprint
-from app.analytics.heatmap import build_heatmap_slice
 from app.analytics.smc import detect_order_blocks, detect_fair_value_gaps
 import json
 
