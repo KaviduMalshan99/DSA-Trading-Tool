@@ -42,7 +42,12 @@ export function ChartContainer() {
             sharedSeriesRef={sharedSeriesRef}
           />
         )}
-        {visibleOverlays.has('whaleMarkers') && <WhaleMarkers />}
+        {visibleOverlays.has('whaleMarkers') && (
+          <WhaleMarkers
+            sharedChartRef={sharedChartRef}
+            sharedSeriesRef={sharedSeriesRef}
+          />
+        )}
       </div>
 
       {/* Delta panel — 20% */}
