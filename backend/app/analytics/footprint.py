@@ -13,6 +13,18 @@ def _is_imbalance(buy: float, sell: float) -> bool:
     return buy >= _IMBALANCE_RATIO * sell or sell >= _IMBALANCE_RATIO * buy
 
 
+def _price_decimals(symbol: str) -> int:
+    """
+    ndigits for round(price, ndigits).
+    Negative ndigits round to the left of the decimal point.
+      -1 → nearest $10   (BTC: 60334 → 60330)
+       1 → nearest $0.10 (others: 3521.45 → 3521.5)
+    """
+    if "BTC" in symbol.upper():
+        return -1  # $10 buckets
+    return 1       # 10-cent buckets
+
+
 class FootprintAccumulator:
     """
     Consumes Binance aggTrade dicts and accumulates per-price-level buy/sell
@@ -25,13 +37,14 @@ class FootprintAccumulator:
       m  → buyer is maker (True = sell aggressor, False = buy aggressor)
     """
 
-    def __init__(self, max_candles: int = 50, partial_interval: float = 2.0):
-        self.max_candles = max_candles
+    def __init__(self, max_candles: int = 50, partial_interval: float = 2.0,
+                 symbol: str = ""):
+        self.max_candles       = max_candles
         self._partial_interval = partial_interval
+        self._decimals         = _price_decimals(symbol)
 
         self._completed: list[dict] = []
         self._current_minute: int | None = None
-        # price (rounded to 2 dp) → {"buy_vol": float, "sell_vol": float}
         self._levels: dict[float, dict] = {}
 
         self._last_partial_mono: float = 0.0
@@ -44,7 +57,7 @@ class FootprintAccumulator:
         minute boundary was crossed, otherwise None.
         """
         trade_ms: int = trade["T"]
-        price = round(float(trade["p"]), 2)
+        price = round(float(trade["p"]), self._decimals)
         qty = float(trade["q"])
         is_maker: bool = trade["m"]
 

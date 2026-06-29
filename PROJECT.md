@@ -179,7 +179,7 @@ DSA-Trading-Tool/
 - [x] Frontend: Vite + React + Zustand bootstrap
 - [x] TradingChart renders live candles via WebSocket
 
-### Sprint 2 — Analytics Engine (Weeks 3–4) ✅ Completed 2025-06-25
+### Sprint 2 — Analytics Engine (Weeks 3–4) ✅ Completed 2026-06-29
 - [x] Delta / CVD calculation + WebSocket endpoint (`/ws/delta/{symbol}/{interval}`)
 - [x] Delta panel rendering below chart (histogram: green/red bars)
 - [x] CVD line synced with delta histogram (shared time-scale, bidirectional scroll)
@@ -187,16 +187,17 @@ DSA-Trading-Tool/
 - [x] Symbol switching — all 15 crypto USDT pairs wired end-to-end
 - [x] Market info panel with real 24h stats from Binance ticker API
 - [x] Search filter in symbol sidebar
-- [x] Footprint chart overlay (canvas, per-price-level buy/sell) ⚠️ needs UI polish
-- [ ] Whale trade detection (notional threshold) ⏳
-- [ ] Timeframe switching UI wired end-to-end ⏳
+- [x] Timeframe dropdown — all intervals 1m to 1M wired end-to-end
+- [x] Whale detector — bubbles on chart + live sidebar ticker
+- [x] Heatmap liquidity visualization — colour gradient order book depth overlay
+- [x] Footprint chart ⚠️ data working, UI polish needed
 
 ### Sprint 3 — Overlay Rendering (Weeks 5–6)
-- [ ] HeatmapCanvas: 2D colour-mapped liquidity over price/time
-- [ ] FootprintCanvas: per-bar buy/sell volume at each price level
-- [ ] VolumeProfile side panel with POC (yellow) + VA (blue)
-- [ ] WhaleMarkers: live ticker of large prints
+- [ ] Footprint chart final polish (remove background fills, layout improvements)
 - [ ] SMC zones drawn on chart (OB rectangles, FVG fills)
+- [ ] Drawing tools (trend lines, horizontal levels)
+- [ ] UI general cleanup and improvements
+- [ ] Prepare for client demo
 
 ### Sprint 4 — Multi-Asset & Polish (Weeks 7–8)
 - [ ] Forex provider wired end-to-end
@@ -285,8 +286,8 @@ docker compose up postgres redis
 | Trade collector | **Done** | Whale threshold configurable |
 | Depth collector | **Done** | 5s cache TTL |
 | Delta analytics | ✅ Done | Live `/ws/delta/` endpoint, CVD line synced |
-| Footprint analytics | ⚠️ Partial | Canvas overlay working, needs UI polish |
-| Heatmap analytics | **Done** | NumPy matrix, needs perf test |
+| Footprint analytics | ⚠️ In Progress | Data live, UI polish in progress |
+| Heatmap analytics | ✅ Done | 10s bucketing, colour LUT, 2000 snapshot history |
 | Volume Profile | ✅ Done | Canvas overlay, POC/VAH/VAL lines + bars |
 | SMC: Order Blocks | **Done** | Basic impulse detection |
 | SMC: Fair Value Gaps | **Done** | 3-candle pattern |
@@ -301,12 +302,14 @@ docker compose up postgres redis
 | Hooks | **Done** | useCandles, useMarketSocket, useChartSync |
 | TradingChart | **Done** | Lightweight Charts, resize-aware |
 | ChartToolbar | **Done** | Interval + overlay toggles |
-| HeatmapCanvas | Stub | Placeholder; needs backend data |
-| FootprintCanvas | ⚠️ Partial | Canvas overlay live, UI polish needed |
+| HeatmapCanvas | ✅ Done | Colour gradient, 10s buckets, 2000-snap history |
+| FootprintCanvas | ⚠️ In Progress | Data live, UI polish in progress |
 | VolumeProfile | ✅ Done | Canvas overlay, POC/VAH/VAL dashed lines |
-| WhaleMarkers | Stub | Pending whale detection backend |
+| WhaleMarkers | ✅ Done | Bubbles on chart, live sidebar ticker |
 | SymbolList | ✅ Done | 15 USDT pairs, search filter, Coming Soon tabs |
 | MarketInfo | ✅ Done | Real 24h stats from Binance ticker REST API |
+| Timeframe switching | ✅ Done | All intervals 1m to 1M |
+| Database PostgreSQL | ✅ Done | Docker Compose, port conflict documented |
 | docker-compose.yml | **Done** | 4-service stack |
 | Dockerfiles | **Done** | backend + frontend |
 | .env.example | **Done** | |
@@ -346,3 +349,46 @@ docker compose up postgres redis
 - Whale trade detector (aggTrade notional threshold → `/ws/whales/{symbol}`)
 - Heatmap overlay (order book depth → 2D colour grid)
 - Timeframe switching fully wired (already in toolbar, needs interval propagation fix)
+
+---
+
+### Session 2 — June 29, 2026
+
+**What we built:**
+- Timeframe dropdown (1m to 1M — all intervals wired end-to-end)
+- Whale detector (bubbles on chart + live sidebar ticker, $500K notional threshold)
+- Heatmap liquidity visualization (colour gradient, 10-second bucketing, 2000-snapshot history)
+- Footprint chart (data working — $10 price buckets for BTC, clipping, dynamic font; UI still being polished)
+- Fixed PostgreSQL port conflict permanently (documented startup order below)
+
+**Known Issues & Fixes:**
+- Local Windows PostgreSQL steals port 5432 from Docker
+- Fix every session:
+  1. `net stop postgresql-x64-16`
+  2. Start Docker Desktop
+  3. `docker compose up postgres redis -d`
+  4. `cd backend && uvicorn app.main:app --reload --port 8000`
+  5. `cd frontend && npm run dev`
+
+**Key technical decisions made:**
+- Heatmap DOM order fix: HeatmapCanvas must render *after* TradingChart in JSX — React effects run in DOM order, so mounting before means chart refs are null at subscription time
+- Footprint price bucketing: `round(price, -1)` = nearest $10 for BTC; `round(price, 1)` = nearest $0.10 for others
+- Footprint candle body dimming: TradingChart sets `upColor/downColor` to `rgba(0,0,0,0)` when footprint overlay is active so candle bodies are fully transparent (wicks remain)
+- Canvas clipping: `ctx.save/rect/clip/restore` per candle prevents footprint text from overflowing into neighbouring candles
+
+**Current Platform Status:**
+- Live BTCUSDT candles ✅
+- Delta + CVD panel ✅
+- Volume Profile POC/VAH/VAL ✅
+- Symbol switching all pairs ✅
+- Timeframe 1m to 1M ✅
+- Whale detector $500K threshold ✅
+- Heatmap order book depth ✅
+- Footprint chart ⚠️ polish needed
+
+**Next Session Tasks:**
+- Footprint chart final polish (background fills, layout)
+- SMC zones (Order Blocks + Fair Value Gaps)
+- Drawing tools (trend lines, horizontal lines)
+- UI general cleanup and improvements
+- Prepare for client demo

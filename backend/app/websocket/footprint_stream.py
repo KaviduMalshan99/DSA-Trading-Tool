@@ -77,7 +77,7 @@ def _ensure_running(symbol: str, interval: str) -> None:
     k = _key(symbol, interval)
 
     if k not in _accumulators:
-        _accumulators[k] = FootprintAccumulator(max_candles=50, partial_interval=2.0)
+        _accumulators[k] = FootprintAccumulator(max_candles=50, partial_interval=2.0, symbol=symbol)
         _subscribers[k] = set()
 
     task = _bg_tasks.get(k)

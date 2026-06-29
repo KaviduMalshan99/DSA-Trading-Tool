@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createChart, type IChartApi, type ISeriesApi } from 'lightweight-charts';
 import { useMarketStore } from '../../store/marketStore';
+import { useChartStore } from '../../store/chartStore';
 import { useChartSync } from '../../hooks/useChartSync';
 import type { Candle } from '../../types/market';
 
@@ -22,6 +23,7 @@ export function TradingChart({ sharedChartRef, sharedSeriesRef }: TradingChartPr
 
   const { activeSymbol, activeInterval, setCandles, appendCandle } = useMarketStore();
   const { onRangeChange, onCrosshairMove } = useChartSync();
+  const { visibleOverlays } = useChartStore();
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -94,6 +96,18 @@ export function TradingChart({ sharedChartRef, sharedSeriesRef }: TradingChartPr
       if (sharedSeriesRef) sharedSeriesRef.current = null;
     };
   }, [onRangeChange, onCrosshairMove, sharedChartRef, sharedSeriesRef]);
+
+  // Dim candle bodies when footprint overlay is active so text labels read clearly
+  useEffect(() => {
+    if (!seriesRef.current) return;
+    const fp = visibleOverlays.has('footprint');
+    seriesRef.current.applyOptions({
+      upColor:      fp ? 'rgba(0,0,0,0)'  : '#26a641',
+      downColor:    fp ? 'rgba(0,0,0,0)'  : '#f85149',
+      wickUpColor:   '#26a641',
+      wickDownColor: '#f85149',
+    });
+  }, [visibleOverlays]);
 
   useEffect(() => {
     // Clear stale data immediately so the old symbol doesn't linger

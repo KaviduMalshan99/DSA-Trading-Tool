@@ -1,36 +1,21 @@
-/**
- * FootprintCanvas — canvas overlay drawn on top of the candlestick chart.
- *
- * Coordinate mapping
- * ──────────────────
- * lightweight-charts v4 exposes:
- *   chart.timeScale().timeToCoordinate(timeSec)   → x pixel from chart-pane left
- *   chart.timeScale().getVisibleLogicalRange()     → { from, to } bar indices
- *   series.priceToCoordinate(price)               → y pixel from chart-pane top
- *
- * The canvas sits absolutely over the same container div as the chart so
- * these coordinates map 1:1 to canvas pixels.
- *
- * Visibility rule: text is hidden when candle pixel-width < MIN_CANDLE_PX.
- */
-
 import { useEffect, useRef } from 'react';
 import type { IChartApi, ISeriesApi } from 'lightweight-charts';
 import { useMarketStore } from '../../store/marketStore';
 
-const WS_BASE = import.meta.env.VITE_WS_URL ?? 'ws://localhost:8000';
-const MIN_CANDLE_PX = 80; // hide text below this candle pixel width
+const WS_BASE       = import.meta.env.VITE_WS_URL ?? 'ws://localhost:8000';
+const MIN_CANDLE_PX = 100; // don't render if candle narrower than this
+const MIN_ROW_PX    = 8;  // don't render if a price-level row is shorter than this
 
 interface PriceLevel {
-  price: number;
-  buy_vol: number;
+  price:    number;
+  buy_vol:  number;
   sell_vol: number;
   imbalance: boolean;
 }
 
 interface FootprintBar {
-  time: number; // ms epoch (candle open-time)
-  levels: PriceLevel[];
+  time:   number;        // candle open-time in ms
+  levels: PriceLevel[]; // sorted high→low by backend
 }
 
 export interface FootprintCanvasProps {
@@ -40,20 +25,25 @@ export interface FootprintCanvasProps {
 
 type LWTime = import('lightweight-charts').Time;
 
+function intervalToSecs(interval: string): number {
+  const n = parseInt(interval, 10);
+  if (interval.endsWith('M')) return n * 2_592_000;
+  if (interval.endsWith('w')) return n * 604_800;
+  if (interval.endsWith('d')) return n * 86_400;
+  if (interval.endsWith('h')) return n * 3_600;
+  return n * 60; // minutes (default)
+}
+
 export function FootprintCanvas({ sharedChartRef, sharedSeriesRef }: FootprintCanvasProps) {
   const canvasRef    = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const rafRef       = useRef(0);
-
-  // Footprint data keyed by candle open-time in ms
-  const barsRef = useRef<Map<number, FootprintBar>>(new Map());
+  const barsRef      = useRef<Map<number, FootprintBar>>(new Map());
 
   const { activeSymbol, activeInterval } = useMarketStore();
 
-  // ── Draw function stored in a ref so the stable scheduler always calls
-  //    the latest version without needing new chart subscriptions.
-  const drawFnRef = useRef<() => void>(() => { /* noop until canvas is ready */ });
-
+  // ── Draw ─────────────────────────────────────────────────────────────────
+  const drawFnRef = useRef<() => void>(() => {});
   drawFnRef.current = () => {
     const canvas = canvasRef.current;
     const chart  = sharedChartRef.current;
@@ -67,114 +57,121 @@ export function FootprintCanvas({ sharedChartRef, sharedSeriesRef }: FootprintCa
     const H = canvas.height;
     ctx.clearRect(0, 0, W, H);
 
-    // ── Candle pixel width from logical range ─────────────────────────
-    const logicalRange = chart.timeScale().getVisibleLogicalRange();
-    if (!logicalRange) return;
-    const numBars = logicalRange.to - logicalRange.from;
-    if (numBars <= 0) return;
-    const candlePx = W / numBars;
-    if (candlePx < MIN_CANDLE_PX) return;
+    if (barsRef.current.size === 0) return;
 
-    const halfW = candlePx * 0.44; // inset slightly from bar edge
-
-    // ── Visible time window ───────────────────────────────────────────
-    const timeRange = chart.timeScale().getVisibleRange();
+    const intervalSecs = intervalToSecs(activeInterval);
+    const timeScale    = chart.timeScale();
+    const timeRange    = timeScale.getVisibleRange();
     if (!timeRange) return;
     const fromSec = timeRange.from as number;
     const toSec   = timeRange.to   as number;
 
-    // ── Font size based on candle width ──────────────────────────────
-    const fontSize = candlePx > 120 ? 11 : 9;
-    ctx.font = `${fontSize}px "Courier New", monospace`;
     ctx.textBaseline = 'middle';
 
-    // ── Render ────────────────────────────────────────────────────────
     for (const bar of barsRef.current.values()) {
-      const timeSec = Math.floor(bar.time / 1000);
-      if (timeSec < fromSec || timeSec > toSec) continue;
+      const openSec  = Math.floor(bar.time / 1000);
+      const closeSec = openSec + intervalSecs;
 
-      const x = chart.timeScale().timeToCoordinate(timeSec as LWTime);
-      if (x === null) continue;
+      if (closeSec < fromSec || openSec > toSec) continue;
 
-      const levels = bar.levels; // sorted high→low by backend
+      // ── Candle x-boundaries ─────────────────────────────────────────
+      const leftRaw  = timeScale.timeToCoordinate(openSec  as unknown as LWTime);
+      const rightRaw = timeScale.timeToCoordinate(closeSec as unknown as LWTime);
+      if (leftRaw === null || rightRaw === null) continue;
+
+      const leftX       = leftRaw  as unknown as number;
+      const rightX      = rightRaw as unknown as number;
+      const candleWidth = rightX - leftX;
+      if (candleWidth < MIN_CANDLE_PX) continue;
+
+      const levels = bar.levels;
       if (levels.length < 2) continue;
 
-      // Row height — pixel distance between two adjacent price levels
-      let rowH = 10;
-      const y0 = series.priceToCoordinate(levels[0].price);
-      const y1 = series.priceToCoordinate(levels[1].price);
-      if (y0 !== null && y1 !== null) {
-        rowH = Math.abs(y1 - y0);
-      }
-      rowH = Math.max(8, Math.min(rowH, 20));
+      // ── Candle y-boundaries from outermost price levels ─────────────
+      const topRaw    = series.priceToCoordinate(levels[0].price);
+      const bottomRaw = series.priceToCoordinate(levels[levels.length - 1].price);
+      if (topRaw === null || bottomRaw === null) continue;
+
+      const topY        = topRaw    as unknown as number;
+      const bottomY     = bottomRaw as unknown as number;
+      const candleHeight = Math.abs(bottomY - topY);
+      const rowH         = candleHeight / levels.length;
+      if (rowH < MIN_ROW_PX) continue;
+
+      // ── Dynamic font size based on candle width ──────────────────────
+      const fontSize  = candleWidth > 200 ? 13 : candleWidth > 150 ? 11 : 9;
+      const showPrice = candleWidth > 120;
+      const centerX   = leftX + candleWidth / 2;
+      ctx.font = `bold ${fontSize}px "Courier New", monospace`;
+
+      // ── Clip to candle boundaries — nothing can overflow ─────────────
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(leftX, topY, candleWidth, candleHeight);
+      ctx.clip();
 
       for (const lvl of levels) {
-        const y = series.priceToCoordinate(lvl.price);
-        if (y === null || y < 0 || y > H) continue;
+        const yRaw = series.priceToCoordinate(lvl.price);
+        if (yRaw === null) continue;
+        const y = yRaw as unknown as number;
+        if (y < topY || y > bottomY) continue;
 
-        // Separator line between price levels (very subtle)
-        ctx.strokeStyle = 'rgba(255,255,255,0.1)';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(x - halfW, y - rowH / 2);
-        ctx.lineTo(x + halfW, y - rowH / 2);
-        ctx.stroke();
-
-        // Imbalance: barely-visible yellow tint — do NOT fill the whole row,
-        // just a thin strip so candles remain visible underneath.
+        // Imbalance: subtle yellow tint on this row only
         if (lvl.imbalance) {
           ctx.fillStyle = 'rgba(240,185,11,0.08)';
-          ctx.fillRect(x - halfW, y - rowH / 2, halfW * 2, rowH);
+          ctx.fillRect(leftX, y - rowH / 2, candleWidth, rowH);
         }
 
-        // Buy volume — left side, bright green
-        if (lvl.buy_vol > 0) {
-          ctx.fillStyle = '#00ff88';
-          ctx.textAlign = 'left';
-          ctx.fillText(fmtVol(lvl.buy_vol), x - halfW + 2, y);
+        // Buy volume — LEFT, green
+        ctx.fillStyle = '#00ff88';
+        ctx.textAlign = 'left';
+        ctx.fillText(lvl.buy_vol.toFixed(2), leftX + 4, y);
+
+        // Price — CENTER, gray (only when wide enough)
+        if (showPrice) {
+          const priceStr = Number.isInteger(lvl.price)
+            ? String(lvl.price)
+            : lvl.price.toFixed(1);
+          ctx.fillStyle = 'rgba(180,180,180,0.75)';
+          ctx.textAlign = 'center';
+          ctx.fillText(priceStr, centerX, y);
         }
 
-        // Sell volume — right side, bright red
-        if (lvl.sell_vol > 0) {
-          ctx.fillStyle = '#ff4444';
-          ctx.textAlign = 'right';
-          ctx.fillText(fmtVol(lvl.sell_vol), x + halfW - 2, y);
-        }
+        // Sell volume — RIGHT, red
+        ctx.fillStyle = '#ff4444';
+        ctx.textAlign = 'right';
+        ctx.fillText(lvl.sell_vol.toFixed(2), rightX - 4, y);
       }
+
+      ctx.restore();
     }
   };
 
-  // Stable scheduler — created once, always delegates to the latest drawFnRef
   const scheduleDraw = useRef(() => {
     cancelAnimationFrame(rafRef.current);
     rafRef.current = requestAnimationFrame(() => drawFnRef.current());
   }).current;
 
-  // ── Chart event subscriptions (run once after mount) ──────────────────
+  // ── Chart event subscriptions ─────────────────────────────────────────────
   useEffect(() => {
     const chart = sharedChartRef.current;
     if (!chart) return;
-
-    const onRange     = () => scheduleDraw();
-    const onCrosshair = () => scheduleDraw();
-
-    chart.timeScale().subscribeVisibleLogicalRangeChange(onRange);
-    chart.subscribeCrosshairMove(onCrosshair);
+    const onUpdate = () => scheduleDraw();
+    chart.timeScale().subscribeVisibleLogicalRangeChange(onUpdate);
+    chart.subscribeCrosshairMove(onUpdate);
     scheduleDraw();
-
     return () => {
-      chart.timeScale().unsubscribeVisibleLogicalRangeChange(onRange);
-      chart.unsubscribeCrosshairMove(onCrosshair);
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(onUpdate);
+      chart.unsubscribeCrosshairMove(onUpdate);
       cancelAnimationFrame(rafRef.current);
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Resize canvas to match container ──────────────────────────────────
+  // ── Resize canvas ─────────────────────────────────────────────────────────
   useEffect(() => {
     const container = containerRef.current;
     const canvas    = canvasRef.current;
     if (!container || !canvas) return;
-
     const ro = new ResizeObserver(() => {
       canvas.width  = container.clientWidth;
       canvas.height = container.clientHeight;
@@ -183,15 +180,16 @@ export function FootprintCanvas({ sharedChartRef, sharedSeriesRef }: FootprintCa
     ro.observe(container);
     canvas.width  = container.clientWidth;
     canvas.height = container.clientHeight;
-
     return () => ro.disconnect();
   }, [scheduleDraw]);
 
-  // ── WebSocket ─────────────────────────────────────────────────────────
+  // ── WebSocket ─────────────────────────────────────────────────────────────
   useEffect(() => {
-    let ws: WebSocket | null = null;
+    barsRef.current.clear();
+
+    let ws:     WebSocket | null = null;
     let stopped = false;
-    let timer: ReturnType<typeof setTimeout> | null = null;
+    let timer:  ReturnType<typeof setTimeout> | null = null;
 
     function connect() {
       if (stopped) return;
@@ -200,16 +198,20 @@ export function FootprintCanvas({ sharedChartRef, sharedSeriesRef }: FootprintCa
       ws.onmessage = (ev) => {
         try {
           const msg = JSON.parse(ev.data as string) as {
-            type: string;
+            type:        string;
             footprints?: FootprintBar[];
-            footprint?: FootprintBar;
+            footprint?:  FootprintBar;
           };
 
           if (msg.type === 'historical' && msg.footprints) {
             barsRef.current.clear();
             for (const bar of msg.footprints) barsRef.current.set(bar.time, bar);
+            // Debug: check latest bar's buy/sell data
+            const latest = msg.footprints[msg.footprints.length - 1];
+            console.log('[Footprint] bar data:', JSON.stringify(barsRef.current.get(latest?.time)));
           } else if ((msg.type === 'update' || msg.type === 'partial') && msg.footprint) {
             barsRef.current.set(msg.footprint.time, msg.footprint);
+            console.log('[Footprint] bar data:', JSON.stringify(barsRef.current.get(msg.footprint.time)));
             if (barsRef.current.size > 50) {
               barsRef.current.delete(Math.min(...barsRef.current.keys()));
             }
@@ -219,7 +221,7 @@ export function FootprintCanvas({ sharedChartRef, sharedSeriesRef }: FootprintCa
         } catch { /* ignore malformed */ }
       };
 
-      ws.onclose = () => { if (!stopped) timer = setTimeout(connect, 2000); };
+      ws.onclose = () => { if (!stopped) timer = setTimeout(connect, 2_000); };
       ws.onerror = () => ws?.close();
     }
 
@@ -233,11 +235,7 @@ export function FootprintCanvas({ sharedChartRef, sharedSeriesRef }: FootprintCa
 
   return (
     <div ref={containerRef} className="absolute inset-0 pointer-events-none z-10">
-      <canvas ref={canvasRef} className="absolute inset-0" />
+      <canvas ref={canvasRef} className="absolute inset-0" style={{ background: 'transparent' }} />
     </div>
   );
-}
-
-function fmtVol(v: number): string {
-  return v.toFixed(1);
 }
