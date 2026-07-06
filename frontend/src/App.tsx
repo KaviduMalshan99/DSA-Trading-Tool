@@ -13,6 +13,9 @@ export default function App() {
     <div className="flex flex-col h-screen bg-[#0d1117] text-white overflow-hidden">
       <Toolbar />
       <div className="flex flex-1 overflow-hidden">
+        <main className="flex-1 overflow-hidden">
+          <ChartContainer />
+        </main>
         <aside className="w-52 flex flex-col flex-shrink-0">
           <MarketInfo />
           {/* overflow-hidden + min-h-0 constrains SymbolList so WhaleTicker fits below */}
@@ -21,9 +24,6 @@ export default function App() {
           </div>
           {whaleActive && <WhaleTicker />}
         </aside>
-        <main className="flex-1 overflow-hidden">
-          <ChartContainer />
-        </main>
       </div>
       <StatusBar />
     </div>

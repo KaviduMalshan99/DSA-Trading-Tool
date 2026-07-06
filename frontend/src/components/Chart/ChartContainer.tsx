@@ -8,6 +8,8 @@ import { FootprintCanvas } from '../Overlay/FootprintCanvas';
 import { HeatmapCanvas } from '../Overlay/HeatmapCanvas';
 import { VolumeProfile } from '../Overlay/VolumeProfile';
 import { WhaleMarkers } from '../Overlay/WhaleMarkers';
+import { DrawingToolbar } from '../Drawing/DrawingToolbar';
+import { DrawingCanvas } from '../Drawing/DrawingCanvas';
 
 export function ChartContainer() {
   const { visibleOverlays } = useChartStore();
@@ -21,6 +23,11 @@ export function ChartContainer() {
     <div className="flex flex-col h-full">
       <ChartToolbar />
 
+      {/* Drawing toolbar + chart area side by side */}
+      <div className="flex flex-1 overflow-hidden" style={{ minHeight: 0 }}>
+      <DrawingToolbar />
+
+      <div className="flex flex-col flex-1 overflow-hidden">
       {/* Main candlestick area — 80% */}
       <div className="relative bg-[#0d1117]" style={{ flex: '4 4 0%', minHeight: 0 }}>
         <TradingChart
@@ -56,6 +63,12 @@ export function ChartContainer() {
             sharedSeriesRef={sharedSeriesRef}
           />
         )}
+
+        {/* Drawing canvas — always on top */}
+        <DrawingCanvas
+          sharedChartRef={sharedChartRef}
+          sharedSeriesRef={sharedSeriesRef}
+        />
       </div>
 
       {/* Delta panel — 20% */}
@@ -65,6 +78,8 @@ export function ChartContainer() {
       >
         <DeltaPanel sharedChartRef={sharedChartRef} />
       </div>
+      </div>{/* end flex-col wrapper */}
+      </div>{/* end flex row (toolbar + chart) */}
     </div>
   );
 }
