@@ -7,6 +7,10 @@ import type { Candle } from '../../types/market';
 
 const WS_BASE = import.meta.env.VITE_WS_URL ?? 'ws://localhost:8000';
 
+// TradingView's own default candle colors.
+const UP_COLOR   = '#089981';
+const DOWN_COLOR = '#F23645';
+
 interface TradingChartProps {
   /** Lifted ref so ChartContainer can share it with sibling panels for time-scale sync. */
   sharedChartRef?: React.MutableRefObject<IChartApi | null>;
@@ -38,8 +42,11 @@ export function TradingChart({ sharedChartRef, sharedSeriesRef }: TradingChartPr
         horzLines: { color: '#161b22' },
       },
       crosshair: {
-        vertLine: { color: '#3b82f6', labelBackgroundColor: '#1e3a5f' },
-        horzLine: { color: '#3b82f6', labelBackgroundColor: '#1e3a5f' },
+        vertLine: { visible: false, color: '#3b82f6', labelBackgroundColor: '#1e3a5f' },
+        // labelVisible: false — DrawingCanvas draws its own single price label for the
+        // cross/dot cursor modes; leaving this at its true default would render a second,
+        // overlapping native price tag on the axis alongside our custom one.
+        horzLine: { visible: false, labelVisible: false, color: '#3b82f6', labelBackgroundColor: '#1e3a5f' },
       },
       rightPriceScale: {
         borderColor: '#21262d',
@@ -54,11 +61,11 @@ export function TradingChart({ sharedChartRef, sharedSeriesRef }: TradingChartPr
     });
 
     const series = chart.addCandlestickSeries({
-      upColor: '#26a641',
-      downColor: '#f85149',
+      upColor: UP_COLOR,
+      downColor: DOWN_COLOR,
       borderVisible: false,
-      wickUpColor: '#26a641',
-      wickDownColor: '#f85149',
+      wickUpColor: UP_COLOR,
+      wickDownColor: DOWN_COLOR,
     });
 
     chart.timeScale().subscribeVisibleTimeRangeChange((range) => {
@@ -102,10 +109,10 @@ export function TradingChart({ sharedChartRef, sharedSeriesRef }: TradingChartPr
     if (!seriesRef.current) return;
     const fp = visibleOverlays.has('footprint');
     seriesRef.current.applyOptions({
-      upColor:      fp ? 'rgba(0,0,0,0)'  : '#26a641',
-      downColor:    fp ? 'rgba(0,0,0,0)'  : '#f85149',
-      wickUpColor:   '#26a641',
-      wickDownColor: '#f85149',
+      upColor:      fp ? 'rgba(0,0,0,0)'  : UP_COLOR,
+      downColor:    fp ? 'rgba(0,0,0,0)'  : DOWN_COLOR,
+      wickUpColor:   UP_COLOR,
+      wickDownColor: DOWN_COLOR,
     });
   }, [visibleOverlays]);
 

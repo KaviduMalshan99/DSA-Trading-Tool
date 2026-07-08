@@ -195,7 +195,7 @@ DSA-Trading-Tool/
 ### Sprint 3 — Overlay Rendering (Weeks 5–6)
 - [ ] Footprint chart final polish (remove background fills, layout improvements)
 - [ ] SMC zones drawn on chart (OB rectangles, FVG fills)
-- [ ] Drawing tools (trend lines, horizontal levels)
+- [x] Drawing tools (cursor group, trend line group, shapes group, Fibonacci) — see Session 3
 - [ ] UI general cleanup and improvements
 - [ ] Prepare for client demo
 
@@ -314,6 +314,7 @@ docker compose up postgres redis
 | Dockerfiles | **Done** | backend + frontend |
 | .env.example | **Done** | |
 | .gitignore | **Done** | |
+| Drawing tools (chart overlay) | ✅ Done | Cursor, Trend Line, Shapes, Fibonacci groups — see Session 3 |
 
 ---
 
@@ -390,5 +391,33 @@ docker compose up postgres redis
 - Footprint chart final polish (background fills, layout)
 - SMC zones (Order Blocks + Fair Value Gaps)
 - Drawing tools (trend lines, horizontal lines)
+- UI general cleanup and improvements
+- Prepare for client demo
+
+---
+
+### Session 3 — July 7, 2026
+
+**What we built — a full TradingView-style drawing/annotation toolset on the chart:**
+- **Cursor group:** Cross, Dot, Arrow, Demonstration (with crosshair + spotlight), Eraser (with "Remove All Drawings")
+- **Trend Line group:** Trend Line, Horizontal Line, Horizontal Ray, Vertical Line (shows its timestamp), Parallel Channel (drag-editable, mid dotted line), Regression Trend (drawn as a line, auto-converts to a statistical deviation channel)
+- **Fibonacci Retracement:** exact TradingView levels (0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.618), dotted diagonal trend line connector, movable/resizable after drawing, and a full Style/Coordinates/Visibility settings modal matching TradingView's real dialog
+- **Shapes group:** Rectangle, Rotated Rectangle, Circle, Path (with arrowhead), Arrow Marker, Arrow, Arrow Mark Up, Arrow Mark Down, Brush — every shape is movable and resizable after selecting with the cursor
+- Every drawing type supports click-to-select with a floating style toolbar (color palette + opacity, width, line style, delete), matching TradingView's UI
+- Hover-reveal dropdown arrows on grouped toolbar buttons (Cursor/Trend Line/Shapes), same interaction pattern as TradingView
+- Candle colors updated to TradingView's real green/red palette
+
+**Refinements after initial pass (based on reference screenshots):**
+- Arrow Mark Up/Down: single click to place a solid chunky block-arrow icon (not a 2-point line), with one "size" control only
+- Arrow Marker: solid tapered-dart shape (thin shaft flaring to a proper arrowhead at the tip) instead of a thin line + separate arrowhead triangle, resizable by dragging either endpoint
+
+**Key technical decisions made:**
+- One generalized multi-click state machine (`CLICKS_REQUIRED` + `drawingRef`) handles every 1–3 click tool instead of per-tool duplication
+- Drag-to-edit reuses a `kind` discriminant so structurally identical types (Trend Line/Arrow, Channel/Rotated Rectangle) share one drag implementation
+- `data-drawing-overlay` attribute + `instanceof Element` (not `HTMLElement`, which misses SVG icon glyphs) prevents floating toolbar clicks from being swallowed by the chart's window-level handlers
+
+**Next Session Tasks:**
+- Footprint chart final polish (background fills, layout)
+- SMC zones (Order Blocks + Fair Value Gaps)
 - UI general cleanup and improvements
 - Prepare for client demo

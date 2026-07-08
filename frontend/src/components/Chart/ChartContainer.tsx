@@ -10,6 +10,7 @@ import { VolumeProfile } from '../Overlay/VolumeProfile';
 import { WhaleMarkers } from '../Overlay/WhaleMarkers';
 import { DrawingToolbar } from '../Drawing/DrawingToolbar';
 import { DrawingCanvas } from '../Drawing/DrawingCanvas';
+import { DrawingStyleToolbar } from '../Drawing/DrawingStyleToolbar';
 
 export function ChartContainer() {
   const { visibleOverlays } = useChartStore();
@@ -66,6 +67,12 @@ export function ChartContainer() {
 
         {/* Drawing canvas — always on top */}
         <DrawingCanvas
+          sharedChartRef={sharedChartRef}
+          sharedSeriesRef={sharedSeriesRef}
+        />
+
+        {/* Floating style toolbar for the selected drawing (TradingView-style) */}
+        <DrawingStyleToolbar
           sharedChartRef={sharedChartRef}
           sharedSeriesRef={sharedSeriesRef}
         />
