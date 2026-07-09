@@ -87,7 +87,7 @@ export function FavoritesToolbar() {
       <div
         onMouseDown={onGripMouseDown}
         title="Drag to move"
-        className="w-5 h-8 flex items-center justify-center cursor-grab text-[#8b949e] hover:text-white"
+        className="w-5 h-9 flex items-center justify-center cursor-grab text-[#8b949e] hover:text-white"
       >
         <GripIcon />
       </div>
@@ -100,7 +100,7 @@ export function FavoritesToolbar() {
           title={ALL_TOOL_LABEL[tool] ?? tool}
           onClick={() => setTool(tool)}
           className={`
-            w-8 h-8 flex items-center justify-center rounded transition-colors
+            w-9 h-9 flex items-center justify-center rounded transition-colors [&_svg]:w-5 [&_svg]:h-5
             ${activeTool === tool
               ? 'bg-[#2196F3] text-white'
               : 'text-[#8b949e] hover:text-white hover:bg-[#21262d]'}

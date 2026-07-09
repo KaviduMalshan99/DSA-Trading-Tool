@@ -421,3 +421,10 @@ docker compose up postgres redis
 - SMC zones (Order Blocks + Fair Value Gaps)
 - UI general cleanup and improvements
 - Prepare for client demo
+
+---
+
+### Session 4 — July 9, 2026
+
+**What we built:**
+- Enlarged the drawing toolbar icons: left-sidebar `DrawingToolbar` buttons (32px → 36px, icons 16–18px → 20px) and the floating `FavoritesToolbar` tool buttons, sized up via a Tailwind `[&_svg]` child-selector so the dropdown/flyout option lists keep their original size
