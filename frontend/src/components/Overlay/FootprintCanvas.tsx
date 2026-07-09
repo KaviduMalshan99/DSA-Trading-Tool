@@ -102,7 +102,9 @@ export function FootprintCanvas({ sharedChartRef, sharedSeriesRef }: FootprintCa
       const fontSize  = candleWidth > 200 ? 13 : candleWidth > 150 ? 11 : 9;
       const showPrice = candleWidth > 120;
       const centerX   = leftX + candleWidth / 2;
-      ctx.font = `bold ${fontSize}px "Courier New", monospace`;
+      const pad       = fontSize * 0.4 + 2;
+      const normalFont = `${fontSize}px "Courier New", monospace`;
+      const boldFont   = `bold ${fontSize}px "Courier New", monospace`;
 
       // ── Clip to candle boundaries — nothing can overflow ─────────────
       ctx.save();
@@ -110,37 +112,68 @@ export function FootprintCanvas({ sharedChartRef, sharedSeriesRef }: FootprintCa
       ctx.rect(leftX, topY, candleWidth, candleHeight);
       ctx.clip();
 
+      let prevRowTop: number | null = null;
+
       for (const lvl of levels) {
         const yRaw = series.priceToCoordinate(lvl.price);
         if (yRaw === null) continue;
         const y = yRaw as unknown as number;
         if (y < topY || y > bottomY) continue;
 
-        // Imbalance: subtle yellow tint on this row only
-        if (lvl.imbalance) {
-          ctx.fillStyle = 'rgba(240,185,11,0.08)';
-          ctx.fillRect(leftX, y - rowH / 2, candleWidth, rowH);
+        const rowTop = y - rowH / 2;
+
+        // Row separator — thin line between adjacent price levels only
+        if (prevRowTop !== null) {
+          ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(leftX, rowTop);
+          ctx.lineTo(rightX, rowTop);
+          ctx.stroke();
+        }
+        prevRowTop = rowTop;
+
+        const buyStr  = lvl.buy_vol.toFixed(2);
+        const sellStr = lvl.sell_vol.toFixed(2);
+        const buyIsDominant = lvl.imbalance && lvl.buy_vol > lvl.sell_vol;
+        const sellIsDominant = lvl.imbalance && lvl.sell_vol > lvl.buy_vol;
+
+        // Imbalance: tight highlight box behind the dominant side's number only
+        if (buyIsDominant || sellIsDominant) {
+          ctx.font = boldFont;
+          const text  = buyIsDominant ? buyStr : sellStr;
+          const textW = ctx.measureText(text).width;
+          const boxH  = Math.min(rowH - 2, fontSize + 6);
+          ctx.fillStyle = buyIsDominant ? 'rgba(0,255,136,0.14)' : 'rgba(255,68,68,0.14)';
+          if (buyIsDominant) {
+            ctx.fillRect(leftX + 1, y - boxH / 2, textW + pad * 2, boxH);
+          } else {
+            ctx.fillRect(rightX - 1 - textW - pad * 2, y - boxH / 2, textW + pad * 2, boxH);
+          }
         }
 
         // Buy volume — LEFT, green
+        ctx.font = buyIsDominant ? boldFont : normalFont;
         ctx.fillStyle = '#00ff88';
         ctx.textAlign = 'left';
-        ctx.fillText(lvl.buy_vol.toFixed(2), leftX + 4, y);
+        ctx.fillText(buyStr, leftX + pad, y);
 
         // Price — CENTER, gray (only when wide enough)
         if (showPrice) {
           const priceStr = Number.isInteger(lvl.price)
             ? String(lvl.price)
             : lvl.price.toFixed(1);
+          ctx.font = normalFont;
           ctx.fillStyle = 'rgba(180,180,180,0.75)';
           ctx.textAlign = 'center';
           ctx.fillText(priceStr, centerX, y);
         }
 
         // Sell volume — RIGHT, red
+        ctx.font = sellIsDominant ? boldFont : normalFont;
         ctx.fillStyle = '#ff4444';
         ctx.textAlign = 'right';
-        ctx.fillText(lvl.sell_vol.toFixed(2), rightX - 4, y);
+        ctx.fillText(sellStr, rightX - pad, y);
       }
 
       ctx.restore();
@@ -206,12 +239,8 @@ export function FootprintCanvas({ sharedChartRef, sharedSeriesRef }: FootprintCa
           if (msg.type === 'historical' && msg.footprints) {
             barsRef.current.clear();
             for (const bar of msg.footprints) barsRef.current.set(bar.time, bar);
-            // Debug: check latest bar's buy/sell data
-            const latest = msg.footprints[msg.footprints.length - 1];
-            console.log('[Footprint] bar data:', JSON.stringify(barsRef.current.get(latest?.time)));
           } else if ((msg.type === 'update' || msg.type === 'partial') && msg.footprint) {
             barsRef.current.set(msg.footprint.time, msg.footprint);
-            console.log('[Footprint] bar data:', JSON.stringify(barsRef.current.get(msg.footprint.time)));
             if (barsRef.current.size > 50) {
               barsRef.current.delete(Math.min(...barsRef.current.keys()));
             }
