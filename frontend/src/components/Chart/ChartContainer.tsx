@@ -11,6 +11,7 @@ import { WhaleMarkers } from '../Overlay/WhaleMarkers';
 import { DrawingToolbar } from '../Drawing/DrawingToolbar';
 import { DrawingCanvas } from '../Drawing/DrawingCanvas';
 import { DrawingStyleToolbar } from '../Drawing/DrawingStyleToolbar';
+import { FavoritesToolbar } from '../Drawing/FavoritesToolbar';
 
 export function ChartContainer() {
   const { visibleOverlays } = useChartStore();
@@ -76,6 +77,10 @@ export function ChartContainer() {
           sharedChartRef={sharedChartRef}
           sharedSeriesRef={sharedSeriesRef}
         />
+
+        {/* Floating, draggable strip of starred tools — viewport-fixed, so it
+            can be dragged anywhere regardless of where it's mounted */}
+        <FavoritesToolbar />
       </div>
 
       {/* Delta panel — 20% */}

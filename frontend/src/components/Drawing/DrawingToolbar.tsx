@@ -334,17 +334,17 @@ function UnlockIcon() {
   );
 }
 
-function StarIcon() {
+function StarIcon({ size = 13 }: { size?: number }) {
   return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round">
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round">
       <path d="M12 2.5l2.9 6.2 6.7.7-5 4.6 1.4 6.6-6-3.4-6 3.4 1.4-6.6-5-4.6 6.7-.7L12 2.5Z" />
     </svg>
   );
 }
 
-function StarFilledIcon() {
+function StarFilledIcon({ size = 13 }: { size?: number }) {
   return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="#FFC107" stroke="#FFC107" strokeWidth="2" strokeLinejoin="round">
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="#FFC107" stroke="#FFC107" strokeWidth="2" strokeLinejoin="round">
       <path d="M12 2.5l2.9 6.2 6.7.7-5 4.6 1.4 6.6-6-3.4-6 3.4 1.4-6.6-5-4.6 6.7-.7L12 2.5Z" />
     </svg>
   );
@@ -495,14 +495,7 @@ function FavoritableMenuItem({
   onSelect: () => void;
 }) {
   return (
-    <div key={tool} className="w-full flex items-center gap-1 pl-1 pr-2 group/item hover:bg-[#2196F3]">
-      <button
-        title={favorite ? 'Remove from Favorites' : 'Add to Favorites'}
-        onClick={(e) => { e.stopPropagation(); onToggleFavorite(); }}
-        className="flex-shrink-0 w-6 h-7 flex items-center justify-center rounded text-[#8b949e] hover:text-[#FFC107] group-hover/item:text-white"
-      >
-        {favorite ? <StarFilledIcon /> : <StarIcon />}
-      </button>
+    <div key={tool} className="w-full flex items-center gap-1 pl-3 pr-1 group/item hover:bg-[#2196F3]">
       <button
         onClick={onSelect}
         className={`flex-1 flex items-center gap-2 py-2 text-sm text-left transition-colors group-hover/item:text-white ${active ? 'text-white' : 'text-[#d1d4dc]'}`}
@@ -510,6 +503,13 @@ function FavoritableMenuItem({
         <span className="flex-shrink-0">{icon}</span>
         <span className="flex-1">{label}</span>
         {active && <span className="text-xs">✓</span>}
+      </button>
+      <button
+        title={favorite ? 'Remove from Favorites' : 'Add to Favorites'}
+        onClick={(e) => { e.stopPropagation(); onToggleFavorite(); }}
+        className="flex-shrink-0 w-6 h-7 flex items-center justify-center rounded text-[#8b949e] hover:text-[#FFC107] group-hover/item:text-white"
+      >
+        {favorite ? <StarFilledIcon /> : <StarIcon />}
       </button>
     </div>
   );
@@ -649,7 +649,7 @@ export function DrawingToolbar() {
             className="absolute left-full top-0 ml-1 py-1 overflow-hidden"
             style={{
               zIndex: 100,
-              width: 200,
+              width: 224,
               background: '#1E222D',
               borderRadius: 4,
               boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
@@ -704,7 +704,7 @@ export function DrawingToolbar() {
             className="absolute left-full top-0 ml-1 py-1 overflow-hidden"
             style={{
               zIndex: 100,
-              width: 200,
+              width: 224,
               background: '#1E222D',
               borderRadius: 4,
               boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
@@ -759,7 +759,7 @@ export function DrawingToolbar() {
             className="absolute left-full top-0 ml-1 py-1 overflow-hidden"
             style={{
               zIndex: 100,
-              width: 180,
+              width: 200,
               background: '#1E222D',
               borderRadius: 4,
               boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
@@ -827,7 +827,7 @@ export function DrawingToolbar() {
             className="absolute left-full top-0 ml-1 py-1 overflow-hidden"
             style={{
               zIndex: 100,
-              width: 190,
+              width: 210,
               background: '#1E222D',
               borderRadius: 4,
               boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
@@ -906,6 +906,20 @@ export function DrawingToolbar() {
         `}
       >
         {drawingsLocked ? <LockIcon /> : <UnlockIcon />}
+      </button>
+
+      <button
+        title={favoriteTools.length === 0 ? 'No favorites yet — star a tool from its options list' : favoritesBarOpen ? 'Hide Favorites Toolbar' : 'Show Favorites Toolbar'}
+        disabled={favoriteTools.length === 0}
+        onClick={toggleFavoritesBar}
+        className={`
+          w-8 h-8 flex items-center justify-center rounded transition-colors
+          ${favoriteTools.length === 0
+            ? 'text-[#30363d] cursor-not-allowed'
+            : favoritesBarOpen ? 'bg-[#2196F3] text-white' : 'text-[#8b949e] hover:text-white hover:bg-[#21262d]'}
+        `}
+      >
+        {favoriteTools.length > 0 && favoritesBarOpen ? <StarFilledIcon size={18} /> : <StarIcon size={18} />}
       </button>
 
       <div className="w-6 border-t border-[#21262d] my-1" />
