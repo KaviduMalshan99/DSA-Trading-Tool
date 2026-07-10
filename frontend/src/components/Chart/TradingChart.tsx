@@ -2,14 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { createChart, type IChartApi, type ISeriesApi } from 'lightweight-charts';
 import { useMarketStore } from '../../store/marketStore';
 import { useChartStore } from '../../store/chartStore';
+import { useCandleStyleStore } from '../../store/candleStyleStore';
 import { useChartSync } from '../../hooks/useChartSync';
 import type { Candle } from '../../types/market';
 
 const WS_BASE = import.meta.env.VITE_WS_URL ?? 'ws://localhost:8000';
-
-// TradingView's own default candle colors.
-const UP_COLOR   = '#089981';
-const DOWN_COLOR = '#F23645';
 
 interface TradingChartProps {
   /** Lifted ref so ChartContainer can share it with sibling panels for time-scale sync. */
@@ -28,6 +25,7 @@ export function TradingChart({ sharedChartRef, sharedSeriesRef }: TradingChartPr
   const { activeSymbol, activeInterval, setCandles, appendCandle } = useMarketStore();
   const { onRangeChange, onCrosshairMove } = useChartSync();
   const { visibleOverlays } = useChartStore();
+  const candleStyle = useCandleStyleStore();
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -60,12 +58,16 @@ export function TradingChart({ sharedChartRef, sharedSeriesRef }: TradingChartPr
       height: containerRef.current.clientHeight,
     });
 
+    const style = useCandleStyleStore.getState();
     const series = chart.addCandlestickSeries({
-      upColor: UP_COLOR,
-      downColor: DOWN_COLOR,
-      borderVisible: false,
-      wickUpColor: UP_COLOR,
-      wickDownColor: DOWN_COLOR,
+      upColor:          style.bodyVisible ? style.upColor : 'rgba(0,0,0,0)',
+      downColor:        style.bodyVisible ? style.downColor : 'rgba(0,0,0,0)',
+      borderVisible:    style.bordersVisible,
+      borderUpColor:    style.borderUpColor,
+      borderDownColor:  style.borderDownColor,
+      wickVisible:      style.wickVisible,
+      wickUpColor:      style.wickUpColor,
+      wickDownColor:    style.wickDownColor,
     });
 
     chart.timeScale().subscribeVisibleTimeRangeChange((range) => {
@@ -104,17 +106,28 @@ export function TradingChart({ sharedChartRef, sharedSeriesRef }: TradingChartPr
     };
   }, [onRangeChange, onCrosshairMove, sharedChartRef, sharedSeriesRef]);
 
-  // Dim candle bodies when footprint overlay is active so text labels read clearly
+  // Apply user-configured candle colors; dim body/borders (not wicks) when the
+  // footprint overlay is active so its per-price-level text reads clearly.
   useEffect(() => {
     if (!seriesRef.current) return;
     const fp = visibleOverlays.has('footprint');
     seriesRef.current.applyOptions({
-      upColor:      fp ? 'rgba(0,0,0,0)'  : UP_COLOR,
-      downColor:    fp ? 'rgba(0,0,0,0)'  : DOWN_COLOR,
-      wickUpColor:   UP_COLOR,
-      wickDownColor: DOWN_COLOR,
+      upColor:          fp ? 'rgba(0,0,0,0)' : (candleStyle.bodyVisible ? candleStyle.upColor : 'rgba(0,0,0,0)'),
+      downColor:        fp ? 'rgba(0,0,0,0)' : (candleStyle.bodyVisible ? candleStyle.downColor : 'rgba(0,0,0,0)'),
+      borderVisible:    fp ? false : candleStyle.bordersVisible,
+      borderUpColor:    candleStyle.borderUpColor,
+      borderDownColor:  candleStyle.borderDownColor,
+      wickVisible:      candleStyle.wickVisible,
+      wickUpColor:      candleStyle.wickUpColor,
+      wickDownColor:    candleStyle.wickDownColor,
     });
-  }, [visibleOverlays]);
+  }, [
+    visibleOverlays,
+    candleStyle.upColor, candleStyle.downColor,
+    candleStyle.borderUpColor, candleStyle.borderDownColor,
+    candleStyle.wickUpColor, candleStyle.wickDownColor,
+    candleStyle.bodyVisible, candleStyle.bordersVisible, candleStyle.wickVisible,
+  ]);
 
   useEffect(() => {
     // Clear stale data immediately so the old symbol doesn't linger
@@ -218,7 +231,7 @@ export function TradingChart({ sharedChartRef, sharedSeriesRef }: TradingChartPr
           title={connected ? 'Live' : 'Reconnecting…'}
         />
       </div>
-      <div ref={containerRef} className="w-full h-full" />
+      <div ref={containerRef} data-tv-chart-root className="w-full h-full" />
     </div>
   );
 }

@@ -190,11 +190,11 @@ DSA-Trading-Tool/
 - [x] Timeframe dropdown — all intervals 1m to 1M wired end-to-end
 - [x] Whale detector — bubbles on chart + live sidebar ticker
 - [x] Heatmap liquidity visualization — colour gradient order book depth overlay
-- [x] Footprint chart ⚠️ data working, UI polish needed
+- [x] Footprint chart — data working, UI polish done (imbalance highlight box + row separators, see Session 4)
 
 ### Sprint 3 — Overlay Rendering (Weeks 5–6)
-- [ ] Footprint chart final polish (remove background fills, layout improvements)
-- [ ] SMC zones drawn on chart (OB rectangles, FVG fills)
+- [x] Footprint chart final polish (removed full-row background fill, tighter imbalance highlight, row separators) — see Session 4
+- [x] SMC zones drawn on chart (OB rectangles, FVG fills) — see Session 4
 - [x] Drawing tools (cursor group, trend line group, shapes group, Fibonacci) — see Session 3
 - [ ] UI general cleanup and improvements
 - [ ] Prepare for client demo
@@ -286,11 +286,11 @@ docker compose up postgres redis
 | Trade collector | **Done** | Whale threshold configurable |
 | Depth collector | **Done** | 5s cache TTL |
 | Delta analytics | ✅ Done | Live `/ws/delta/` endpoint, CVD line synced |
-| Footprint analytics | ⚠️ In Progress | Data live, UI polish in progress |
+| Footprint analytics | ✅ Done | Data live, UI polish complete |
 | Heatmap analytics | ✅ Done | 10s bucketing, colour LUT, 2000 snapshot history |
 | Volume Profile | ✅ Done | Canvas overlay, POC/VAH/VAL lines + bars |
-| SMC: Order Blocks | **Done** | Basic impulse detection |
-| SMC: Fair Value Gaps | **Done** | 3-candle pattern |
+| SMC: Order Blocks | **Done** | Basic impulse detection, now drawn on chart |
+| SMC: Fair Value Gaps | **Done** | 3-candle pattern, now drawn on chart |
 | WebSocket manager | **Done** | Auto-cleanup on disconnect |
 | REST API routes | **Done** | Candles, symbols, indicators |
 | FastAPI main app | **Done** | CORS, lifespan wired |
@@ -303,7 +303,8 @@ docker compose up postgres redis
 | TradingChart | **Done** | Lightweight Charts, resize-aware |
 | ChartToolbar | **Done** | Interval + overlay toggles |
 | HeatmapCanvas | ✅ Done | Colour gradient, 10s buckets, 2000-snap history |
-| FootprintCanvas | ⚠️ In Progress | Data live, UI polish in progress |
+| FootprintCanvas | ✅ Done | Data live, UI polish complete |
+| SMCOverlay | ✅ Done | Canvas overlay, OB + FVG rectangles |
 | VolumeProfile | ✅ Done | Canvas overlay, POC/VAH/VAL dashed lines |
 | WhaleMarkers | ✅ Done | Bubbles on chart, live sidebar ticker |
 | SymbolList | ✅ Done | 15 USDT pairs, search filter, Coming Soon tabs |
@@ -419,6 +420,33 @@ docker compose up postgres redis
 **Next Session Tasks:**
 - Footprint chart final polish (background fills, layout)
 - SMC zones (Order Blocks + Fair Value Gaps)
+- UI general cleanup and improvements
+- Prepare for client demo
+
+---
+
+### Session 4 — July 9, 2026
+
+**Footprint chart final polish:**
+- Removed the full-row translucent yellow wash on imbalanced price levels — replaced with a tight highlight box behind only the dominant side's number (green/red tint + bold), so the highlight reads as a signal instead of a blocky band
+- Added thin row-separator lines between price levels for a cleaner ladder layout
+- Padding now scales with the dynamic font size instead of a fixed 4px
+- Removed leftover debug `console.log` calls from the footprint WebSocket handler
+
+**SMC zones drawn on chart:**
+- New `SMCOverlay.tsx` canvas overlay (same pattern as FootprintCanvas/VolumeProfile — shared chart/series refs, `scheduleDraw` + `drawFnRef`), wired into `ChartContainer` and gated on the existing `smc` toolbar toggle
+- Order Blocks: one-candle-wide rectangle at the OB candle, green tint for bullish / red for bearish, opacity scaled by detection `strength`
+- Fair Value Gaps: rectangle spanning the 3-candle detection window (c1 open → c3 close) computed from the single `ts` field the API returns, dashed border, neutral purple tint (API doesn't expose gap direction)
+- Data is polled via REST every 5s (`api.getSMCZones`) since no `/ws/smc` stream exists yet — same limitation the REST-based endpoints already had
+
+**Key fix — SMC endpoint was dead in the current dev setup:**
+- `GET /indicators/smc/{symbol}` read candles from a Redis key (`candles:{symbol}:{interval}`) that's only populated by the standalone `worker/main.py` collector process, which isn't part of the documented dev startup (`docker compose up postgres redis` + `uvicorn` + `npm run dev`) and wasn't running — every request 404'd/500'd
+- Fixed by fetching klines directly from Binance's REST API inside `indicators.py` (mirrors `candle_stream.py`'s working pattern), matching how every other *working* real-time overlay (footprint, candles, volume profile) sources data — no dependency on the Redis worker pipeline
+- Also found the `postgres`/`redis` Docker containers had exited ~9h earlier; restarted them (`docker start dsa-trading-tool-postgres-1 dsa-trading-tool-redis-1`)
+
+**Next Session Tasks:**
+- SMC: mark zones as mitigated once price re-enters (backend `mitigated` field is currently always `False`) and stop drawing/fade them out
+- Consider a `/ws/smc/{symbol}/{interval}` push stream to replace the 5s REST poll
 - UI general cleanup and improvements
 - Prepare for client demo
 

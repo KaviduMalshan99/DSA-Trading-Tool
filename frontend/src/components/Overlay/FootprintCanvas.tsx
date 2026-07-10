@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import type { IChartApi, ISeriesApi } from 'lightweight-charts';
 import { useMarketStore } from '../../store/marketStore';
+import { intervalToSecs } from '../../utils/interval';
 
 const WS_BASE       = import.meta.env.VITE_WS_URL ?? 'ws://localhost:8000';
 const MIN_CANDLE_PX = 100; // don't render if candle narrower than this
@@ -24,15 +25,6 @@ export interface FootprintCanvasProps {
 }
 
 type LWTime = import('lightweight-charts').Time;
-
-function intervalToSecs(interval: string): number {
-  const n = parseInt(interval, 10);
-  if (interval.endsWith('M')) return n * 2_592_000;
-  if (interval.endsWith('w')) return n * 604_800;
-  if (interval.endsWith('d')) return n * 86_400;
-  if (interval.endsWith('h')) return n * 3_600;
-  return n * 60; // minutes (default)
-}
 
 export function FootprintCanvas({ sharedChartRef, sharedSeriesRef }: FootprintCanvasProps) {
   const canvasRef    = useRef<HTMLCanvasElement>(null);

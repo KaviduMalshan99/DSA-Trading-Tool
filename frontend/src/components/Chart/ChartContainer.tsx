@@ -1,4 +1,3 @@
-import { useRef } from 'react';
 import { type IChartApi, type ISeriesApi } from 'lightweight-charts';
 import { useChartStore } from '../../store/chartStore';
 import { TradingChart } from './TradingChart';
@@ -8,18 +7,21 @@ import { FootprintCanvas } from '../Overlay/FootprintCanvas';
 import { HeatmapCanvas } from '../Overlay/HeatmapCanvas';
 import { VolumeProfile } from '../Overlay/VolumeProfile';
 import { WhaleMarkers } from '../Overlay/WhaleMarkers';
+import { SMCOverlay } from '../Overlay/SMCOverlay';
 import { DrawingToolbar } from '../Drawing/DrawingToolbar';
 import { DrawingCanvas } from '../Drawing/DrawingCanvas';
 import { DrawingStyleToolbar } from '../Drawing/DrawingStyleToolbar';
 import { FavoritesToolbar } from '../Drawing/FavoritesToolbar';
 
-export function ChartContainer() {
-  const { visibleOverlays } = useChartStore();
+export interface ChartContainerProps {
+  /** Lifted up to App so Toolbar's snapshot button can read/composite the live chart. */
+  sharedChartRef:  React.RefObject<IChartApi | null>;
+  sharedSeriesRef: React.RefObject<ISeriesApi<'Candlestick'> | null>;
+  chartAreaRef:    React.RefObject<HTMLDivElement>;
+}
 
-  // Lifted refs: TradingChart populates them; overlays read them for
-  // coordinate mapping and time-scale synchronisation.
-  const sharedChartRef  = useRef<IChartApi | null>(null);
-  const sharedSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
+export function ChartContainer({ sharedChartRef, sharedSeriesRef, chartAreaRef }: ChartContainerProps) {
+  const { visibleOverlays } = useChartStore();
 
   return (
     <div className="flex flex-col h-full">
@@ -31,7 +33,7 @@ export function ChartContainer() {
 
       <div className="flex flex-col flex-1 overflow-hidden">
       {/* Main candlestick area — 80% */}
-      <div className="relative bg-[#0d1117]" style={{ flex: '4 4 0%', minHeight: 0 }}>
+      <div ref={chartAreaRef} className="relative bg-[#0d1117]" style={{ flex: '4 4 0%', minHeight: 0 }}>
         <TradingChart
           sharedChartRef={sharedChartRef}
           sharedSeriesRef={sharedSeriesRef}
@@ -61,6 +63,12 @@ export function ChartContainer() {
         )}
         {visibleOverlays.has('whaleMarkers') && (
           <WhaleMarkers
+            sharedChartRef={sharedChartRef}
+            sharedSeriesRef={sharedSeriesRef}
+          />
+        )}
+        {visibleOverlays.has('smc') && (
+          <SMCOverlay
             sharedChartRef={sharedChartRef}
             sharedSeriesRef={sharedSeriesRef}
           />

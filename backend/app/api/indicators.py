@@ -1,3 +1,4 @@
+import aiohttp
 from fastapi import APIRouter, Query, HTTPException
 from app.core.redis import get_redis
 from app.analytics.delta import compute_delta
@@ -8,11 +9,29 @@ import json
 
 router = APIRouter(prefix="/indicators", tags=["indicators"])
 
+_BINANCE_REST = "https://api.binance.com"
+
 
 async def _get_trades(symbol: str, limit: int = 500) -> list[dict]:
     r = await get_redis()
     raw = await r.lrange(f"trade_buffer:{symbol}", -limit, -1)
     return [json.loads(t) for t in raw]
+
+
+async def _fetch_klines(symbol: str, interval: str, limit: int = 100) -> list[dict]:
+    """Pull recent candles straight from Binance — mirrors candle_stream.py's
+    approach so this endpoint works without the standalone Redis-fed worker."""
+    url = f"{_BINANCE_REST}/api/v3/klines"
+    params = {"symbol": symbol.upper(), "interval": interval, "limit": limit}
+    timeout = aiohttp.ClientTimeout(total=10)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        async with session.get(url, params=params) as resp:
+            resp.raise_for_status()
+            rows = await resp.json()
+    return [
+        {"t": row[0], "o": float(row[1]), "h": float(row[2]), "l": float(row[3]), "c": float(row[4])}
+        for row in rows
+    ]
 
 
 @router.get("/delta/{symbol}")
@@ -62,12 +81,12 @@ async def get_footprint(
 
 @router.get("/smc/{symbol}")
 async def get_smc_zones(symbol: str, interval: str = Query("1m"), lookback: int = Query(20)):
-    from app.core.redis import get_redis
-    r = await get_redis()
-    raw = await r.lrange(f"candles:{symbol}:{interval}", -100, -1)
-    if not raw:
+    try:
+        candles = await _fetch_klines(symbol, interval, 100)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Could not fetch candles: {exc}")
+    if not candles:
         raise HTTPException(status_code=404, detail="No candle data")
-    candles = [json.loads(c) for c in raw]
     obs = detect_order_blocks(candles, lookback)
     fvgs = detect_fair_value_gaps(candles)
     return {
