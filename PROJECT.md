@@ -296,7 +296,7 @@ docker compose up postgres redis
 | FastAPI main app | **Done** | CORS, lifespan wired |
 | Background worker | **Done** | Signal-aware shutdown |
 | Frontend types | **Done** | market.ts + analytics.ts |
-| Zustand stores | **Done** | market, chart, socket stores |
+| Zustand stores | **Done** | market, chart, socket, candleStyle, watchlist stores |
 | Socket service | **Done** | Auto-reconnect, per-channel |
 | API service | **Done** | Typed REST wrappers |
 | Hooks | **Done** | useCandles, useMarketSocket, useChartSync |
@@ -307,8 +307,10 @@ docker compose up postgres redis
 | SMCOverlay | ✅ Done | Canvas overlay, OB + FVG rectangles |
 | VolumeProfile | ✅ Done | Canvas overlay, POC/VAH/VAL dashed lines |
 | WhaleMarkers | ✅ Done | Bubbles on chart, live sidebar ticker |
-| SymbolList | ✅ Done | 15 USDT pairs, search filter, Coming Soon tabs |
+| SymbolList | ✅ Done | Live backend symbol search (was a hardcoded-list filter), + button adds to a persisted watchlist |
 | MarketInfo | ✅ Done | Real 24h stats from Binance ticker REST API |
+| SidebarRail | ✅ Done | Collapsible watchlist rail — icon toggles the symbol/market-info panel |
+| Toolbar (header) | ✅ Done | Snapshot menu (download/copy/copy-link/open-in-tab), full screen toggle, candle color settings modal |
 | Timeframe switching | ✅ Done | All intervals 1m to 1M |
 | Database PostgreSQL | ✅ Done | Docker Compose, port conflict documented |
 | docker-compose.yml | **Done** | 4-service stack |
@@ -452,7 +454,35 @@ docker compose up postgres redis
 
 ---
 
-### Session 4 — July 9, 2026
+### Session 5 — July 9, 2026
 
 **What we built:**
 - Enlarged the drawing toolbar icons: left-sidebar `DrawingToolbar` buttons (32px → 36px, icons 16–18px → 20px) and the floating `FavoritesToolbar` tool buttons, sized up via a Tailwind `[&_svg]` child-selector so the dropdown/flyout option lists keep their original size
+
+---
+
+### Session 6 — July 10, 2026
+
+**Header toolbar — snapshot, full screen, settings:**
+- New camera icon in the top header opens a dropdown: Download image, Copy image, Copy link, Open in new tab (Tweet image intentionally skipped)
+- Snapshot capture composites lightweight-charts' own `takeScreenshot()` with every overlay `<canvas>` on top of it (footprint, heatmap, SMC, drawings), so the exported image matches what's actually on screen, not just bare candles
+- Full screen icon toggles the whole app via the Fullscreen API, icon swaps enter/exit state, listens for Esc
+- Settings (gear) icon opens a `ChartSettingsModal` scoped to what was actually asked for — candle Body/Borders/Wick colors (separate up/down swatches + visibility checkboxes), not the full TradingView settings surface. Backed by a new `candleStyleStore` (localStorage-persisted); `TradingChart` now reads colors from it instead of hardcoded constants
+- Fixed a bug in that modal where the color-swatch popovers didn't render correctly — root cause was `overflow-y-auto` on the modal's content wrapper clipping the popover (not a z-index issue as first suspected); removed the scroll wrapper since the content is only 3 short rows
+- Follow-up sizing pass: bumped the 3 header icons 28px→36px buttons / 15px→20px glyphs, then tightened header padding (`py-2`→`py-1`) and icon gap (`gap-3`→`gap-1.5`) back down after the bigger icons made the bar feel over-padded
+
+**Right sidebar — collapsible watchlist:**
+- Replaced the always-visible MarketInfo/SymbolList/WhaleTicker panel with a collapsed-by-default layout: a slim icon rail (`SidebarRail.tsx`) sits at the edge, and its watchlist icon toggles the exact same panel open/closed
+- Fixed watchlist search, which was actually broken: it only filtered a hardcoded 15-symbol array client-side, so searching anything outside that list (e.g. "SHIB", "PEPE") returned nothing — even though the backend's `/symbols/search` endpoint already worked fine and covered every Binance pair. Wired the search box to that endpoint (300ms debounce, filtered to USDT pairs for consistency with the rest of the app)
+- Added a persisted `watchlistStore` (localStorage) holding the coin list; search results show a **+** button to add a coin to it (swaps to a checkmark once added)
+
+**Left drawing toolbar — icon consistency:**
+- The tools below the Prediction & Measurement group (Measure, Zoom In, Pin, Eye/Eye-off, Lock/Unlock, favorites Star, Trash) were rendering at their old intrinsic 13–18px SVG sizes instead of the 20px the rest of the toolbar already used — bumped all of them to 20px without touching any button/padding size
+- Removed the extra divider lines between the Cursor / Trend Line / Shape / Annotation buttons so they sit at the same tight `gap-1` spacing as the bottom utility tools, instead of the wider divider-separated gaps they had before
+
+**Next Session Tasks:**
+- SMC: mark zones as mitigated once price re-enters (still outstanding from Session 4)
+- Consider a `/ws/smc/{symbol}/{interval}` push stream to replace the 5s REST poll
+- Watchlist: no remove/delete affordance yet — only adding via search is wired up
+- UI general cleanup and improvements
+- Prepare for client demo
