@@ -15,6 +15,7 @@ interface MarketState {
   setActiveInterval: (interval: CandleInterval) => void;
   setCandles: (candles: Candle[]) => void;
   appendCandle: (candle: Candle) => void;
+  prependCandles: (older: Candle[]) => void;
   setLoading: (v: boolean) => void;
 }
 
@@ -38,6 +39,14 @@ export const useMarketStore = create<MarketState>((set) => ({
         return { candles: [...state.candles.slice(0, -1), candle] };
       }
       return { candles: [...state.candles, candle].slice(-2000) };
+    }),
+  prependCandles: (older) =>
+    set((state) => {
+      if (older.length === 0) return {};
+      const firstT = state.candles[0]?.t;
+      const filtered = firstT !== undefined ? older.filter((c) => c.t < firstT) : older;
+      if (filtered.length === 0) return {};
+      return { candles: [...filtered, ...state.candles] };
     }),
   setLoading: (isLoading) => set({ isLoading }),
 }));

@@ -47,7 +47,15 @@ export function TradingChart({ sharedChartRef, sharedSeriesRef }: TradingChartPr
   const [currentPrice, setCurrentPrice] = useState<number | null>(null);
   const [connected, setConnected] = useState(false);
 
-  const { activeSymbol, activeInterval, setCandles, appendCandle } = useMarketStore();
+  // Scroll-back pagination state — refs so the logical-range-change listener
+  // (subscribed once, on chart mount) always sees the latest values without
+  // having to be re-subscribed on every symbol/interval/WS reconnect.
+  const wsRef = useRef<WebSocket | null>(null);
+  const oldestTimeRef = useRef<number | null>(null);
+  const loadingMoreRef = useRef(false);
+  const reachedStartRef = useRef(false);
+
+  const { activeSymbol, activeInterval, setCandles, appendCandle, prependCandles } = useMarketStore();
   const { onRangeChange, onCrosshairMove } = useChartSync();
   const { visibleOverlays } = useChartStore();
   const candleStyle = useCandleStyleStore();
@@ -93,6 +101,27 @@ export function TradingChart({ sharedChartRef, sharedSeriesRef }: TradingChartPr
       if (range) onRangeChange(range.from as number, range.to as number);
     });
 
+    // Scroll-back pagination: once the visible window nears the oldest loaded
+    // bar, ask the server for another page of older candles over the same WS.
+    // Debounced because setData()'s own "fit content" default plus the
+    // scrollToRealTime() that follows it both fire this same event in quick
+    // succession right after every historical load — acting on the first
+    // (transient, far-left) range instead of the settled one would trigger a
+    // spurious loadMore on every page load / symbol switch.
+    let loadMoreDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+    chart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+      if (loadMoreDebounceTimer) clearTimeout(loadMoreDebounceTimer);
+      if (!range || range.from > 50) return;
+      loadMoreDebounceTimer = setTimeout(() => {
+        if (loadingMoreRef.current || reachedStartRef.current) return;
+        const oldest = oldestTimeRef.current;
+        const socket = wsRef.current;
+        if (oldest == null || !socket || socket.readyState !== WebSocket.OPEN) return;
+        loadingMoreRef.current = true;
+        socket.send(JSON.stringify({ type: 'loadMore', before: oldest }));
+      }, 200);
+    });
+
     chart.subscribeCrosshairMove((param) => {
       const price = param.seriesData.get(series);
       onCrosshairMove(
@@ -116,6 +145,7 @@ export function TradingChart({ sharedChartRef, sharedSeriesRef }: TradingChartPr
     observer.observe(containerRef.current);
 
     return () => {
+      if (loadMoreDebounceTimer) clearTimeout(loadMoreDebounceTimer);
       observer.disconnect();
       chart.remove();
       chartRef.current = null;
@@ -170,6 +200,9 @@ export function TradingChart({ sharedChartRef, sharedSeriesRef }: TradingChartPr
     seriesRef.current?.setData([]);
     setCurrentPrice(null);
     setConnected(false);
+    oldestTimeRef.current = null;
+    loadingMoreRef.current = false;
+    reachedStartRef.current = false;
 
     let ws: WebSocket | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -179,6 +212,7 @@ export function TradingChart({ sharedChartRef, sharedSeriesRef }: TradingChartPr
       if (stopped) return;
       const url = `${WS_BASE}/ws/candles/${activeSymbol}/${activeInterval}`;
       ws = new WebSocket(url);
+      wsRef.current = ws;
 
       ws.onopen = () => setConnected(true);
 
@@ -192,6 +226,8 @@ export function TradingChart({ sharedChartRef, sharedSeriesRef }: TradingChartPr
 
           if (msg.type === 'historical' && msg.candles) {
             setCandles(msg.candles);
+            oldestTimeRef.current = msg.candles[0]?.t ?? null;
+            reachedStartRef.current = msg.candles.length === 0;
             if (seriesRef.current) {
               seriesRef.current.setData(
                 msg.candles.map((c) => ({
@@ -202,10 +238,70 @@ export function TradingChart({ sharedChartRef, sharedSeriesRef }: TradingChartPr
                   close: c.c,
                 }))
               );
-              chartRef.current?.timeScale().scrollToRealTime();
+              // scrollToRealTime() alone isn't reliable here: if the user had
+              // zoomed to an extreme bar spacing on a *previous* symbol, that
+              // zoom carries over (the chart instance isn't recreated on
+              // switch), and scrollToRealTime() can land on a stale position
+              // instead of the new dataset's actual last bar. Set the visible
+              // range explicitly from the new data's own length instead, which
+              // doesn't depend on whatever zoom state the chart was already in.
+              const total = msg.candles.length;
+              if (total > 0) {
+                const visibleBars = 100;
+                chartRef.current?.timeScale().setVisibleLogicalRange({
+                  from: Math.max(0, total - visibleBars),
+                  to: total - 1 + 5,
+                });
+              }
             }
             const last = msg.candles.at(-1);
             if (last) setCurrentPrice(last.c);
+          } else if (msg.type === 'historical_prepend' && msg.candles) {
+            const older = msg.candles;
+            loadingMoreRef.current = false;
+
+            if (older.length === 0) {
+              reachedStartRef.current = true;
+              return;
+            }
+
+            const beforeCount = useMarketStore.getState().candles.length;
+            prependCandles(older);
+            const merged = useMarketStore.getState().candles;
+            const added = merged.length - beforeCount;
+
+            if (added <= 0) {
+              // Every returned candle was already loaded — nothing new to show,
+              // treat it the same as having reached the start to avoid
+              // re-requesting the same page on every subsequent scroll tick.
+              reachedStartRef.current = true;
+              return;
+            }
+
+            oldestTimeRef.current = merged[0]?.t ?? oldestTimeRef.current;
+
+            if (seriesRef.current && chartRef.current) {
+              // Capture the current view before setData, since replacing the
+              // series data resets the visible range — then restore it shifted
+              // by however many bars were just prepended, so the user's scroll
+              // position doesn't jump.
+              const prevRange = chartRef.current.timeScale().getVisibleLogicalRange();
+              seriesRef.current.setData(
+                merged.map((c) => ({
+                  time: Math.floor(c.t / 1000) as unknown as import('lightweight-charts').Time,
+                  open: c.o,
+                  high: c.h,
+                  low: c.l,
+                  close: c.c,
+                }))
+              );
+              if (prevRange) {
+                chartRef.current.timeScale().setVisibleLogicalRange({
+                  from: prevRange.from + added,
+                  to: prevRange.to + added,
+                });
+              }
+            }
           } else if (msg.type === 'update' && msg.candle) {
             const c = msg.candle;
             appendCandle(c);
@@ -243,9 +339,10 @@ export function TradingChart({ sharedChartRef, sharedSeriesRef }: TradingChartPr
       stopped = true;
       if (reconnectTimer) clearTimeout(reconnectTimer);
       ws?.close();
+      wsRef.current = null;
       setConnected(false);
     };
-  }, [activeSymbol, activeInterval, setCandles, appendCandle]);
+  }, [activeSymbol, activeInterval, setCandles, appendCandle, prependCandles]);
 
   return (
     <div className="relative w-full h-full z-10">

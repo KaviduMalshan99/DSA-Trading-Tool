@@ -212,11 +212,14 @@ export function DeltaPanel({ sharedChartRef }: DeltaPanelProps) {
               bars.map((b) => ({ time: toSec(b.time), value: b.cvd }))
             );
 
-            // Align time scale with main chart after data loads
-            const mainRange = sharedChartRef.current?.timeScale().getVisibleLogicalRange();
-            if (mainRange) {
-              chartRef.current?.timeScale().setVisibleLogicalRange(mainRange);
-            }
+            // No manual "align to main chart" step here: the mount effect's
+            // onMainRange subscription already re-syncs this chart whenever the
+            // main chart's range changes (including its own post-load
+            // scrollToRealTime()). Doing it manually here raced that subscription
+            // — if this historical payload resolved after the main chart had
+            // already scrolled to "now", reading+reapplying the main chart's range
+            // echoed back through the unguarded write path and could snap the main
+            // chart back to a stale (often much older) position.
 
             const last = bars.at(-1);
             if (last) {
