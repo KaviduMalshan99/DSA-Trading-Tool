@@ -78,8 +78,8 @@ export function FavoritesToolbar() {
         left: dragPos.x,
         top: dragPos.y,
         zIndex: 80,
-        background: '#161b22',
-        border: '1px solid #21262d',
+        background: 'var(--bg-panel)',
+        border: '1px solid var(--border-color-soft)',
         borderRadius: 6,
         boxShadow: '0 4px 12px rgba(0,0,0,0.45)',
       }}
@@ -87,12 +87,12 @@ export function FavoritesToolbar() {
       <div
         onMouseDown={onGripMouseDown}
         title="Drag to move"
-        className="w-5 h-9 flex items-center justify-center cursor-grab text-[#8b949e] hover:text-white"
+        className="w-5 h-9 flex items-center justify-center cursor-grab text-[var(--text-muted)] hover:text-[var(--text-primary)]"
       >
         <GripIcon />
       </div>
 
-      <div className="w-px h-5 bg-[#21262d] mx-0.5" />
+      <div className="w-px h-5 bg-[var(--border-color-soft)] mx-0.5" />
 
       {favoriteTools.map((tool) => (
         <button
@@ -102,20 +102,20 @@ export function FavoritesToolbar() {
           className={`
             w-9 h-9 flex items-center justify-center rounded transition-colors [&_svg]:w-5 [&_svg]:h-5
             ${activeTool === tool
-              ? 'bg-[#2196F3] text-white'
-              : 'text-[#8b949e] hover:text-white hover:bg-[#21262d]'}
+              ? 'bg-[var(--accent)] text-white'
+              : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'}
           `}
         >
           {ALL_TOOL_ICON[tool]}
         </button>
       ))}
 
-      <div className="w-px h-5 bg-[#21262d] mx-0.5" />
+      <div className="w-px h-5 bg-[var(--border-color-soft)] mx-0.5" />
 
       <button
         title="Close Favorites Toolbar"
         onClick={toggleFavoritesBar}
-        className="w-6 h-6 flex items-center justify-center rounded text-[#8b949e] hover:text-white hover:bg-[#21262d]"
+        className="w-6 h-6 flex items-center justify-center rounded text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
       >
         <CloseIcon />
       </button>

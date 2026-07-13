@@ -228,12 +228,12 @@ export function WhaleMarkers({ sharedChartRef, sharedSeriesRef }: WhaleMarkersPr
           className="fixed z-50 pointer-events-none select-none"
           style={{ left: tooltip.clientX + 14, top: tooltip.clientY - 28 }}
         >
-          <div className="bg-[#1a1a2e] border border-[#30363d] rounded px-2 py-1 text-xs font-mono text-white shadow-lg whitespace-nowrap">
+          <div className="bg-[var(--bg-panel-alt)] border border-[var(--border-color)] rounded px-2 py-1 text-xs font-mono text-[var(--text-primary)] shadow-lg whitespace-nowrap">
             <span className={tooltip.trade.side === 'buy' ? 'text-[#00ff88]' : 'text-[#ff4444]'}>
               {tooltip.trade.side.toUpperCase()}
             </span>
             {' '}{fmtNotional(tooltip.trade.notional)}
-            <span className="text-[#6b7280] ml-1">
+            <span className="text-[var(--text-muted)] ml-1">
               @ {tooltip.trade.price.toLocaleString('en-US', { maximumFractionDigits: 2 })}
             </span>
           </div>

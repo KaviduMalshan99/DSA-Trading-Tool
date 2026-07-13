@@ -57,24 +57,24 @@ export function FibSettingsModal({ fib, onClose }: Props) {
     >
       <div
         className="flex flex-col"
-        style={{ width: 420, maxHeight: '85vh', background: '#1E222D', borderRadius: 8, boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }}
+        style={{ width: 420, maxHeight: '85vh', background: 'var(--bg-panel-alt)', borderRadius: 8, boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }}
       >
         {/* header */}
-        <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid #2a2e39' }}>
-          <span className="text-[#d1d4dc] font-medium">Fib Retracement</span>
-          <button onClick={handleCancel} className="text-[#8b949e] hover:text-white text-lg leading-none">×</button>
+        <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid var(--border-color-softer)' }}>
+          <span className="text-[var(--text-secondary)] font-medium">Fib Retracement</span>
+          <button onClick={handleCancel} className="text-[var(--text-muted)] hover:text-[var(--text-primary)] text-lg leading-none">×</button>
         </div>
 
         {/* tabs */}
-        <div className="flex gap-4 px-4 pt-2" style={{ borderBottom: '1px solid #2a2e39' }}>
+        <div className="flex gap-4 px-4 pt-2" style={{ borderBottom: '1px solid var(--border-color-softer)' }}>
           {(['Style', 'Coordinates', 'Visibility'] as Tab[]).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
               className="pb-2 text-sm"
               style={{
-                color: tab === t ? '#ffffff' : '#8b949e',
-                borderBottom: tab === t ? '2px solid #2196F3' : '2px solid transparent',
+                color: tab === t ? 'var(--text-primary)' : 'var(--text-muted)',
+                borderBottom: tab === t ? '2px solid var(--accent)' : '2px solid transparent',
               }}
             >
               {t}
@@ -87,7 +87,7 @@ export function FibSettingsModal({ fib, onClose }: Props) {
           {tab === 'Style' && (
             <div className="flex flex-col gap-4">
               <div className="flex items-center justify-between">
-                <label className="flex items-center gap-2 text-sm text-[#d1d4dc]">
+                <label className="flex items-center gap-2 text-sm text-[var(--text-secondary)]">
                   <input
                     type="checkbox"
                     checked={fib.lineVisible !== false}
@@ -103,7 +103,7 @@ export function FibSettingsModal({ fib, onClose }: Props) {
               </div>
 
               <div className="flex items-center justify-between">
-                <span className="text-sm text-[#d1d4dc]">Levels line</span>
+                <span className="text-sm text-[var(--text-secondary)]">Levels line</span>
                 <div className="flex items-center gap-2">
                   <MiniDashPicker dash={fib.levelDash ?? 'dashed'} onChange={(d) => patch({ levelDash: d })} />
                   <MiniWidthPicker width={fib.levelWidth ?? 1} onChange={(w) => patch({ levelWidth: w })} />
@@ -111,12 +111,12 @@ export function FibSettingsModal({ fib, onClose }: Props) {
               </div>
 
               <div className="flex items-center justify-between">
-                <span className="text-sm text-[#d1d4dc]">Extend</span>
+                <span className="text-sm text-[var(--text-secondary)]">Extend</span>
                 <select
                   value={fib.extend ?? 'none'}
                   onChange={(e) => patch({ extend: e.target.value as FibExtend })}
                   className="text-sm px-2 py-1 rounded"
-                  style={{ background: '#131722', color: '#d1d4dc', border: '1px solid #2a2e39' }}
+                  style={{ background: 'var(--bg-app)', color: 'var(--text-secondary)', border: '1px solid var(--border-color-softer)' }}
                 >
                   {EXTEND_OPTIONS.map((o) => (
                     <option key={o.value} value={o.value}>{o.label}</option>
@@ -124,7 +124,7 @@ export function FibSettingsModal({ fib, onClose }: Props) {
                 </select>
               </div>
 
-              <div className="pt-2 grid grid-cols-2 gap-x-4 gap-y-2" style={{ borderTop: '1px solid #2a2e39' }}>
+              <div className="pt-2 grid grid-cols-2 gap-x-4 gap-y-2" style={{ borderTop: '1px solid var(--border-color-softer)' }}>
                 {FIB_LEVELS.map((defaults, i) => {
                   const lvl = levels[i];
                   return (
@@ -144,8 +144,8 @@ export function FibSettingsModal({ fib, onClose }: Props) {
                         disabled={!lvl.enabled}
                         className="w-16 text-xs px-1.5 py-1 rounded font-mono"
                         style={{
-                          background: '#131722', border: '1px solid #2a2e39',
-                          color: lvl.enabled ? '#d1d4dc' : '#484f58',
+                          background: 'var(--bg-app)', border: '1px solid var(--border-color-softer)',
+                          color: lvl.enabled ? 'var(--text-secondary)' : 'var(--border-color)',
                         }}
                       />
                       <MiniColorSwatch color={lvl.color ?? defaults.color} onChange={(c) => setLevel(i, { color: c })} />
@@ -157,30 +157,30 @@ export function FibSettingsModal({ fib, onClose }: Props) {
           )}
 
           {tab === 'Coordinates' && (
-            <div className="flex flex-col gap-4 text-sm text-[#d1d4dc]">
+            <div className="flex flex-col gap-4 text-sm text-[var(--text-secondary)]">
               <div>
-                <div className="text-xs text-[#8b949e] mb-1 uppercase tracking-wide">Point 1 (high)</div>
+                <div className="text-xs text-[var(--text-muted)] mb-1 uppercase tracking-wide">Point 1 (high)</div>
                 <div className="flex items-center gap-2">
-                  <span className="w-12 text-xs text-[#8b949e]">Price</span>
+                  <span className="w-12 text-xs text-[var(--text-muted)]">Price</span>
                   <input
                     type="number"
                     value={fib.priceHigh}
                     onChange={(e) => { const n = Number(e.target.value); if (Number.isFinite(n)) patch({ priceHigh: n }); }}
                     className="flex-1 px-2 py-1 rounded font-mono text-xs"
-                    style={{ background: '#131722', border: '1px solid #2a2e39', color: '#d1d4dc' }}
+                    style={{ background: 'var(--bg-app)', border: '1px solid var(--border-color-softer)', color: 'var(--text-secondary)' }}
                   />
                 </div>
               </div>
               <div>
-                <div className="text-xs text-[#8b949e] mb-1 uppercase tracking-wide">Point 2 (low)</div>
+                <div className="text-xs text-[var(--text-muted)] mb-1 uppercase tracking-wide">Point 2 (low)</div>
                 <div className="flex items-center gap-2">
-                  <span className="w-12 text-xs text-[#8b949e]">Price</span>
+                  <span className="w-12 text-xs text-[var(--text-muted)]">Price</span>
                   <input
                     type="number"
                     value={fib.priceLow}
                     onChange={(e) => { const n = Number(e.target.value); if (Number.isFinite(n)) patch({ priceLow: n }); }}
                     className="flex-1 px-2 py-1 rounded font-mono text-xs"
-                    style={{ background: '#131722', border: '1px solid #2a2e39', color: '#d1d4dc' }}
+                    style={{ background: 'var(--bg-app)', border: '1px solid var(--border-color-softer)', color: 'var(--text-secondary)' }}
                   />
                 </div>
               </div>
@@ -188,14 +188,14 @@ export function FibSettingsModal({ fib, onClose }: Props) {
           )}
 
           {tab === 'Visibility' && (
-            <div className="text-sm text-[#8b949e]">
+            <div className="text-sm text-[var(--text-muted)]">
               Per-timeframe visibility isn't supported yet — this drawing is shown on every timeframe.
             </div>
           )}
         </div>
 
         {/* footer */}
-        <div className="flex items-center justify-between px-4 py-3" style={{ borderTop: '1px solid #2a2e39' }}>
+        <div className="flex items-center justify-between px-4 py-3" style={{ borderTop: '1px solid var(--border-color-softer)' }}>
           <button
             onClick={() => { deleteDrawing(fib.id); onClose(); }}
             className="text-sm text-[#f85149] hover:underline"
@@ -205,13 +205,13 @@ export function FibSettingsModal({ fib, onClose }: Props) {
           <div className="flex gap-2">
             <button
               onClick={handleCancel}
-              className="px-4 py-1.5 rounded text-sm text-[#d1d4dc] hover:bg-[#2a2e39]"
+              className="px-4 py-1.5 rounded text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-hover-alt)]"
             >
               Cancel
             </button>
             <button
               onClick={onClose}
-              className="px-4 py-1.5 rounded text-sm text-white bg-[#2196F3] hover:bg-[#1976D2]"
+              className="px-4 py-1.5 rounded text-sm text-white bg-[var(--accent)] hover:bg-[var(--accent-hover)]"
             >
               Ok
             </button>

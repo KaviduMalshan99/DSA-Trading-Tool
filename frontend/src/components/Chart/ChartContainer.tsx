@@ -33,7 +33,7 @@ export function ChartContainer({ sharedChartRef, sharedSeriesRef, chartAreaRef }
 
       <div className="flex flex-col flex-1 overflow-hidden">
       {/* Main candlestick area — 80% */}
-      <div ref={chartAreaRef} className="relative bg-[#0d1117]" style={{ flex: '4 4 0%', minHeight: 0 }}>
+      <div ref={chartAreaRef} className="relative bg-[var(--bg-app)]" style={{ flex: '4 4 0%', minHeight: 0 }}>
         <TradingChart
           sharedChartRef={sharedChartRef}
           sharedSeriesRef={sharedSeriesRef}
@@ -93,7 +93,7 @@ export function ChartContainer({ sharedChartRef, sharedSeriesRef, chartAreaRef }
 
       {/* Delta panel — 20% */}
       <div
-        className="relative border-t border-[#21262d]"
+        className="relative border-t border-[var(--border-color-soft)]"
         style={{ flex: '1 1 0%', minHeight: 0 }}
       >
         <DeltaPanel sharedChartRef={sharedChartRef} />

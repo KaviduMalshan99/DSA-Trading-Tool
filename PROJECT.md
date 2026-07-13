@@ -101,7 +101,8 @@ DSA-Trading-Tool/
 │   │   ├── store/
 │   │   │   ├── marketStore.ts         # activeSymbol, interval, candles
 │   │   │   ├── chartStore.ts          # visibleOverlays, crosshair, range
-│   │   │   └── socketStore.ts         # WebSocket channel connection states
+│   │   │   ├── socketStore.ts         # WebSocket channel connection states
+│   │   │   └── themeStore.ts          # dark/light theme, localStorage-persisted
 │   │   ├── services/
 │   │   │   ├── api.ts                 # Typed REST wrappers (fetch)
 │   │   │   └── socket.ts              # Auto-reconnecting WebSocket client
@@ -205,7 +206,8 @@ DSA-Trading-Tool/
 - [ ] Symbol search + market switcher (crypto / forex / stocks)
 - [ ] Interval switching (1m → 1d) with data reload
 - [ ] Performance optimisation (canvas throttle, React memo)
-- [ ] Responsive layout + dark theme polish
+- [x] Dark/light theme toggle — see Session 7
+- [ ] Responsive layout polish
 
 ### Sprint 5 — Production Hardening (Week 9–10)
 - [ ] Alembic migrations
@@ -296,7 +298,7 @@ docker compose up postgres redis
 | FastAPI main app | **Done** | CORS, lifespan wired |
 | Background worker | **Done** | Signal-aware shutdown |
 | Frontend types | **Done** | market.ts + analytics.ts |
-| Zustand stores | **Done** | market, chart, socket, candleStyle, watchlist stores |
+| Zustand stores | **Done** | market, chart, socket, candleStyle, watchlist, theme stores |
 | Socket service | **Done** | Auto-reconnect, per-channel |
 | API service | **Done** | Typed REST wrappers |
 | Hooks | **Done** | useCandles, useMarketSocket, useChartSync |
@@ -310,7 +312,8 @@ docker compose up postgres redis
 | SymbolList | ✅ Done | Live backend symbol search (was a hardcoded-list filter), + button adds to a persisted watchlist |
 | MarketInfo | ✅ Done | Real 24h stats from Binance ticker REST API |
 | SidebarRail | ✅ Done | Collapsible watchlist rail — icon toggles the symbol/market-info panel |
-| Toolbar (header) | ✅ Done | Snapshot menu (download/copy/copy-link/open-in-tab), full screen toggle, candle color settings modal |
+| Toolbar (header) | ✅ Done | Snapshot menu (download/copy/copy-link/open-in-tab), full screen toggle, candle color + theme settings modal |
+| Dark/light theme | ✅ Done | CSS-variable token system + `themeStore`, toggle in Settings → Appearance, see Session 7 |
 | Timeframe switching | ✅ Done | All intervals 1m to 1M |
 | Database PostgreSQL | ✅ Done | Docker Compose, port conflict documented |
 | docker-compose.yml | **Done** | 4-service stack |
@@ -479,6 +482,27 @@ docker compose up postgres redis
 **Left drawing toolbar — icon consistency:**
 - The tools below the Prediction & Measurement group (Measure, Zoom In, Pin, Eye/Eye-off, Lock/Unlock, favorites Star, Trash) were rendering at their old intrinsic 13–18px SVG sizes instead of the 20px the rest of the toolbar already used — bumped all of them to 20px without touching any button/padding size
 - Removed the extra divider lines between the Cursor / Trend Line / Shape / Annotation buttons so they sit at the same tight `gap-1` spacing as the bottom utility tools, instead of the wider divider-separated gaps they had before
+
+**Next Session Tasks:**
+- SMC: mark zones as mitigated once price re-enters (still outstanding from Session 4)
+- Consider a `/ws/smc/{symbol}/{interval}` push stream to replace the 5s REST poll
+- Watchlist: no remove/delete affordance yet — only adding via search is wired up
+- UI general cleanup and improvements
+- Prepare for client demo
+
+---
+
+### Session 7 — July 13, 2026
+
+**Dark/light theme toggle:**
+- New `themeStore.ts` (localStorage-persisted, same pattern as `candleStyleStore`) holding `theme: 'dark' | 'light'`, applied as a `data-theme` attribute on `<html>` — set eagerly at module load (before first React render) to avoid a flash of the wrong theme on refresh
+- `index.css` now defines the app's color palette as CSS custom properties under `:root[data-theme='dark']` / `:root[data-theme='light']` (`--bg-app`, `--bg-panel`, `--bg-panel-alt`, `--bg-hover`, `--border-color` variants, `--text-primary/secondary/tertiary/muted`, `--accent`, scrollbar colors, plus chart-specific `--chart-grid/text/border/crosshair` tokens)
+- Toggle lives in the existing Settings modal (`ChartSettingsModal.tsx`) under a new "Appearance" section, above "Candles"
+- Migrated every hardcoded chrome color (header, chart toolbar, drawing toolbar + style toolbar, Fibonacci settings modal, sidebar rail, watchlist/market info panel, delta panel, status bar, whale ticker + tooltip) to the CSS variable tokens
+- `TradingChart.tsx` and `DeltaPanel.tsx` (native Lightweight Charts canvases) re-skin their grid/axis/crosshair colors via `chart.applyOptions()` on theme change, since the charting library can't read CSS custom properties directly — chart is *not* recreated on toggle, so zoom/pan state and loaded data survive the switch
+
+**Scope decision — chrome vs. content colors:**
+- Deliberately left unthemed: candle up/down colors (`candleStyleStore`), drawing-tool color swatches/palettes, buy/sell/bullish/bearish colors (footprint, whale markers, delta histogram, volume profile POC/VAH/VAL), and DrawingCanvas's floating measurement/range-label chips — these carry semantic meaning or are already user-customizable, same principle as leaving candle colors alone. Matches how TradingView/ThinkorSwim keep those constant across light/dark UI themes.
 
 **Next Session Tasks:**
 - SMC: mark zones as mitigated once price re-enters (still outstanding from Session 4)

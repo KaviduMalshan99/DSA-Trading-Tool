@@ -17,12 +17,12 @@ function WatchlistIcon() {
 
 export function SidebarRail({ open, onToggle }: Props) {
   return (
-    <div className="w-12 flex flex-col items-center py-2 gap-1 bg-[#0d1117] border-l border-[#30363d] flex-shrink-0">
+    <div className="w-12 flex flex-col items-center py-2 gap-1 bg-[var(--bg-app)] border-l border-[var(--border-color)] flex-shrink-0">
       <button
         onClick={onToggle}
         title="Watchlist"
         className={`w-9 h-9 flex items-center justify-center rounded transition-colors ${
-          open ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white hover:bg-[#21262d]'
+          open ? 'bg-blue-600 text-white' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'
         }`}
       >
         <WatchlistIcon />

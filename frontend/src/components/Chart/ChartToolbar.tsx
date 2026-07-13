@@ -13,10 +13,10 @@ export function ChartToolbar() {
   const { visibleOverlays, toggleOverlay } = useChartStore();
 
   return (
-    <div className="flex items-center gap-2 px-3 py-1.5 bg-[#161b22] border-b border-[#30363d]">
+    <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--bg-panel)] border-b border-[var(--border-color)]">
       <TimeframeDropdown />
 
-      <div className="w-px h-4 bg-[#30363d] mx-1" />
+      <div className="w-px h-4 bg-[var(--border-color)] mx-1" />
 
       <div className="flex gap-1">
         {OVERLAYS.map(({ key, label }) => (
@@ -26,7 +26,7 @@ export function ChartToolbar() {
             className={`px-2 py-0.5 rounded text-xs font-medium transition-colors ${
               visibleOverlays.has(key)
                 ? 'bg-emerald-700 text-white'
-                : 'text-gray-400 hover:text-white hover:bg-[#21262d]'
+                : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'
             }`}
           >
             {label}

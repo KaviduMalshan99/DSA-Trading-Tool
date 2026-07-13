@@ -61,9 +61,9 @@ export function SymbolList() {
   const list = isSearching ? results : watchlist;
 
   return (
-    <div className="flex flex-col h-full bg-[#0d1117] border-r border-[#30363d]">
+    <div className="flex flex-col h-full bg-[var(--bg-app)] border-r border-[var(--border-color)]">
       {/* Market tabs */}
-      <div className="flex gap-1 p-2 border-b border-[#30363d]">
+      <div className="flex gap-1 p-2 border-b border-[var(--border-color)]">
         {MARKETS.map((m) => (
           <button
             key={m}
@@ -71,7 +71,7 @@ export function SymbolList() {
             className={`flex-1 py-1 rounded text-xs capitalize font-medium transition-colors ${
               activeMarket === m
                 ? 'bg-blue-600 text-white'
-                : 'text-gray-400 hover:bg-[#21262d]'
+                : 'text-[var(--text-muted)] hover:bg-[var(--bg-hover)]'
             }`}
           >
             {m}
@@ -86,15 +86,15 @@ export function SymbolList() {
             placeholder="Search..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="m-2 px-2 py-1 text-sm bg-[#161b22] border border-[#30363d] rounded text-gray-300 placeholder-gray-600 outline-none focus:border-blue-500"
+            className="m-2 px-2 py-1 text-sm bg-[var(--bg-panel)] border border-[var(--border-color)] rounded text-[var(--text-secondary)] outline-none focus:border-blue-500 themed-placeholder"
           />
 
           <div className="flex-1 overflow-y-auto">
             {isSearching && searching && (
-              <div className="px-3 py-2 text-xs text-gray-600">Searching…</div>
+              <div className="px-3 py-2 text-xs text-[var(--text-muted)]">Searching…</div>
             )}
             {isSearching && !searching && list.length === 0 && (
-              <div className="px-3 py-2 text-xs text-gray-600">No matches</div>
+              <div className="px-3 py-2 text-xs text-[var(--text-muted)]">No matches</div>
             )}
             {list.map((sym) => {
               const inWatchlist = watchlist.includes(sym);
@@ -105,7 +105,7 @@ export function SymbolList() {
                   className={`w-full flex items-center justify-between gap-2 px-3 py-2 text-sm font-mono transition-colors border-l-2 cursor-pointer ${
                     activeSymbol === sym
                       ? 'bg-blue-600/20 text-blue-300 border-blue-500'
-                      : 'text-gray-300 hover:bg-[#161b22] border-transparent'
+                      : 'text-[var(--text-secondary)] hover:bg-[var(--bg-panel)] border-transparent'
                   }`}
                 >
                   <span>{sym}</span>
@@ -115,7 +115,7 @@ export function SymbolList() {
                       disabled={inWatchlist}
                       title={inWatchlist ? 'Already in watchlist' : 'Add to watchlist'}
                       className={`w-5 h-5 flex items-center justify-center rounded-full flex-shrink-0 ${
-                        inWatchlist ? 'text-emerald-500' : 'text-gray-500 hover:text-white hover:bg-blue-600'
+                        inWatchlist ? 'text-emerald-500' : 'text-[var(--text-muted)] hover:text-white hover:bg-blue-600'
                       }`}
                     >
                       {inWatchlist ? <CheckIcon /> : <PlusIcon />}
@@ -129,8 +129,8 @@ export function SymbolList() {
       ) : (
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center">
-            <div className="text-gray-500 text-sm capitalize font-medium mb-1">{activeMarket}</div>
-            <div className="text-gray-600 text-xs">Coming Soon</div>
+            <div className="text-[var(--text-muted)] text-sm capitalize font-medium mb-1">{activeMarket}</div>
+            <div className="text-[var(--text-muted)] text-xs">Coming Soon</div>
           </div>
         </div>
       )}

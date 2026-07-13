@@ -50,16 +50,16 @@ export function MarketInfo() {
   const displayPrice = crosshairPrice ?? price;
 
   return (
-    <div className="p-3 border-b border-[#30363d] bg-[#0d1117]">
-      <div className="text-xs text-gray-500 uppercase tracking-wider mb-1">
+    <div className="p-3 border-b border-[var(--border-color)] bg-[var(--bg-app)]">
+      <div className="text-xs text-[var(--text-muted)] uppercase tracking-wider mb-1">
         {activeSymbol}
       </div>
 
       {loading ? (
-        <div className="text-gray-600 text-sm">Loading...</div>
+        <div className="text-[var(--text-muted)] text-sm">Loading...</div>
       ) : displayPrice !== null ? (
         <>
-          <div className="text-xl font-mono font-bold text-white">
+          <div className="text-xl font-mono font-bold text-[var(--text-primary)]">
             {fmt(displayPrice)}
           </div>
 
@@ -71,14 +71,14 @@ export function MarketInfo() {
           )}
 
           <div className="mt-2 grid grid-cols-2 gap-x-2 gap-y-0.5 text-xs">
-            <span className="text-gray-500">24H H</span>
-            <span className="text-gray-300 font-mono text-right">{high !== null ? fmt(high) : '—'}</span>
-            <span className="text-gray-500">24H L</span>
-            <span className="text-gray-300 font-mono text-right">{low !== null ? fmt(low) : '—'}</span>
+            <span className="text-[var(--text-muted)]">24H H</span>
+            <span className="text-[var(--text-secondary)] font-mono text-right">{high !== null ? fmt(high) : '—'}</span>
+            <span className="text-[var(--text-muted)]">24H L</span>
+            <span className="text-[var(--text-secondary)] font-mono text-right">{low !== null ? fmt(low) : '—'}</span>
           </div>
         </>
       ) : (
-        <div className="text-gray-500 text-sm">No data</div>
+        <div className="text-[var(--text-muted)] text-sm">No data</div>
       )}
     </div>
   );

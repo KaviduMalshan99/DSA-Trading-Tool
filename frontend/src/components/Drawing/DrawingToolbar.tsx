@@ -495,10 +495,10 @@ function FavoritableMenuItem({
   onSelect: () => void;
 }) {
   return (
-    <div key={tool} className="w-full flex items-center gap-1 pl-3 pr-1 group/item hover:bg-[#2196F3]">
+    <div key={tool} className="w-full flex items-center gap-1 pl-3 pr-1 group/item hover:bg-[var(--accent)]">
       <button
         onClick={onSelect}
-        className={`flex-1 flex items-center gap-2 py-2 text-sm text-left transition-colors group-hover/item:text-white ${active ? 'text-white' : 'text-[#d1d4dc]'}`}
+        className={`flex-1 flex items-center gap-2 py-2 text-sm text-left transition-colors group-hover/item:text-white ${active ? 'text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}
       >
         <span className="flex-shrink-0">{icon}</span>
         <span className="flex-1">{label}</span>
@@ -507,7 +507,7 @@ function FavoritableMenuItem({
       <button
         title={favorite ? 'Remove from Favorites' : 'Add to Favorites'}
         onClick={(e) => { e.stopPropagation(); onToggleFavorite(); }}
-        className="flex-shrink-0 w-6 h-7 flex items-center justify-center rounded text-[#8b949e] hover:text-[#FFC107] group-hover/item:text-white"
+        className="flex-shrink-0 w-6 h-7 flex items-center justify-center rounded text-[var(--text-muted)] hover:text-[#FFC107] group-hover/item:text-white"
       >
         {favorite ? <StarFilledIcon /> : <StarIcon />}
       </button>
@@ -558,7 +558,7 @@ export function DrawingToolbar() {
   }, [cursorDropdownOpen, trendDropdownOpen, shapeDropdownOpen, annotationDropdownOpen, positionRangeDropdownOpen, deleteMenuOpen]);
 
   return (
-    <div className="flex flex-col items-center gap-1 py-2 px-1 bg-[#161b22] border-r border-[#21262d] select-none"
+    <div className="flex flex-col items-center gap-1 py-2 px-1 bg-[var(--bg-panel)] border-r border-[var(--border-color-soft)] select-none"
          style={{ width: 48 }}>
       <div className="relative group" ref={cursorGroupRef}>
         <button
@@ -567,8 +567,8 @@ export function DrawingToolbar() {
           className={`
             relative w-9 h-9 flex items-center justify-center rounded transition-colors [&_svg]:w-5 [&_svg]:h-5
             ${isCursorGroupActive
-              ? 'bg-[#2196F3] text-white'
-              : 'text-[#8b949e] hover:text-white hover:bg-[#21262d]'}
+              ? 'bg-[var(--accent)] text-white'
+              : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'}
           `}
         >
           {CURSOR_ICON[lastCursorMode]}
@@ -580,7 +580,7 @@ export function DrawingToolbar() {
           className={`
             absolute bottom-0 right-0 w-3 h-3 flex items-center justify-center
             opacity-0 group-hover:opacity-100 transition-opacity
-            ${isCursorGroupActive ? 'text-white' : 'text-[#8b949e] hover:text-white'}
+            ${isCursorGroupActive ? 'text-white' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'}
           `}
         >
           <CornerArrow />
@@ -592,7 +592,7 @@ export function DrawingToolbar() {
             style={{
               zIndex: 100,
               width: 180,
-              background: '#1E222D',
+              background: 'var(--bg-panel-alt)',
               borderRadius: 4,
               boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
             }}
@@ -603,8 +603,8 @@ export function DrawingToolbar() {
                 onClick={() => { setTool(mode); setCursorDropdownOpen(false); }}
                 className={`
                   w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors
-                  ${activeTool === mode ? 'text-white' : 'text-[#d1d4dc]'}
-                  hover:bg-[#2196F3] hover:text-white
+                  ${activeTool === mode ? 'text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}
+                  hover:bg-[var(--accent)] hover:text-white
                 `}
               >
                 <span className="flex-shrink-0">{CURSOR_ICON[mode]}</span>
@@ -623,8 +623,8 @@ export function DrawingToolbar() {
           className={`
             relative w-9 h-9 flex items-center justify-center rounded transition-colors [&_svg]:w-5 [&_svg]:h-5
             ${isTrendGroupActive
-              ? 'bg-[#2196F3] text-white'
-              : 'text-[#8b949e] hover:text-white hover:bg-[#21262d]'}
+              ? 'bg-[var(--accent)] text-white'
+              : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'}
           `}
         >
           {TREND_ICON[lastTrendTool]}
@@ -636,7 +636,7 @@ export function DrawingToolbar() {
           className={`
             absolute bottom-0 right-0 w-3 h-3 flex items-center justify-center
             opacity-0 group-hover:opacity-100 transition-opacity
-            ${isTrendGroupActive ? 'text-white' : 'text-[#8b949e] hover:text-white'}
+            ${isTrendGroupActive ? 'text-white' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'}
           `}
         >
           <CornerArrow />
@@ -648,7 +648,7 @@ export function DrawingToolbar() {
             style={{
               zIndex: 100,
               width: 224,
-              background: '#1E222D',
+              background: 'var(--bg-panel-alt)',
               borderRadius: 4,
               boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
             }}
@@ -676,8 +676,8 @@ export function DrawingToolbar() {
           className={`
             relative w-9 h-9 flex items-center justify-center rounded transition-colors [&_svg]:w-5 [&_svg]:h-5
             ${isShapeGroupActive
-              ? 'bg-[#2196F3] text-white'
-              : 'text-[#8b949e] hover:text-white hover:bg-[#21262d]'}
+              ? 'bg-[var(--accent)] text-white'
+              : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'}
           `}
         >
           {SHAPE_ICON[lastShapeTool]}
@@ -689,7 +689,7 @@ export function DrawingToolbar() {
           className={`
             absolute bottom-0 right-0 w-3 h-3 flex items-center justify-center
             opacity-0 group-hover:opacity-100 transition-opacity
-            ${isShapeGroupActive ? 'text-white' : 'text-[#8b949e] hover:text-white'}
+            ${isShapeGroupActive ? 'text-white' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'}
           `}
         >
           <CornerArrow />
@@ -701,7 +701,7 @@ export function DrawingToolbar() {
             style={{
               zIndex: 100,
               width: 224,
-              background: '#1E222D',
+              background: 'var(--bg-panel-alt)',
               borderRadius: 4,
               boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
             }}
@@ -729,8 +729,8 @@ export function DrawingToolbar() {
           className={`
             relative w-9 h-9 flex items-center justify-center rounded transition-colors [&_svg]:w-5 [&_svg]:h-5
             ${isAnnotationGroupActive
-              ? 'bg-[#2196F3] text-white'
-              : 'text-[#8b949e] hover:text-white hover:bg-[#21262d]'}
+              ? 'bg-[var(--accent)] text-white'
+              : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'}
           `}
         >
           {ANNOTATION_ICON[lastAnnotationTool]}
@@ -742,7 +742,7 @@ export function DrawingToolbar() {
           className={`
             absolute bottom-0 right-0 w-3 h-3 flex items-center justify-center
             opacity-0 group-hover:opacity-100 transition-opacity
-            ${isAnnotationGroupActive ? 'text-white' : 'text-[#8b949e] hover:text-white'}
+            ${isAnnotationGroupActive ? 'text-white' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'}
           `}
         >
           <CornerArrow />
@@ -754,7 +754,7 @@ export function DrawingToolbar() {
             style={{
               zIndex: 100,
               width: 200,
-              background: '#1E222D',
+              background: 'var(--bg-panel-alt)',
               borderRadius: 4,
               boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
             }}
@@ -775,7 +775,7 @@ export function DrawingToolbar() {
         )}
       </div>
 
-      <div className="w-6 border-t border-[#21262d] my-1" />
+      <div className="w-6 border-t border-[var(--border-color-soft)] my-1" />
 
       <button
         title={FIB_TOOL.label}
@@ -783,8 +783,8 @@ export function DrawingToolbar() {
         className={`
           w-9 h-9 flex items-center justify-center rounded transition-colors [&_svg]:w-5 [&_svg]:h-5
           ${activeTool === FIB_TOOL.tool
-            ? 'bg-[#2196F3] text-white'
-            : 'text-[#8b949e] hover:text-white hover:bg-[#21262d]'}
+            ? 'bg-[var(--accent)] text-white'
+            : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'}
         `}
       >
         {FIB_TOOL.icon}
@@ -797,8 +797,8 @@ export function DrawingToolbar() {
           className={`
             relative w-9 h-9 flex items-center justify-center rounded transition-colors [&_svg]:w-5 [&_svg]:h-5
             ${isPositionRangeGroupActive
-              ? 'bg-[#2196F3] text-white'
-              : 'text-[#8b949e] hover:text-white hover:bg-[#21262d]'}
+              ? 'bg-[var(--accent)] text-white'
+              : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'}
           `}
         >
           {POSITION_RANGE_ICON[lastPositionRangeTool]}
@@ -810,7 +810,7 @@ export function DrawingToolbar() {
           className={`
             absolute bottom-0 right-0 w-3 h-3 flex items-center justify-center
             opacity-0 group-hover:opacity-100 transition-opacity
-            ${isPositionRangeGroupActive ? 'text-white' : 'text-[#8b949e] hover:text-white'}
+            ${isPositionRangeGroupActive ? 'text-white' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'}
           `}
         >
           <CornerArrow />
@@ -822,7 +822,7 @@ export function DrawingToolbar() {
             style={{
               zIndex: 100,
               width: 210,
-              background: '#1E222D',
+              background: 'var(--bg-panel-alt)',
               borderRadius: 4,
               boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
             }}
@@ -843,7 +843,7 @@ export function DrawingToolbar() {
         )}
       </div>
 
-      <div className="w-6 border-t border-[#21262d] my-1" />
+      <div className="w-6 border-t border-[var(--border-color-soft)] my-1" />
 
       {MEASURE_TOOLS.map(({ tool, label, icon }) => (
         <button
@@ -853,22 +853,22 @@ export function DrawingToolbar() {
           className={`
             w-9 h-9 flex items-center justify-center rounded transition-colors [&_svg]:w-5 [&_svg]:h-5
             ${activeTool === tool
-              ? 'bg-[#2196F3] text-white'
-              : 'text-[#8b949e] hover:text-white hover:bg-[#21262d]'}
+              ? 'bg-[var(--accent)] text-white'
+              : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'}
           `}
         >
           {icon}
         </button>
       ))}
 
-      <div className="w-6 border-t border-[#21262d] my-1" />
+      <div className="w-6 border-t border-[var(--border-color-soft)] my-1" />
 
       <button
         title={keepToolActive ? 'Stay in Drawing Mode: on' : 'Stay in Drawing Mode: off'}
         onClick={toggleKeepToolActive}
         className={`
           w-9 h-9 flex items-center justify-center rounded transition-colors [&_svg]:w-5 [&_svg]:h-5
-          ${keepToolActive ? 'bg-[#2196F3] text-white' : 'text-[#8b949e] hover:text-white hover:bg-[#21262d]'}
+          ${keepToolActive ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'}
         `}
       >
         <PinIcon />
@@ -881,8 +881,8 @@ export function DrawingToolbar() {
         className={`
           w-9 h-9 flex items-center justify-center rounded transition-colors [&_svg]:w-5 [&_svg]:h-5
           ${drawings.length === 0
-            ? 'text-[#30363d] cursor-not-allowed'
-            : drawingsHidden ? 'bg-[#2196F3] text-white' : 'text-[#8b949e] hover:text-white hover:bg-[#21262d]'}
+            ? 'text-[var(--border-color)] cursor-not-allowed'
+            : drawingsHidden ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'}
         `}
       >
         {drawingsHidden ? <EyeOffIcon /> : <EyeIcon />}
@@ -895,8 +895,8 @@ export function DrawingToolbar() {
         className={`
           w-9 h-9 flex items-center justify-center rounded transition-colors [&_svg]:w-5 [&_svg]:h-5
           ${drawings.length === 0
-            ? 'text-[#30363d] cursor-not-allowed'
-            : drawingsLocked ? 'bg-[#2196F3] text-white' : 'text-[#8b949e] hover:text-white hover:bg-[#21262d]'}
+            ? 'text-[var(--border-color)] cursor-not-allowed'
+            : drawingsLocked ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'}
         `}
       >
         {drawingsLocked ? <LockIcon /> : <UnlockIcon />}
@@ -909,14 +909,14 @@ export function DrawingToolbar() {
         className={`
           w-9 h-9 flex items-center justify-center rounded transition-colors [&_svg]:w-5 [&_svg]:h-5
           ${favoriteTools.length === 0
-            ? 'text-[#30363d] cursor-not-allowed'
-            : favoritesBarOpen ? 'bg-[#2196F3] text-white' : 'text-[#8b949e] hover:text-white hover:bg-[#21262d]'}
+            ? 'text-[var(--border-color)] cursor-not-allowed'
+            : favoritesBarOpen ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'}
         `}
       >
         {favoriteTools.length > 0 && favoritesBarOpen ? <StarFilledIcon size={20} /> : <StarIcon size={20} />}
       </button>
 
-      <div className="w-6 border-t border-[#21262d] my-1" />
+      <div className="w-6 border-t border-[var(--border-color-soft)] my-1" />
 
       <div className="relative group" ref={deleteGroupRef}>
         <button
@@ -926,8 +926,8 @@ export function DrawingToolbar() {
           className={`
             relative w-9 h-9 flex items-center justify-center rounded transition-colors [&_svg]:w-5 [&_svg]:h-5
             ${selectedId && !drawingsLocked
-              ? 'text-[#f85149] hover:bg-[#21262d]'
-              : 'text-[#30363d] cursor-not-allowed'}
+              ? 'text-[#f85149] hover:bg-[var(--bg-hover)]'
+              : 'text-[var(--border-color)] cursor-not-allowed'}
           `}
         >
           <TrashIcon />
@@ -940,7 +940,7 @@ export function DrawingToolbar() {
           className={`
             absolute bottom-0 right-0 w-3 h-3 flex items-center justify-center
             opacity-0 group-hover:opacity-100 transition-opacity
-            ${drawings.length > 0 ? 'text-[#8b949e] hover:text-white' : 'text-transparent'}
+            ${drawings.length > 0 ? 'text-[var(--text-muted)] hover:text-[var(--text-primary)]' : 'text-transparent'}
           `}
         >
           <CornerArrow />
@@ -952,7 +952,7 @@ export function DrawingToolbar() {
             style={{
               zIndex: 100,
               width: 180,
-              background: '#1E222D',
+              background: 'var(--bg-panel-alt)',
               borderRadius: 4,
               boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
             }}
@@ -962,7 +962,7 @@ export function DrawingToolbar() {
               disabled={!selectedId || drawingsLocked}
               className={`
                 w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors
-                ${selectedId && !drawingsLocked ? 'text-[#d1d4dc] hover:bg-[#2196F3] hover:text-white' : 'text-[#484f58] cursor-not-allowed'}
+                ${selectedId && !drawingsLocked ? 'text-[var(--text-secondary)] hover:bg-[var(--accent)] hover:text-white' : 'text-[var(--border-color)] cursor-not-allowed'}
               `}
             >
               Remove Selected
@@ -972,7 +972,7 @@ export function DrawingToolbar() {
               disabled={drawings.length === 0 || drawingsLocked}
               className={`
                 w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors
-                ${drawings.length > 0 && !drawingsLocked ? 'text-[#f85149] hover:bg-[#f85149] hover:text-white' : 'text-[#484f58] cursor-not-allowed'}
+                ${drawings.length > 0 && !drawingsLocked ? 'text-[#f85149] hover:bg-[#f85149] hover:text-white' : 'text-[var(--border-color)] cursor-not-allowed'}
               `}
             >
               Remove All Drawings

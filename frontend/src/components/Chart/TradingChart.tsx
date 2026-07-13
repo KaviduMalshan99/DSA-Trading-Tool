@@ -3,8 +3,33 @@ import { createChart, type IChartApi, type ISeriesApi } from 'lightweight-charts
 import { useMarketStore } from '../../store/marketStore';
 import { useChartStore } from '../../store/chartStore';
 import { useCandleStyleStore } from '../../store/candleStyleStore';
+import { useThemeStore, type Theme } from '../../store/themeStore';
 import { useChartSync } from '../../hooks/useChartSync';
 import type { Candle } from '../../types/market';
+
+function chartThemeOptions(theme: Theme) {
+  const grid = theme === 'dark' ? '#161b22' : '#e0e3eb';
+  const text = theme === 'dark' ? '#c9d1d9' : '#4b5563';
+  const border = theme === 'dark' ? '#21262d' : '#d1d4dc';
+  const crosshair = theme === 'dark' ? '#3b82f6' : '#2196f3';
+  const crosshairLabelBg = theme === 'dark' ? '#1e3a5f' : '#d6e8fb';
+  return {
+    layout: {
+      background: { color: 'transparent' },
+      textColor: text,
+    },
+    grid: {
+      vertLines: { color: grid },
+      horzLines: { color: grid },
+    },
+    crosshair: {
+      vertLine: { color: crosshair, labelBackgroundColor: crosshairLabelBg },
+      horzLine: { color: crosshair, labelBackgroundColor: crosshairLabelBg },
+    },
+    rightPriceScale: { borderColor: border },
+    timeScale: { borderColor: border },
+  };
+}
 
 const WS_BASE = import.meta.env.VITE_WS_URL ?? 'ws://localhost:8000';
 
@@ -26,31 +51,25 @@ export function TradingChart({ sharedChartRef, sharedSeriesRef }: TradingChartPr
   const { onRangeChange, onCrosshairMove } = useChartSync();
   const { visibleOverlays } = useChartStore();
   const candleStyle = useCandleStyleStore();
+  const theme = useThemeStore((s) => s.theme);
 
   useEffect(() => {
     if (!containerRef.current) return;
 
+    const themeOpts = chartThemeOptions(theme);
     const chart = createChart(containerRef.current, {
-      layout: {
-        background: { color: 'rgba(13,17,23,0)' },
-        textColor: '#c9d1d9',
-      },
-      grid: {
-        vertLines: { color: '#161b22' },
-        horzLines: { color: '#161b22' },
-      },
+      layout: themeOpts.layout,
+      grid: themeOpts.grid,
       crosshair: {
-        vertLine: { visible: false, color: '#3b82f6', labelBackgroundColor: '#1e3a5f' },
+        vertLine: { visible: false, ...themeOpts.crosshair.vertLine },
         // labelVisible: false — DrawingCanvas draws its own single price label for the
         // cross/dot cursor modes; leaving this at its true default would render a second,
         // overlapping native price tag on the axis alongside our custom one.
-        horzLine: { visible: false, labelVisible: false, color: '#3b82f6', labelBackgroundColor: '#1e3a5f' },
+        horzLine: { visible: false, labelVisible: false, ...themeOpts.crosshair.horzLine },
       },
-      rightPriceScale: {
-        borderColor: '#21262d',
-      },
+      rightPriceScale: themeOpts.rightPriceScale,
       timeScale: {
-        borderColor: '#21262d',
+        ...themeOpts.timeScale,
         timeVisible: true,
         secondsVisible: false,
       },
@@ -105,6 +124,23 @@ export function TradingChart({ sharedChartRef, sharedSeriesRef }: TradingChartPr
       if (sharedSeriesRef) sharedSeriesRef.current = null;
     };
   }, [onRangeChange, onCrosshairMove, sharedChartRef, sharedSeriesRef]);
+
+  // Re-skin the native chart (grid/axis/crosshair colors) on theme change without
+  // recreating the chart, so zoom/pan state and data survive the switch.
+  useEffect(() => {
+    if (!chartRef.current) return;
+    const themeOpts = chartThemeOptions(theme);
+    chartRef.current.applyOptions({
+      layout: themeOpts.layout,
+      grid: themeOpts.grid,
+      crosshair: {
+        vertLine: { visible: false, ...themeOpts.crosshair.vertLine },
+        horzLine: { visible: false, labelVisible: false, ...themeOpts.crosshair.horzLine },
+      },
+      rightPriceScale: themeOpts.rightPriceScale,
+      timeScale: themeOpts.timeScale,
+    });
+  }, [theme]);
 
   // Apply user-configured candle colors; dim body/borders (not wicks) when the
   // footprint overlay is active so its per-price-level text reads clearly.
@@ -214,10 +250,10 @@ export function TradingChart({ sharedChartRef, sharedSeriesRef }: TradingChartPr
   return (
     <div className="relative w-full h-full z-10">
       <div className="absolute top-2 left-3 z-10 flex items-center gap-3 pointer-events-none select-none">
-        <span className="text-[#c9d1d9] text-sm font-semibold tracking-wider">
+        <span className="text-[var(--chart-text)] text-sm font-semibold tracking-wider">
           {activeSymbol}
         </span>
-        <span className="text-[#8b949e] text-xs">{activeInterval}</span>
+        <span className="text-[var(--text-muted)] text-xs">{activeInterval}</span>
         {currentPrice !== null && (
           <span className="text-[#26a641] text-sm font-mono font-bold">
             {currentPrice.toLocaleString('en-US', {

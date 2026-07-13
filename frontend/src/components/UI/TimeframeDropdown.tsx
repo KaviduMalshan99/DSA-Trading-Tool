@@ -35,11 +35,11 @@ export function TimeframeDropdown() {
     <div ref={ref} className="relative">
       <button
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold bg-[#21262d] text-white hover:bg-[#30363d] transition-colors border border-[#30363d] focus:outline-none focus:ring-1 focus:ring-blue-500"
+        className="flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold bg-[var(--bg-hover)] text-[var(--text-primary)] hover:bg-[var(--bg-hover-alt)] transition-colors border border-[var(--border-color)] focus:outline-none focus:ring-1 focus:ring-blue-500"
       >
         <span>{activeInterval}</span>
         <svg
-          className={`w-3 h-3 text-gray-400 transition-transform duration-150 ${open ? 'rotate-180' : ''}`}
+          className={`w-3 h-3 text-[var(--text-muted)] transition-transform duration-150 ${open ? 'rotate-180' : ''}`}
           fill="none"
           viewBox="0 0 24 24"
           stroke="currentColor"
@@ -51,7 +51,7 @@ export function TimeframeDropdown() {
 
       {open && (
         <div
-          className="absolute top-full left-0 mt-1 z-50 rounded-md border border-[#30363d] bg-[#1a1a2e] shadow-2xl py-1 min-w-[110px]"
+          className="absolute top-full left-0 mt-1 z-50 rounded-md border border-[var(--border-color)] bg-[var(--bg-panel-alt)] shadow-2xl py-1 min-w-[110px]"
           style={{ animation: 'tfDropdown 120ms ease-out' }}
         >
           <style>{`
@@ -63,7 +63,7 @@ export function TimeframeDropdown() {
 
           {GROUPS.map((group) => (
             <div key={group.label}>
-              <div className="px-3 pt-2 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-[#6b7280] select-none">
+              <div className="px-3 pt-2 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)] select-none">
                 {group.label}
               </div>
               {group.items.map((iv) => {
@@ -74,8 +74,8 @@ export function TimeframeDropdown() {
                     onClick={() => { setActiveInterval(iv); setOpen(false); }}
                     className={`w-full text-left py-1 text-xs transition-colors border-l-2 ${
                       active
-                        ? 'text-[#3b82f6] border-[#3b82f6] bg-[#1e3a5f]/40 pl-2.5 pr-3'
-                        : 'text-[#e6edf3] border-transparent hover:bg-[#3b82f6]/15 hover:text-white pl-2.5 pr-3'
+                        ? 'text-[var(--accent)] border-[var(--accent)] bg-[var(--accent)]/20 pl-2.5 pr-3'
+                        : 'text-[var(--text-secondary)] border-transparent hover:bg-[var(--accent)]/15 hover:text-white pl-2.5 pr-3'
                     }`}
                   >
                     {iv}

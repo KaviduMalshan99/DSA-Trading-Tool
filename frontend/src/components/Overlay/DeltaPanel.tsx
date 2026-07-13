@@ -1,8 +1,38 @@
 import { useEffect, useRef, useState } from 'react';
 import { createChart, type IChartApi, type ISeriesApi } from 'lightweight-charts';
 import { useMarketStore } from '../../store/marketStore';
+import { useThemeStore, type Theme } from '../../store/themeStore';
 
 const WS_BASE = import.meta.env.VITE_WS_URL ?? 'ws://localhost:8000';
+
+// Mirrors TradingChart.tsx's chartThemeOptions — native lightweight-charts
+// canvas colors can't read CSS custom properties, so we hardcode the
+// per-theme hex pairs that match the design tokens instead.
+function deltaChartThemeOptions(theme: Theme) {
+  const grid = theme === 'dark' ? '#161b22' : '#e0e3eb';
+  const gridHorz = theme === 'dark' ? '#1a2030' : '#e0e3eb';
+  const text = theme === 'dark' ? '#c9d1d9' : '#4b5563';
+  const border = theme === 'dark' ? '#21262d' : '#d1d4dc';
+  const crosshair = theme === 'dark' ? '#3b82f6' : '#2196f3';
+  const crosshairLabelBg = theme === 'dark' ? '#1e3a5f' : '#d6e8fb';
+  return {
+    layout: {
+      background: { color: 'transparent' },
+      textColor: text,
+    },
+    grid: {
+      vertLines: { color: grid },
+      horzLines: { color: gridHorz },
+    },
+    crosshair: {
+      vertLine: { color: crosshair, labelBackgroundColor: crosshairLabelBg },
+      horzLine: { color: crosshair, labelBackgroundColor: crosshairLabelBg },
+    },
+    leftPriceScale: { borderColor: border },
+    rightPriceScale: { borderColor: border },
+    timeScale: { borderColor: border },
+  };
+}
 
 interface DeltaBar {
   time: number;   // ms epoch
@@ -33,35 +63,28 @@ export function DeltaPanel({ sharedChartRef }: DeltaPanelProps) {
   const [currentCvd,   setCurrentCvd]   = useState<number | null>(null);
 
   const { activeSymbol, activeInterval } = useMarketStore();
+  const theme = useThemeStore((s) => s.theme);
 
   // ── Chart initialisation + time-scale sync ────────────────────────────
   useEffect(() => {
     if (!containerRef.current) return;
 
+    const themeOpts = deltaChartThemeOptions(theme);
     const chart = createChart(containerRef.current, {
-      layout: {
-        background: { color: '#0d1117' },
-        textColor: '#c9d1d9',
-      },
-      grid: {
-        vertLines: { color: '#161b22' },
-        horzLines: { color: '#1a2030' },
-      },
-      crosshair: {
-        vertLine: { color: '#3b82f6', labelBackgroundColor: '#1e3a5f' },
-        horzLine: { color: '#3b82f6', labelBackgroundColor: '#1e3a5f' },
-      },
+      layout: themeOpts.layout,
+      grid: themeOpts.grid,
+      crosshair: themeOpts.crosshair,
       leftPriceScale: {
         visible: true,
-        borderColor: '#21262d',
+        borderColor: themeOpts.leftPriceScale.borderColor,
         scaleMargins: { top: 0.05, bottom: 0.05 },
       },
       rightPriceScale: {
-        borderColor: '#21262d',
+        borderColor: themeOpts.rightPriceScale.borderColor,
         scaleMargins: { top: 0.05, bottom: 0.05 },
       },
       timeScale: {
-        borderColor: '#21262d',
+        borderColor: themeOpts.timeScale.borderColor,
         timeVisible: true,
         secondsVisible: false,
       },
@@ -134,6 +157,21 @@ export function DeltaPanel({ sharedChartRef }: DeltaPanelProps) {
       cvdRef.current   = null;
     };
   }, [sharedChartRef]);
+
+  // Re-skin the native chart (grid/axis/crosshair colors) on theme change without
+  // recreating the chart, so zoom/pan state and data survive the switch.
+  useEffect(() => {
+    if (!chartRef.current) return;
+    const themeOpts = deltaChartThemeOptions(theme);
+    chartRef.current.applyOptions({
+      layout: themeOpts.layout,
+      grid: themeOpts.grid,
+      crosshair: themeOpts.crosshair,
+      leftPriceScale: { borderColor: themeOpts.leftPriceScale.borderColor },
+      rightPriceScale: { borderColor: themeOpts.rightPriceScale.borderColor },
+      timeScale: { borderColor: themeOpts.timeScale.borderColor },
+    });
+  }, [theme]);
 
   // ── WebSocket: historical + live delta updates ─────────────────────────
   useEffect(() => {
@@ -227,20 +265,20 @@ export function DeltaPanel({ sharedChartRef }: DeltaPanelProps) {
     <div className="relative w-full h-full">
       {/* Stat overlay */}
       <div className="absolute top-1 left-3 z-10 flex items-center gap-3 pointer-events-none select-none text-xs font-mono">
-        <span className="text-[#8b949e] font-sans">Δ Delta</span>
+        <span className="text-[var(--text-muted)] font-sans">Δ Delta</span>
         {currentDelta !== null && (
           <span className={currentDelta >= 0 ? 'text-[#26a641]' : 'text-[#f85149]'}>
             {fmtNum(currentDelta)}
           </span>
         )}
-        <span className="text-[#8b949e] font-sans ml-1">CVD</span>
+        <span className="text-[var(--text-muted)] font-sans ml-1">CVD</span>
         {currentCvd !== null && (
           <span className="text-[#f0b90b]">{fmtNum(currentCvd)}</span>
         )}
       </div>
 
       {/* Divider label */}
-      <div className="absolute top-1 right-3 z-10 text-[10px] text-[#484f58] select-none pointer-events-none font-sans">
+      <div className="absolute top-1 right-3 z-10 text-[10px] text-[var(--text-muted)] select-none pointer-events-none font-sans">
         {activeSymbol} · {activeInterval}
       </div>
 

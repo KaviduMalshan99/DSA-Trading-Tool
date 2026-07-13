@@ -19,7 +19,7 @@ export default function App() {
   const chartAreaRef    = useRef<HTMLDivElement>(null);
 
   return (
-    <div className="flex flex-col h-screen bg-[#0d1117] text-white overflow-hidden">
+    <div className="flex flex-col h-screen bg-[var(--bg-app)] text-[var(--text-primary)] overflow-hidden">
       <Toolbar chartRef={sharedChartRef} chartAreaRef={chartAreaRef} />
       <div className="flex flex-1 overflow-hidden">
         <main className="flex-1 overflow-hidden">

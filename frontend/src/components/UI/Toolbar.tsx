@@ -95,21 +95,21 @@ function SnapshotMenu({ chartRef, chartAreaRef }: ToolbarProps) {
       <button
         onClick={() => setOpen((v) => !v)}
         title="Chart snapshot"
-        className="w-9 h-9 flex items-center justify-center rounded text-gray-400 hover:text-white hover:bg-[#21262d]"
+        className="w-9 h-9 flex items-center justify-center rounded text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
       >
         <CameraIcon />
       </button>
       {open && (
         <div
           className="absolute top-full right-0 mt-1 py-1"
-          style={{ background: '#1E222D', borderRadius: 6, boxShadow: '0 4px 12px rgba(0,0,0,0.45)', width: 168, zIndex: 1100 }}
+          style={{ background: 'var(--bg-panel-alt)', borderRadius: 6, boxShadow: '0 4px 12px rgba(0,0,0,0.45)', width: 168, zIndex: 1100 }}
         >
-          <div className="px-3 pt-1.5 pb-1 text-[10px] uppercase tracking-wide text-[#8b949e]">Chart snapshot</div>
+          <div className="px-3 pt-1.5 pb-1 text-[10px] uppercase tracking-wide text-[var(--text-muted)]">Chart snapshot</div>
           {SNAPSHOT_ACTIONS.map(({ key, label }) => (
             <button
               key={key}
               onClick={() => run(key)}
-              className="w-full text-left px-3 py-1.5 text-xs text-[#d1d4dc] hover:bg-[#2196F3] hover:text-white"
+              className="w-full text-left px-3 py-1.5 text-xs text-[var(--text-secondary)] hover:bg-[var(--accent)] hover:text-white"
             >
               {label}
             </button>
@@ -141,7 +141,7 @@ function FullscreenButton() {
     <button
       onClick={toggle}
       title={isFullscreen ? 'Exit full screen' : 'Full screen'}
-      className="w-9 h-9 flex items-center justify-center rounded text-gray-400 hover:text-white hover:bg-[#21262d]"
+      className="w-9 h-9 flex items-center justify-center rounded text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
     >
       {isFullscreen ? <FullscreenExitIcon /> : <FullscreenEnterIcon />}
     </button>
@@ -152,18 +152,18 @@ export function Toolbar({ chartRef, chartAreaRef }: ToolbarProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   return (
-    <header className="flex items-center justify-between px-4 py-1 bg-[#161b22] border-b border-[#30363d] select-none">
+    <header className="flex items-center justify-between px-4 py-1 bg-[var(--bg-panel)] border-b border-[var(--border-color)] select-none">
       <div className="flex items-center gap-2">
         <span className="text-blue-400 font-bold text-sm tracking-wide">DSA</span>
-        <span className="text-gray-300 font-semibold text-sm">Trading Tool</span>
+        <span className="text-[var(--text-secondary)] font-semibold text-sm">Trading Tool</span>
       </div>
-      <div className="flex items-center gap-1.5 text-xs text-gray-500">
+      <div className="flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
         <SnapshotMenu chartRef={chartRef} chartAreaRef={chartAreaRef} />
         <FullscreenButton />
         <button
           onClick={() => setSettingsOpen(true)}
           title="Settings"
-          className="w-9 h-9 flex items-center justify-center rounded text-gray-400 hover:text-white hover:bg-[#21262d]"
+          className="w-9 h-9 flex items-center justify-center rounded text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
         >
           <GearIcon />
         </button>

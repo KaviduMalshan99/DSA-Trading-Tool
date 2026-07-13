@@ -193,10 +193,10 @@ export function DrawingStyleToolbar({ sharedChartRef, sharedSeriesRef }: Props) 
     top: Math.max(4, pos.y),
     transform: 'translateX(-50%)',
     zIndex: 60,
-    background: '#1E222D',
+    background: 'var(--bg-panel-alt)',
     borderRadius: 6,
     boxShadow: '0 4px 12px rgba(0,0,0,0.45)',
-    border: '1px solid #2a2e39',
+    border: '1px solid var(--border-color-softer)',
   };
 
   if (selected.type === 'fibonacci') {
@@ -207,15 +207,15 @@ export function DrawingStyleToolbar({ sharedChartRef, sharedSeriesRef }: Props) 
           <button
             title="Settings"
             onClick={() => setOpenMenu('settings')}
-            className="w-7 h-7 flex items-center justify-center rounded text-[#8b949e] hover:text-white hover:bg-[#2a2e39]"
+            className="w-7 h-7 flex items-center justify-center rounded text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover-alt)]"
           >
             <GearIcon />
           </button>
-          <div className="w-px h-5 bg-[#2a2e39] mx-0.5" />
+          <div className="w-px h-5 bg-[var(--border-color-softer)] mx-0.5" />
           <button
             title="Delete"
             onClick={() => deleteDrawing(fib.id)}
-            className="w-7 h-7 flex items-center justify-center rounded text-[#8b949e] hover:text-[#f85149] hover:bg-[#2a2e39]"
+            className="w-7 h-7 flex items-center justify-center rounded text-[var(--text-muted)] hover:text-[#f85149] hover:bg-[var(--bg-hover-alt)]"
           >
             <TrashIcon />
           </button>
@@ -246,12 +246,12 @@ export function DrawingStyleToolbar({ sharedChartRef, sharedSeriesRef }: Props) 
         <MiniWidthPicker width={width} onChange={(w) => updateDrawing(shape.id, { width: w })} />
         <MiniDashPicker dash={dash} onChange={(d) => updateDrawing(shape.id, { dash: d })} />
 
-        <div className="w-px h-5 bg-[#2a2e39] mx-0.5" />
+        <div className="w-px h-5 bg-[var(--border-color-softer)] mx-0.5" />
 
         <button
           title={filled ? 'Hide fill' : 'Show fill'}
           onClick={() => updateDrawing(shape.id, { filled: !filled })}
-          className={`w-7 h-7 flex items-center justify-center rounded hover:bg-[#2a2e39] ${filled ? 'text-[#2196F3]' : 'text-[#8b949e]'}`}
+          className={`w-7 h-7 flex items-center justify-center rounded hover:bg-[var(--bg-hover-alt)] ${filled ? 'text-[var(--accent)]' : 'text-[var(--text-muted)]'}`}
         >
           <FillToggleIcon filled={filled} />
         </button>
@@ -264,12 +264,12 @@ export function DrawingStyleToolbar({ sharedChartRef, sharedSeriesRef }: Props) 
           />
         )}
 
-        <div className="w-px h-5 bg-[#2a2e39] mx-0.5" />
+        <div className="w-px h-5 bg-[var(--border-color-softer)] mx-0.5" />
 
         <button
           title="Delete"
           onClick={() => deleteDrawing(shape.id)}
-          className="w-7 h-7 flex items-center justify-center rounded text-[#8b949e] hover:text-[#f85149] hover:bg-[#2a2e39]"
+          className="w-7 h-7 flex items-center justify-center rounded text-[var(--text-muted)] hover:text-[#f85149] hover:bg-[var(--bg-hover-alt)]"
         >
           <TrashIcon />
         </button>
@@ -288,12 +288,12 @@ export function DrawingStyleToolbar({ sharedChartRef, sharedSeriesRef }: Props) 
         <MiniColorSwatch color={color} onChange={(c) => updateDrawing(mark.id, { color: c })} />
         <MiniSizePicker size={size} onChange={(s) => updateDrawing(mark.id, { size: s })} />
 
-        <div className="w-px h-5 bg-[#2a2e39] mx-0.5" />
+        <div className="w-px h-5 bg-[var(--border-color-softer)] mx-0.5" />
 
         <button
           title="Delete"
           onClick={() => deleteDrawing(mark.id)}
-          className="w-7 h-7 flex items-center justify-center rounded text-[#8b949e] hover:text-[#f85149] hover:bg-[#2a2e39]"
+          className="w-7 h-7 flex items-center justify-center rounded text-[var(--text-muted)] hover:text-[#f85149] hover:bg-[var(--bg-hover-alt)]"
         >
           <TrashIcon />
         </button>
@@ -311,12 +311,12 @@ export function DrawingStyleToolbar({ sharedChartRef, sharedSeriesRef }: Props) 
         <MiniColorSwatch color={color} onChange={(c) => updateDrawing(note.id, { color: c })} />
         <MiniSizePicker size={fontSize} onChange={(s) => updateDrawing(note.id, { fontSize: s })} />
 
-        <div className="w-px h-5 bg-[#2a2e39] mx-0.5" />
+        <div className="w-px h-5 bg-[var(--border-color-softer)] mx-0.5" />
 
         <button
           title="Delete"
           onClick={() => deleteDrawing(note.id)}
-          className="w-7 h-7 flex items-center justify-center rounded text-[#8b949e] hover:text-[#f85149] hover:bg-[#2a2e39]"
+          className="w-7 h-7 flex items-center justify-center rounded text-[var(--text-muted)] hover:text-[#f85149] hover:bg-[var(--bg-hover-alt)]"
         >
           <TrashIcon />
         </button>
@@ -334,12 +334,12 @@ export function DrawingStyleToolbar({ sharedChartRef, sharedSeriesRef }: Props) 
         <MiniColorSwatch color={profitColor} onChange={(c) => updateDrawing(pos2.id, { profitColor: c })} />
         <MiniColorSwatch color={lossColor} onChange={(c) => updateDrawing(pos2.id, { lossColor: c })} />
 
-        <div className="w-px h-5 bg-[#2a2e39] mx-0.5" />
+        <div className="w-px h-5 bg-[var(--border-color-softer)] mx-0.5" />
 
         <button
           title="Delete"
           onClick={() => deleteDrawing(pos2.id)}
-          className="w-7 h-7 flex items-center justify-center rounded text-[#8b949e] hover:text-[#f85149] hover:bg-[#2a2e39]"
+          className="w-7 h-7 flex items-center justify-center rounded text-[var(--text-muted)] hover:text-[#f85149] hover:bg-[var(--bg-hover-alt)]"
         >
           <TrashIcon />
         </button>
@@ -368,12 +368,12 @@ export function DrawingStyleToolbar({ sharedChartRef, sharedSeriesRef }: Props) 
         <MiniDashPicker dash={dash} onChange={(d) => updateDrawing(selected.id, { dash: d })} />
       )}
 
-      <div className="w-px h-5 bg-[#2a2e39] mx-0.5" />
+      <div className="w-px h-5 bg-[var(--border-color-softer)] mx-0.5" />
 
       <button
         title="Delete"
         onClick={() => deleteDrawing(selected.id)}
-        className="w-7 h-7 flex items-center justify-center rounded text-[#8b949e] hover:text-[#f85149] hover:bg-[#2a2e39]"
+        className="w-7 h-7 flex items-center justify-center rounded text-[var(--text-muted)] hover:text-[#f85149] hover:bg-[var(--bg-hover-alt)]"
       >
         <TrashIcon />
       </button>

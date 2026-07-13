@@ -2,6 +2,59 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Theme tokens. Applied via data-theme on <html>, set by src/store/themeStore.ts.
+   Semantic (buy/sell, profit/loss, alert, drawing-tool) colors are intentionally
+   NOT tokenized here — those carry meaning independent of light/dark chrome. */
+:root[data-theme='dark'] {
+  --bg-app: #0d1117;
+  --bg-panel: #161b22;
+  --bg-panel-alt: #1e222d;
+  --bg-hover: #21262d;
+  --bg-hover-alt: #2a2e39;
+  --border-color: #30363d;
+  --border-color-soft: #21262d;
+  --border-color-softer: #2a2e39;
+  --text-primary: #ffffff;
+  --text-secondary: #d1d4dc;
+  --text-tertiary: #c9d1d9;
+  --text-muted: #8b949e;
+  --accent: #2196f3;
+  --accent-hover: #1976d2;
+  --scrollbar-track: #0d1117;
+  --scrollbar-thumb: #30363d;
+
+  --chart-grid: #161b22;
+  --chart-text: #c9d1d9;
+  --chart-border: #21262d;
+  --chart-crosshair: #3b82f6;
+  --chart-crosshair-label-bg: #1e3a5f;
+}
+
+:root[data-theme='light'] {
+  --bg-app: #ffffff;
+  --bg-panel: #f0f3fa;
+  --bg-panel-alt: #ffffff;
+  --bg-hover: #e9edf5;
+  --bg-hover-alt: #eef1f7;
+  --border-color: #d1d4dc;
+  --border-color-soft: #e0e3eb;
+  --border-color-softer: #e0e3eb;
+  --text-primary: #131722;
+  --text-secondary: #131722;
+  --text-tertiary: #4b5563;
+  --text-muted: #6b7280;
+  --accent: #2196f3;
+  --accent-hover: #1976d2;
+  --scrollbar-track: #f0f3fa;
+  --scrollbar-thumb: #d1d4dc;
+
+  --chart-grid: #e0e3eb;
+  --chart-text: #4b5563;
+  --chart-border: #d1d4dc;
+  --chart-crosshair: #2196f3;
+  --chart-crosshair-label-bg: #d6e8fb;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -16,15 +69,24 @@ body,
   -webkit-font-smoothing: antialiased;
 }
 
+body {
+  background: var(--bg-app);
+  color: var(--text-primary);
+}
+
 ::-webkit-scrollbar {
   width: 4px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #0d1117;
+  background: var(--scrollbar-track);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #30363d;
+  background: var(--scrollbar-thumb);
   border-radius: 2px;
+}
+
+.themed-placeholder::placeholder {
+  color: var(--text-muted);
 }

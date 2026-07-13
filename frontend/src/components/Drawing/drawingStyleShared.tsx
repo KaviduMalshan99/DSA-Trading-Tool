@@ -71,7 +71,7 @@ export function MiniColorSwatch({ color, onChange }: { color: string; onChange: 
       {open && (
         <div
           className="absolute top-full left-0 mt-1 p-2 grid grid-cols-7 gap-1"
-          style={{ background: '#1E222D', borderRadius: 8, boxShadow: '0 4px 12px rgba(0,0,0,0.45)', width: 200, zIndex: 90 }}
+          style={{ background: 'var(--bg-panel-alt)', borderRadius: 8, boxShadow: '0 4px 12px rgba(0,0,0,0.45)', width: 200, zIndex: 90 }}
         >
           {COLOR_SWATCHES.map((c) => (
             <button
@@ -79,7 +79,7 @@ export function MiniColorSwatch({ color, onChange }: { color: string; onChange: 
               title={c}
               onClick={() => { onChange(c); setOpen(false); }}
               className="w-5 h-5 rounded-full border"
-              style={{ background: c, borderColor: c.toLowerCase() === color.toLowerCase() ? '#2196F3' : 'rgba(255,255,255,0.15)' }}
+              style={{ background: c, borderColor: c.toLowerCase() === color.toLowerCase() ? 'var(--accent)' : 'rgba(255,255,255,0.15)' }}
             />
           ))}
         </div>
@@ -102,20 +102,20 @@ export function MiniWidthPicker({ width, onChange }: { width: number; onChange: 
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen((v) => !v)}
-        className="w-9 h-6 flex items-center justify-center rounded hover:bg-[#2a2e39] text-xs text-[#d1d4dc]"
+        className="w-9 h-6 flex items-center justify-center rounded hover:bg-[var(--bg-hover-alt)] text-xs text-[var(--text-secondary)]"
       >
         {width}px
       </button>
       {open && (
         <div
           className="absolute top-full right-0 mt-1 py-1"
-          style={{ background: '#1E222D', borderRadius: 6, boxShadow: '0 4px 12px rgba(0,0,0,0.45)', width: 72, zIndex: 90 }}
+          style={{ background: 'var(--bg-panel-alt)', borderRadius: 6, boxShadow: '0 4px 12px rgba(0,0,0,0.45)', width: 72, zIndex: 90 }}
         >
           {WIDTHS.map((w) => (
             <button
               key={w}
               onClick={() => { onChange(w); setOpen(false); }}
-              className={`w-full px-3 py-1 text-xs text-left hover:bg-[#2196F3] hover:text-white ${w === width ? 'text-white bg-[#2a2e39]' : 'text-[#d1d4dc]'}`}
+              className={`w-full px-3 py-1 text-xs text-left hover:bg-[var(--accent)] hover:text-white ${w === width ? 'text-[var(--text-primary)] bg-[var(--bg-hover-alt)]' : 'text-[var(--text-secondary)]'}`}
             >
               {w}px
             </button>
@@ -152,14 +152,14 @@ export function ColorOpacityButton({
       <button
         title={title}
         onClick={() => setOpen((v) => !v)}
-        className="w-7 h-7 flex items-center justify-center rounded hover:bg-[#2a2e39]"
+        className="w-7 h-7 flex items-center justify-center rounded hover:bg-[var(--bg-hover-alt)]"
       >
         <span className="w-3.5 h-3.5 rounded-full border border-white/30" style={{ background: color, opacity: opacity / 100 }} />
       </button>
       {open && (
         <div
           className="absolute top-full left-0 mt-1 p-3"
-          style={{ background: '#1E222D', borderRadius: 8, boxShadow: '0 4px 12px rgba(0,0,0,0.45)', width: 236, zIndex: 90 }}
+          style={{ background: 'var(--bg-panel-alt)', borderRadius: 8, boxShadow: '0 4px 12px rgba(0,0,0,0.45)', width: 236, zIndex: 90 }}
         >
           <div className="grid grid-cols-7 gap-1.5">
             {COLOR_GRID.map((row, ri) =>
@@ -171,17 +171,17 @@ export function ColorOpacityButton({
                   className="w-6 h-6 rounded-full border transition-transform hover:scale-110"
                   style={{
                     background: c,
-                    borderColor: c.toLowerCase() === color.toLowerCase() ? '#2196F3' : 'rgba(255,255,255,0.15)',
+                    borderColor: c.toLowerCase() === color.toLowerCase() ? 'var(--accent)' : 'rgba(255,255,255,0.15)',
                     borderWidth: c.toLowerCase() === color.toLowerCase() ? 2 : 1,
                   }}
                 />
               )),
             )}
           </div>
-          <div className="mt-3 pt-3" style={{ borderTop: '1px solid #2a2e39' }}>
+          <div className="mt-3 pt-3" style={{ borderTop: '1px solid var(--border-color-softer)' }}>
             <div className="flex items-center justify-between mb-1.5">
-              <span className="text-xs text-[#8b949e]">Opacity</span>
-              <span className="text-xs text-[#d1d4dc] font-mono">{opacity}%</span>
+              <span className="text-xs text-[var(--text-muted)]">Opacity</span>
+              <span className="text-xs text-[var(--text-secondary)] font-mono">{opacity}%</span>
             </div>
             <input
               type="range"
@@ -190,7 +190,7 @@ export function ColorOpacityButton({
               step={1}
               value={opacity}
               onChange={(e) => onOpacityChange(Number(e.target.value))}
-              className="w-full accent-[#2196F3]"
+              className="w-full accent-[var(--accent)]"
             />
           </div>
         </div>
@@ -215,20 +215,20 @@ export function MiniSizePicker({ size, onChange }: { size: number; onChange: (s:
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen((v) => !v)}
-        className="w-9 h-6 flex items-center justify-center rounded hover:bg-[#2a2e39] text-xs text-[#d1d4dc]"
+        className="w-9 h-6 flex items-center justify-center rounded hover:bg-[var(--bg-hover-alt)] text-xs text-[var(--text-secondary)]"
       >
         {size}px
       </button>
       {open && (
         <div
           className="absolute top-full right-0 mt-1 py-1"
-          style={{ background: '#1E222D', borderRadius: 6, boxShadow: '0 4px 12px rgba(0,0,0,0.45)', width: 72, zIndex: 90 }}
+          style={{ background: 'var(--bg-panel-alt)', borderRadius: 6, boxShadow: '0 4px 12px rgba(0,0,0,0.45)', width: 72, zIndex: 90 }}
         >
           {MARKER_SIZES.map((s) => (
             <button
               key={s}
               onClick={() => { onChange(s); setOpen(false); }}
-              className={`w-full px-3 py-1 text-xs text-left hover:bg-[#2196F3] hover:text-white ${s === size ? 'text-white bg-[#2a2e39]' : 'text-[#d1d4dc]'}`}
+              className={`w-full px-3 py-1 text-xs text-left hover:bg-[var(--accent)] hover:text-white ${s === size ? 'text-[var(--text-primary)] bg-[var(--bg-hover-alt)]' : 'text-[var(--text-secondary)]'}`}
             >
               {s}px
             </button>
@@ -262,23 +262,23 @@ export function MiniDashPicker({ dash, onChange }: { dash: LineDash; onChange: (
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen((v) => !v)}
-        className="w-9 h-6 flex items-center justify-center rounded hover:bg-[#2a2e39]"
+        className="w-9 h-6 flex items-center justify-center rounded hover:bg-[var(--bg-hover-alt)]"
       >
         <svg width="20" height="10" viewBox="0 0 20 10">
-          <line x1="0" y1="5" x2="20" y2="5" stroke="#d1d4dc" strokeWidth="1.5"
+          <line x1="0" y1="5" x2="20" y2="5" stroke="var(--text-secondary)" strokeWidth="1.5"
                 strokeDasharray={current.pattern === 'none' ? undefined : current.pattern} />
         </svg>
       </button>
       {open && (
         <div
           className="absolute top-full right-0 mt-1 py-1"
-          style={{ background: '#1E222D', borderRadius: 6, boxShadow: '0 4px 12px rgba(0,0,0,0.45)', width: 100, zIndex: 90 }}
+          style={{ background: 'var(--bg-panel-alt)', borderRadius: 6, boxShadow: '0 4px 12px rgba(0,0,0,0.45)', width: 100, zIndex: 90 }}
         >
           {DASHES.map(({ value, label, pattern }) => (
             <button
               key={value}
               onClick={() => { onChange(value); setOpen(false); }}
-              className={`w-full flex items-center gap-2 px-2 py-1.5 text-xs hover:bg-[#2196F3] hover:text-white ${value === dash ? 'text-white bg-[#2a2e39]' : 'text-[#d1d4dc]'}`}
+              className={`w-full flex items-center gap-2 px-2 py-1.5 text-xs hover:bg-[var(--accent)] hover:text-white ${value === dash ? 'text-[var(--text-primary)] bg-[var(--bg-hover-alt)]' : 'text-[var(--text-secondary)]'}`}
             >
               <svg width="24" height="8" viewBox="0 0 24 8">
                 <line x1="0" y1="4" x2="24" y2="4" stroke="currentColor" strokeWidth="1.5"
