@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { IChartApi, ISeriesApi } from 'lightweight-charts';
 import { useMarketStore } from '../../store/marketStore';
 import { useWhaleStore, type WhaleTrade } from '../../store/whaleStore';
+import { toChartTime } from '../../utils/chartTime';
 
 const WS_BASE   = import.meta.env.VITE_WS_URL ?? 'ws://localhost:8000';
 const RECENT_MS = 10 * 60 * 1_000; // only draw trades from last 10 minutes
@@ -10,8 +11,6 @@ export interface WhaleMarkersProps {
   sharedChartRef:  React.RefObject<IChartApi | null>;
   sharedSeriesRef: React.RefObject<ISeriesApi<'Candlestick'> | null>;
 }
-
-type LWTime = import('lightweight-charts').Time;
 
 function bubbleRadius(notional: number): number {
   if (notional >= 1_000_000) return 20;
@@ -57,7 +56,7 @@ export function WhaleMarkers({ sharedChartRef, sharedSeriesRef }: WhaleMarkersPr
       // Skip trades older than 10 minutes
       if (trade.time < cutoff) continue;
 
-      const timeSec = Math.floor(trade.time / 1_000) as unknown as LWTime;
+      const timeSec = toChartTime(trade.time);
       const r       = bubbleRadius(trade.notional);
 
       const rawX = chart.timeScale().timeToCoordinate(timeSec);
@@ -151,7 +150,7 @@ export function WhaleMarkers({ sharedChartRef, sharedSeriesRef }: WhaleMarkersPr
 
       for (const trade of tradesRef.current) {
         if (trade.time < cutoff) continue;
-        const timeSec = Math.floor(trade.time / 1_000) as unknown as LWTime;
+        const timeSec = toChartTime(trade.time);
         const r       = bubbleRadius(trade.notional);
         const rawX = chart.timeScale().timeToCoordinate(timeSec);
         const rawY = series.priceToCoordinate(trade.price);

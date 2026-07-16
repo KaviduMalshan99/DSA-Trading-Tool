@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import type { IChartApi, ISeriesApi } from 'lightweight-charts';
 import { useMarketStore } from '../../store/marketStore';
 import { intervalToSecs } from '../../utils/interval';
+import { toChartTimeSeconds } from '../../utils/chartTime';
 
 const WS_BASE       = import.meta.env.VITE_WS_URL ?? 'ws://localhost:8000';
 const MIN_CANDLE_PX = 100; // don't render if candle narrower than this
@@ -61,7 +62,7 @@ export function FootprintCanvas({ sharedChartRef, sharedSeriesRef }: FootprintCa
     ctx.textBaseline = 'middle';
 
     for (const bar of barsRef.current.values()) {
-      const openSec  = Math.floor(bar.time / 1000);
+      const openSec  = toChartTimeSeconds(bar.time);
       const closeSec = openSec + intervalSecs;
 
       if (closeSec < fromSec || openSec > toSec) continue;

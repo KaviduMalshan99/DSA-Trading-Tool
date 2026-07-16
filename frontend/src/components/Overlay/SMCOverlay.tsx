@@ -10,6 +10,7 @@ import { useEffect, useRef } from 'react';
 import type { IChartApi, ISeriesApi } from 'lightweight-charts';
 import { useMarketStore } from '../../store/marketStore';
 import { intervalToSecs } from '../../utils/interval';
+import { toChartTimeSeconds } from '../../utils/chartTime';
 import { api } from '../../services/api';
 import type { SMCData, SMCZone } from '../../types/analytics';
 
@@ -98,7 +99,7 @@ export function SMCOverlay({ sharedChartRef, sharedSeriesRef }: SMCOverlayProps)
     };
 
     for (const ob of data.order_blocks) {
-      const openSec  = Math.floor(ob.ts / 1000);
+      const openSec  = toChartTimeSeconds(ob.ts);
       const closeSec = openSec + intervalSecs;
       const bullish  = ob.type === 'order_block_bullish';
       const alpha    = 0.10 + ob.strength * 0.12;
@@ -114,7 +115,7 @@ export function SMCOverlay({ sharedChartRef, sharedSeriesRef }: SMCOverlayProps)
     }
 
     for (const fvg of data.fair_value_gaps) {
-      const c2OpenSec = Math.floor(fvg.ts / 1000);
+      const c2OpenSec = toChartTimeSeconds(fvg.ts);
       const fromSec   = c2OpenSec - intervalSecs;
       const toSec     = c2OpenSec + intervalSecs * 2;
       const alpha     = 0.08 + fvg.strength * 0.10;

@@ -5,6 +5,7 @@ import { useChartStore } from '../../store/chartStore';
 import { useCandleStyleStore } from '../../store/candleStyleStore';
 import { useThemeStore, type Theme } from '../../store/themeStore';
 import { useChartSync } from '../../hooks/useChartSync';
+import { toChartTime } from '../../utils/chartTime';
 import type { Candle } from '../../types/market';
 
 function chartThemeOptions(theme: Theme) {
@@ -231,7 +232,7 @@ export function TradingChart({ sharedChartRef, sharedSeriesRef }: TradingChartPr
             if (seriesRef.current) {
               seriesRef.current.setData(
                 msg.candles.map((c) => ({
-                  time: Math.floor(c.t / 1000) as unknown as import('lightweight-charts').Time,
+                  time: toChartTime(c.t),
                   open: c.o,
                   high: c.h,
                   low: c.l,
@@ -288,7 +289,7 @@ export function TradingChart({ sharedChartRef, sharedSeriesRef }: TradingChartPr
               const prevRange = chartRef.current.timeScale().getVisibleLogicalRange();
               seriesRef.current.setData(
                 merged.map((c) => ({
-                  time: Math.floor(c.t / 1000) as unknown as import('lightweight-charts').Time,
+                  time: toChartTime(c.t),
                   open: c.o,
                   high: c.h,
                   low: c.l,
@@ -307,7 +308,7 @@ export function TradingChart({ sharedChartRef, sharedSeriesRef }: TradingChartPr
             appendCandle(c);
             if (seriesRef.current) {
               seriesRef.current.update({
-                time: Math.floor(c.t / 1000) as unknown as import('lightweight-charts').Time,
+                time: toChartTime(c.t),
                 open: c.o,
                 high: c.h,
                 low: c.l,

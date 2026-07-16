@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createChart, type IChartApi, type ISeriesApi } from 'lightweight-charts';
 import { useMarketStore } from '../../store/marketStore';
 import { useThemeStore, type Theme } from '../../store/themeStore';
+import { toChartTime } from '../../utils/chartTime';
 
 const WS_BASE = import.meta.env.VITE_WS_URL ?? 'ws://localhost:8000';
 
@@ -47,11 +48,7 @@ interface DeltaPanelProps {
   sharedChartRef: React.RefObject<IChartApi | null>;
 }
 
-type LWTime = import('lightweight-charts').Time;
-
-function toSec(ms: number): LWTime {
-  return Math.floor(ms / 1000) as unknown as LWTime;
-}
+const toSec = toChartTime;
 
 export function DeltaPanel({ sharedChartRef }: DeltaPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -114,28 +111,28 @@ export function DeltaPanel({ sharedChartRef }: DeltaPanelProps) {
     histoRef.current = histo;
     cvdRef.current   = cvdLine;
 
-    // Bidirectional time-scale sync with the main chart, cycle-guarded
+    // One-directional time-scale sync: this panel always follows the main
+    // chart, never the reverse. A bidirectional sync (each side writing the
+    // other's range on change) sounds symmetric but isn't safe here —
+    // lightweight-charts dispatches range-change events asynchronously
+    // (e.g. a ResizeObserver-driven relayout fires a beat after the
+    // triggering setData/setVisibleLogicalRange call returns), so a
+    // same-tick guard flag doesn't catch the echo. The two charts ended up
+    // fighting over the range and settling on neither's intended value —
+    // instead of "last 100 bars", the chart opened on an arbitrary ~228-bar
+    // window. Only listening one way removes the feedback loop by
+    // construction, at the cost of dragging this panel no longer panning
+    // the main chart (dragging the main chart still pans both).
     const mainChart = sharedChartRef.current;
-    let syncing = false;
 
     const onMainRange = (range: { from: number; to: number } | null) => {
-      if (syncing || !range) return;
-      syncing = true;
+      if (!range) return;
       chart.timeScale().setVisibleLogicalRange(range);
-      syncing = false;
-    };
-
-    const onDeltaRange = (range: { from: number; to: number } | null) => {
-      if (syncing || !range || !sharedChartRef.current) return;
-      syncing = true;
-      sharedChartRef.current.timeScale().setVisibleLogicalRange(range);
-      syncing = false;
     };
 
     if (mainChart) {
       mainChart.timeScale().subscribeVisibleLogicalRangeChange(onMainRange);
     }
-    chart.timeScale().subscribeVisibleLogicalRangeChange(onDeltaRange);
 
     const observer = new ResizeObserver(() => {
       if (!containerRef.current) return;
@@ -200,6 +197,13 @@ export function DeltaPanel({ sharedChartRef }: DeltaPanelProps) {
           if (msg.type === 'historical' && msg.deltas) {
             const bars = msg.deltas;
 
+            // setData() on a fresh series auto-fits this chart's own visible
+            // range to everything just loaded. Since the sync with the main
+            // chart is one-directional (see the init effect), that auto-fit
+            // can't leak out and corrupt the main chart's range — but it
+            // does leave this panel showing the wrong window until the user
+            // next pans the main chart, so pull it back into alignment with
+            // whatever range the main chart currently has right away.
             histoRef.current?.setData(
               bars.map((b) => ({
                 time:  toSec(b.time),
@@ -212,14 +216,8 @@ export function DeltaPanel({ sharedChartRef }: DeltaPanelProps) {
               bars.map((b) => ({ time: toSec(b.time), value: b.cvd }))
             );
 
-            // No manual "align to main chart" step here: the mount effect's
-            // onMainRange subscription already re-syncs this chart whenever the
-            // main chart's range changes (including its own post-load
-            // scrollToRealTime()). Doing it manually here raced that subscription
-            // — if this historical payload resolved after the main chart had
-            // already scrolled to "now", reading+reapplying the main chart's range
-            // echoed back through the unguarded write path and could snap the main
-            // chart back to a stale (often much older) position.
+            const mainRange = sharedChartRef.current?.timeScale().getVisibleLogicalRange();
+            if (mainRange) chartRef.current?.timeScale().setVisibleLogicalRange(mainRange);
 
             const last = bars.at(-1);
             if (last) {

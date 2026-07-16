@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import type { IChartApi, ISeriesApi } from 'lightweight-charts';
 import { useMarketStore } from '../../store/marketStore';
+import { shiftEpochSeconds } from '../../utils/chartTime';
 
 const WS_BASE     = import.meta.env.VITE_WS_URL ?? 'ws://localhost:8000';
 const PRICE_STEP  = 10;   // must match backend DEFAULT_STEP
@@ -228,12 +229,12 @@ export function HeatmapCanvas({ sharedChartRef, sharedSeriesRef }: HeatmapCanvas
             snapshot?:  Snapshot;
           };
           if (msg.type === 'historical' && msg.snapshots) {
-            snapshotsRef.current = msg.snapshots;
+            snapshotsRef.current = msg.snapshots.map((s) => ({ ...s, time: shiftEpochSeconds(s.time) }));
             scheduleDraw();
           } else if (msg.type === 'snapshot' && msg.snapshot) {
             const snaps = snapshotsRef.current;
             if (snaps.length >= MAX_SNAPS) snaps.shift();
-            snaps.push(msg.snapshot);
+            snaps.push({ ...msg.snapshot, time: shiftEpochSeconds(msg.snapshot.time) });
             scheduleDraw();
           }
         } catch { /* ignore malformed */ }

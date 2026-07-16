@@ -22,7 +22,7 @@ interface MarketState {
 export const useMarketStore = create<MarketState>((set) => ({
   activeSymbol: 'BTCUSDT',
   activeMarket: 'crypto',
-  activeInterval: '1m',
+  activeInterval: '1h',
   candles: [],
   isLoading: false,
 

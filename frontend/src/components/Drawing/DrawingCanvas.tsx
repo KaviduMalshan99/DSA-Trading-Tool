@@ -2,6 +2,7 @@ import { useEffect, useRef, useCallback, useState } from 'react';
 import type { IChartApi, ISeriesApi } from 'lightweight-charts';
 import { useDrawingStore, type Drawing, type DrawingTool } from '../../store/drawingStore';
 import { useMarketStore } from '../../store/marketStore';
+import { toChartTimeSeconds } from '../../utils/chartTime';
 import type { Candle } from '../../types/market';
 
 // Tools that should own mouse events on the overlay canvas (blocking chart
@@ -88,7 +89,7 @@ function estimateBarIntervalSec(candles: Candle[]): number | null {
   if (candles.length < 2) return null;
   const last = candles[candles.length - 1];
   const prev = candles[candles.length - 2];
-  const interval = Math.floor(last.t / 1000) - Math.floor(prev.t / 1000);
+  const interval = toChartTimeSeconds(last.t) - toChartTimeSeconds(prev.t);
   return interval > 0 ? interval : null;
 }
 
@@ -137,8 +138,8 @@ export function timeToX(chart: IChartApi, t: number): number | null {
   const interval = estimateBarIntervalSec(candles);
   if (interval == null) return null;
   const lastIdx = candles.length - 1;
-  const lastTime = Math.floor(candles[lastIdx].t / 1000);
-  const firstTime = Math.floor(candles[0].t / 1000);
+  const lastTime = toChartTimeSeconds(candles[lastIdx].t);
+  const firstTime = toChartTimeSeconds(candles[0].t);
   const anchorIdx  = t > lastTime ? lastIdx : 0;
   const anchorTime = t > lastTime ? lastTime : firstTime;
   const logical = anchorIdx + (t - anchorTime) / interval;
@@ -173,7 +174,7 @@ function xToTime(chart: IChartApi, x: number): number | null {
   if (logical == null || interval == null) return null;
   const lastIdx = candles.length - 1;
   const anchorIdx = logical > lastIdx ? lastIdx : 0;
-  const anchorTime = Math.floor(candles[anchorIdx].t / 1000);
+  const anchorTime = toChartTimeSeconds(candles[anchorIdx].t);
   return Math.round(anchorTime + (logical - anchorIdx) * interval);
 }
 
@@ -197,7 +198,7 @@ interface RegressionResult {
 function computeRegression(candles: Candle[], time1: number, time2: number): RegressionResult | null {
   const lo = Math.min(time1, time2), hi = Math.max(time1, time2);
   const subset = candles
-    .map((c) => ({ t: Math.floor(c.t / 1000), c: c.c }))
+    .map((c) => ({ t: toChartTimeSeconds(c.t), c: c.c }))
     .filter((c) => c.t >= lo && c.t <= hi)
     .sort((a, b) => a.t - b.t);
   if (subset.length < 2) return null;
@@ -234,7 +235,7 @@ function computeMeasureStats(price1: number, time1: number, price2: number, time
   const pricePct = price1 !== 0 ? (priceDiff / price1) * 100 : 0;
   const timeDiffSec = Math.abs(time2 - time1);
   const lo = Math.min(time1, time2), hi = Math.max(time1, time2);
-  const bars = candles.filter((c) => { const t = Math.floor(c.t / 1000); return t >= lo && t <= hi; }).length;
+  const bars = candles.filter((c) => { const t = toChartTimeSeconds(c.t); return t >= lo && t <= hi; }).length;
   return { priceDiff, pricePct, timeDiffSec, bars };
 }
 
@@ -1030,7 +1031,7 @@ function renderDrawing(
     drawArrowhead(ctx, x2, midY, x2 >= x1 ? 0 : Math.PI, 8);
 
     const lo = Math.min(d.time1, d.time2), hi = Math.max(d.time1, d.time2);
-    const bars = candles.filter((c) => { const t = Math.floor(c.t / 1000); return t >= lo && t <= hi; }).length;
+    const bars = candles.filter((c) => { const t = toChartTimeSeconds(c.t); return t >= lo && t <= hi; }).length;
     const totalSec = hi - lo;
     const days = Math.floor(totalSec / 86400);
     const hours = Math.floor((totalSec % 86400) / 3600);
@@ -1488,7 +1489,7 @@ function computeMagnetSnap(
   let nearest = candles[0];
   let bestTimeDiff = Infinity;
   for (const c of candles) {
-    const diff = Math.abs(Math.floor(c.t / 1000) - timeSec);
+    const diff = Math.abs(toChartTimeSeconds(c.t) - timeSec);
     if (diff < bestTimeDiff) { bestTimeDiff = diff; nearest = c; }
   }
 
@@ -1500,7 +1501,7 @@ function computeMagnetSnap(
     if (diff < bestPriceDiff) { bestPriceDiff = diff; snapPrice = p; }
   }
 
-  const snapTime = Math.floor(nearest.t / 1000);
+  const snapTime = toChartTimeSeconds(nearest.t);
   const sx = timeToX(chart, snapTime);
   const sy = priceToY(series, snapPrice);
   if (sx == null || sy == null) return null;
@@ -1516,10 +1517,10 @@ function getNearestCandleTime(
   const hoveredTime = xToTime(chart, x);
   if (hoveredTime == null) return null;
 
-  let nearestTime = Math.floor(candles[0].t / 1000);
+  let nearestTime = toChartTimeSeconds(candles[0].t);
   let bestDiff = Infinity;
   for (const candle of candles) {
-    const candleTime = Math.floor(candle.t / 1000);
+    const candleTime = toChartTimeSeconds(candle.t);
     const diff = Math.abs(candleTime - hoveredTime);
     if (diff < bestDiff) {
       bestDiff = diff;
