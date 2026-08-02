@@ -27,6 +27,9 @@ frontend/.vite/
 # Docker
 *.log
 
+# Local process PID files (uvicorn.pid, vite.pid, ...)
+*.pid
+
 # IDE
 .vscode/
 .idea/
