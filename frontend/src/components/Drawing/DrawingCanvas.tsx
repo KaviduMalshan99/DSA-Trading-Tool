@@ -2900,6 +2900,14 @@ export function DrawingCanvas({ sharedChartRef, sharedSeriesRef }: Props) {
         freeformRef.current.tool   = null;
         freeformRef.current.points = [];
         measureResultRef.current = null;
+        // Cancelling an in-progress placement above doesn't touch selection —
+        // without this, Escape on an already-placed, already-selected drawing
+        // did nothing, so its floating style toolbar stayed mounted. If the
+        // user then switched symbol/timeframe with that stale selection still
+        // active, the toolbar's position math (keyed off the drawing's old
+        // time/price) degenerated to a clamped top-left coordinate instead of
+        // going off-screen, so it looked stuck in the drawing rail.
+        if (selectedIdRef.current) selectDrawing(null);
         scheduleRender();
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
         const sel = selectedIdRef.current;
@@ -2926,7 +2934,7 @@ export function DrawingCanvas({ sharedChartRef, sharedSeriesRef }: Props) {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [deleteDrawing, scheduleRender, undo]);
+  }, [deleteDrawing, scheduleRender, undo, selectDrawing]);
 
   // Trendline/hline/rectangle/fibonacci/eraser capture all events (chart
   // pan/zoom blocked — intentional while placing points or erasing).
