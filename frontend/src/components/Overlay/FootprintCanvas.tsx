@@ -16,8 +16,9 @@ interface PriceLevel {
 }
 
 interface FootprintBar {
-  time:   number;        // candle open-time in ms
-  levels: PriceLevel[]; // sorted high→low by backend
+  time:     number;        // candle open-time in ms
+  decimals?: number;      // decimal places for level price labels (backend-derived from its bucket step)
+  levels:   PriceLevel[]; // sorted high→low by backend
 }
 
 export interface FootprintCanvasProps {
@@ -79,6 +80,7 @@ export function FootprintCanvas({ sharedChartRef, sharedSeriesRef }: FootprintCa
 
       const levels = bar.levels;
       if (levels.length < 2) continue;
+      const priceDecimals = bar.decimals ?? 1;
 
       // ── Candle y-boundaries from outermost price levels ─────────────
       const topRaw    = series.priceToCoordinate(levels[0].price);
@@ -155,7 +157,7 @@ export function FootprintCanvas({ sharedChartRef, sharedSeriesRef }: FootprintCa
         if (showPrice) {
           const priceStr = Number.isInteger(lvl.price)
             ? String(lvl.price)
-            : lvl.price.toFixed(1);
+            : lvl.price.toFixed(priceDecimals);
           ctx.font = normalFont;
           ctx.fillStyle = 'rgba(180,180,180,0.75)';
           ctx.textAlign = 'center';

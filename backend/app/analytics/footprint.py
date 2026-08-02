@@ -1,5 +1,7 @@
 import time as _time
 
+from app.analytics.price_step import price_decimals_for
+
 _IMBALANCE_RATIO = 5.0
 _IMBALANCE_MIN_SMALLER = 0.5  # smaller side must have at least this volume
 
@@ -11,18 +13,6 @@ def _is_imbalance(buy: float, sell: float) -> bool:
     if smaller < _IMBALANCE_MIN_SMALLER:
         return False
     return buy >= _IMBALANCE_RATIO * sell or sell >= _IMBALANCE_RATIO * buy
-
-
-def _price_decimals(symbol: str) -> int:
-    """
-    ndigits for round(price, ndigits).
-    Negative ndigits round to the left of the decimal point.
-      -1 → nearest $10   (BTC: 60334 → 60330)
-       1 → nearest $0.10 (others: 3521.45 → 3521.5)
-    """
-    if "BTC" in symbol.upper():
-        return -1  # $10 buckets
-    return 1       # 10-cent buckets
 
 
 class FootprintAccumulator:
@@ -38,10 +28,11 @@ class FootprintAccumulator:
     """
 
     def __init__(self, max_candles: int = 50, partial_interval: float = 2.0,
-                 symbol: str = ""):
+                 price_step: float = 1.0):
         self.max_candles       = max_candles
         self._partial_interval = partial_interval
-        self._decimals         = _price_decimals(symbol)
+        self._step              = price_step
+        self._decimals          = price_decimals_for(price_step)
 
         self._completed: list[dict] = []
         self._current_minute: int | None = None
@@ -57,7 +48,7 @@ class FootprintAccumulator:
         minute boundary was crossed, otherwise None.
         """
         trade_ms: int = trade["T"]
-        price = round(float(trade["p"]), self._decimals)
+        price = round(round(float(trade["p"]) / self._step) * self._step, self._decimals)
         qty = float(trade["q"])
         is_maker: bool = trade["m"]
 
@@ -116,7 +107,7 @@ class FootprintAccumulator:
                     "imbalance": _is_imbalance(bv, sv),
                 }
             )
-        return {"time": time_ms, "levels": levels}
+        return {"time": time_ms, "decimals": self._decimals, "levels": levels}
 
 
 # ── Legacy REST-endpoint compatibility ────────────────────────────────────────

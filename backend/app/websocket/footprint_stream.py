@@ -23,6 +23,7 @@ import websockets
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.analytics.footprint import FootprintAccumulator
+from app.analytics.price_step import fetch_tick_size, fetch_typical_range, footprint_step_for
 
 router = APIRouter()
 
@@ -72,12 +73,18 @@ async def _agg_trade_loop(symbol: str, interval: str) -> None:
             await asyncio.sleep(2)
 
 
-def _ensure_running(symbol: str, interval: str) -> None:
+async def _ensure_running(symbol: str, interval: str) -> None:
     """Start the background accumulator task if not already running."""
     k = _key(symbol, interval)
 
     if k not in _accumulators:
-        _accumulators[k] = FootprintAccumulator(max_candles=50, partial_interval=2.0, symbol=symbol)
+        try:
+            tick_size = await fetch_tick_size(symbol)
+            typical_range = await fetch_typical_range(symbol)
+            step = footprint_step_for(typical_range, tick_size)
+        except Exception:
+            step = 1.0
+        _accumulators[k] = FootprintAccumulator(max_candles=50, partial_interval=2.0, price_step=step)
         _subscribers[k] = set()
 
     task = _bg_tasks.get(k)
@@ -91,7 +98,7 @@ def _ensure_running(symbol: str, interval: str) -> None:
 async def footprint_stream(ws: WebSocket, symbol: str, interval: str) -> None:
     await ws.accept()
 
-    _ensure_running(symbol, interval)
+    await _ensure_running(symbol, interval)
     k = _key(symbol, interval)
     acc = _accumulators[k]
 
