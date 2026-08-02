@@ -212,6 +212,7 @@ export function HeatmapCanvas({ sharedChartRef, sharedSeriesRef }: HeatmapCanvas
   // ── WebSocket ─────────────────────────────────────────────────────────────
   useEffect(() => {
     snapshotsRef.current = [];
+    scheduleDraw(); // clear immediately — don't wait for the socket to reconnect
 
     let ws:     WebSocket | null = null;
     let stopped = false;

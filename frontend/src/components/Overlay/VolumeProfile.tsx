@@ -50,8 +50,7 @@ export function VolumeProfile({ sharedChartRef, sharedSeriesRef }: VolumeProfile
     const canvas  = canvasRef.current;
     const chart   = sharedChartRef.current;
     const series  = sharedSeriesRef.current;
-    const profile = profileRef.current;
-    if (!canvas || !chart || !series || !profile || profile.levels.length === 0) return;
+    if (!canvas || !chart || !series) return;
 
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
@@ -59,6 +58,9 @@ export function VolumeProfile({ sharedChartRef, sharedSeriesRef }: VolumeProfile
     const W = canvas.width;
     const H = canvas.height;
     ctx.clearRect(0, 0, W, H);
+
+    const profile = profileRef.current;
+    if (!profile || profile.levels.length === 0) return;
 
     const MAX_BAR_W = W * 0.15; // bars occupy the rightmost 15% of the pane
     const maxVol    = Math.max(...profile.levels.map((l) => l.volume));
@@ -171,6 +173,7 @@ export function VolumeProfile({ sharedChartRef, sharedSeriesRef }: VolumeProfile
   // ── WebSocket ─────────────────────────────────────────────────────────────
   useEffect(() => {
     profileRef.current = null; // clear stale data on symbol change
+    scheduleDraw(); // clear immediately — don't wait for the fetch to resolve
 
     let ws: WebSocket | null = null;
     let stopped = false;

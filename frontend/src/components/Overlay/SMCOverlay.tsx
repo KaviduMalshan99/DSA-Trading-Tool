@@ -36,8 +36,7 @@ export function SMCOverlay({ sharedChartRef, sharedSeriesRef }: SMCOverlayProps)
     const canvas = canvasRef.current;
     const chart  = sharedChartRef.current;
     const series = sharedSeriesRef.current;
-    const data   = dataRef.current;
-    if (!canvas || !chart || !series || !data) return;
+    if (!canvas || !chart || !series) return;
 
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
@@ -45,6 +44,9 @@ export function SMCOverlay({ sharedChartRef, sharedSeriesRef }: SMCOverlayProps)
     const W = canvas.width;
     const H = canvas.height;
     ctx.clearRect(0, 0, W, H);
+
+    const data = dataRef.current;
+    if (!data) return;
 
     const intervalSecs = intervalToSecs(activeInterval);
     const timeScale     = chart.timeScale();
@@ -170,6 +172,7 @@ export function SMCOverlay({ sharedChartRef, sharedSeriesRef }: SMCOverlayProps)
   // ── Poll REST endpoint (no SMC websocket stream exists) ───────────────────
   useEffect(() => {
     dataRef.current = null;
+    scheduleDraw(); // clear immediately — don't wait for the fetch to resolve
     let stopped = false;
 
     async function fetchZones() {

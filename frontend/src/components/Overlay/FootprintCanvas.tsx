@@ -214,6 +214,7 @@ export function FootprintCanvas({ sharedChartRef, sharedSeriesRef }: FootprintCa
   // ── WebSocket ─────────────────────────────────────────────────────────────
   useEffect(() => {
     barsRef.current.clear();
+    scheduleDraw(); // clear immediately — don't wait for the socket to reconnect
 
     let ws:     WebSocket | null = null;
     let stopped = false;

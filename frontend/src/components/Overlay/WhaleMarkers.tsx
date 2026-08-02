@@ -174,6 +174,7 @@ export function WhaleMarkers({ sharedChartRef, sharedSeriesRef }: WhaleMarkersPr
     tradesRef.current = [];
     clearTrades();
     setTooltip(null);
+    scheduleDraw(); // clear immediately — don't wait for the socket to reconnect
 
     let ws:    WebSocket | null = null;
     let stopped = false;

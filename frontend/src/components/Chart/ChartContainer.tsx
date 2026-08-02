@@ -2,6 +2,7 @@ import { type IChartApi, type ISeriesApi } from 'lightweight-charts';
 import { useChartStore } from '../../store/chartStore';
 import { TradingChart } from './TradingChart';
 import { ChartToolbar } from './ChartToolbar';
+import { ChartLoadingOverlay } from './ChartLoadingOverlay';
 import { DeltaPanel } from '../Overlay/DeltaPanel';
 import { FootprintCanvas } from '../Overlay/FootprintCanvas';
 import { HeatmapCanvas } from '../Overlay/HeatmapCanvas';
@@ -38,6 +39,8 @@ export function ChartContainer({ sharedChartRef, sharedSeriesRef, chartAreaRef }
           sharedChartRef={sharedChartRef}
           sharedSeriesRef={sharedSeriesRef}
         />
+
+        <ChartLoadingOverlay />
 
         {/* Heatmap: renders AFTER TradingChart so refs are populated (React effects run in DOM order).
             z-0 keeps it below TradingChart's z-10; transparent chart bg lets it show through. */}
