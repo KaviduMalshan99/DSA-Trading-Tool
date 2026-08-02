@@ -1559,7 +1559,7 @@ export function DrawingCanvas({ sharedChartRef, sharedSeriesRef }: Props) {
   const {
     activeTool, drawings, selectedId, magnetEnabled, lastCursorMode,
     keepToolActive, drawingsLocked, drawingsHidden,
-    addDrawing, updateDrawing, deleteDrawing, selectDrawing, setTool,
+    addDrawing, updateDrawing, deleteDrawing, selectDrawing, setTool, undo,
   } = useDrawingStore();
   const mousePosRef = useRef<{ x: number; y: number; inside: boolean }>({ x: 0, y: 0, inside: false });
   const hoverPriceRef = useRef<number | null>(null);
@@ -2904,11 +2904,29 @@ export function DrawingCanvas({ sharedChartRef, sharedSeriesRef }: Props) {
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
         const sel = selectedIdRef.current;
         if (sel && !drawingsLockedRef.current) deleteDrawing(sel);
+      } else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && (e.key === 'z' || e.key === 'Z')) {
+        // Mid-placement (multi-click shape or brush stroke in progress): treat
+        // Ctrl+Z as a clean cancel of that in-progress shape, same as Escape,
+        // rather than reaching back into history — the shape isn't committed
+        // to `drawings` yet, so there'd be nothing there for it to undo anyway.
+        if (drawingRef.current.active || freeformRef.current.active) {
+          e.preventDefault();
+          drawingRef.current.active = false;
+          drawingRef.current.step   = 0;
+          freeformRef.current.active = false;
+          freeformRef.current.tool   = null;
+          freeformRef.current.points = [];
+          measureResultRef.current = null;
+          scheduleRender();
+        } else if (!drawingsLockedRef.current) {
+          e.preventDefault();
+          undo();
+        }
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [deleteDrawing, scheduleRender]);
+  }, [deleteDrawing, scheduleRender, undo]);
 
   // Trendline/hline/rectangle/fibonacci/eraser capture all events (chart
   // pan/zoom blocked — intentional while placing points or erasing).

@@ -314,6 +314,12 @@ interface DrawingState {
   // (use the caller's default position).
   favoritesBarPos: { x: number; y: number } | null;
   drawings: Drawing[];
+  // Snapshots of `drawings` taken right before each mutating action (add,
+  // update, delete, clearAll) — Ctrl+Z pops the last one back into `drawings`.
+  // Whole-array snapshots (rather than per-type inverse patches) is what makes
+  // undo generic across every drawing kind for free: it doesn't know or care
+  // what changed, only what the array looked like a moment ago.
+  history: Drawing[][];
   selectedId: string | null;
 
   setTool: (tool: DrawingTool) => void;
@@ -323,6 +329,7 @@ interface DrawingState {
   selectDrawing: (id: string | null) => void;
   clearAll: () => void;
   loadDrawings: (drawings: Drawing[]) => void;
+  undo: () => void;
   toggleKeepToolActive: () => void;
   toggleDrawingsLocked: () => void;
   toggleDrawingsHidden: () => void;
@@ -351,6 +358,30 @@ function isPositionRangeTool(tool: DrawingTool): tool is PositionRangeTool {
   return (POSITION_RANGE_TOOLS as readonly string[]).includes(tool);
 }
 
+// Capped so a long session doesn't grow this unboundedly.
+const MAX_HISTORY = 50;
+
+function pushHistory(history: Drawing[][], snapshot: Drawing[]): Drawing[][] {
+  const next = [...history, snapshot];
+  return next.length > MAX_HISTORY ? next.slice(next.length - MAX_HISTORY) : next;
+}
+
+// Style pickers (the opacity <input type="range">, Fib settings' price
+// number inputs, …) call updateDrawing on every drag tick/keystroke, not just
+// on commit. Without coalescing, one slider drag would blow through the
+// entire MAX_HISTORY cap on a single gesture and evict real undo-worthy
+// history (earlier shapes). Module-level like `latestCandlesForExtrapolation`
+// in DrawingCanvas.tsx — pure bookkeeping, doesn't need to be reactive state.
+const COALESCE_WINDOW_MS = 400;
+let lastMutation: { id: string; at: number } | null = null;
+
+function pushHistoryFor(history: Drawing[][], snapshot: Drawing[], id: string): Drawing[][] {
+  const now = Date.now();
+  const coalesce = lastMutation != null && lastMutation.id === id && now - lastMutation.at < COALESCE_WINDOW_MS;
+  lastMutation = { id, at: now };
+  return coalesce ? history : pushHistory(history, snapshot);
+}
+
 export const useDrawingStore = create<DrawingState>((set) => ({
   activeTool: 'cross',
   lastCursorMode: 'cross',
@@ -366,6 +397,7 @@ export const useDrawingStore = create<DrawingState>((set) => ({
   favoritesBarOpen: false,
   favoritesBarPos: null,
   drawings: [],
+  history: [],
   selectedId: null,
 
   setTool: (tool) =>
@@ -387,16 +419,41 @@ export const useDrawingStore = create<DrawingState>((set) => ({
         magnetEnabled: cursorGroup ? false : s.magnetEnabled,
       };
     }),
-  addDrawing: (drawing) => set((s) => ({ drawings: [...s.drawings, drawing] })),
+  addDrawing: (drawing) =>
+    set((s) => {
+      lastMutation = null;
+      return { history: pushHistory(s.history, s.drawings), drawings: [...s.drawings, drawing] };
+    }),
   updateDrawing: (id, patch) =>
     set((s) => ({
+      history: pushHistoryFor(s.history, s.drawings, id),
       drawings: s.drawings.map((d) => (d.id === id ? ({ ...d, ...patch } as Drawing) : d)),
     })),
   deleteDrawing: (id) =>
-    set((s) => ({ drawings: s.drawings.filter((d) => d.id !== id), selectedId: null })),
+    set((s) => {
+      lastMutation = null;
+      return {
+        history: pushHistory(s.history, s.drawings),
+        drawings: s.drawings.filter((d) => d.id !== id),
+        selectedId: null,
+      };
+    }),
   selectDrawing: (id) => set({ selectedId: id }),
-  clearAll: () => set({ drawings: [], selectedId: null }),
-  loadDrawings: (drawings) => set({ drawings }),
+  clearAll: () =>
+    set((s) => {
+      lastMutation = null;
+      return { history: pushHistory(s.history, s.drawings), drawings: [], selectedId: null };
+    }),
+  // A fresh symbol/interval's persisted drawings aren't part of this session's
+  // undo timeline — reset history rather than carrying over stale snapshots.
+  loadDrawings: (drawings) => { lastMutation = null; set({ drawings, history: [] }); },
+  undo: () =>
+    set((s) => {
+      if (s.history.length === 0) return {};
+      lastMutation = null;
+      const prev = s.history[s.history.length - 1];
+      return { drawings: prev, history: s.history.slice(0, -1), selectedId: null };
+    }),
   toggleKeepToolActive: () => set((s) => ({ keepToolActive: !s.keepToolActive })),
   toggleDrawingsLocked: () => set((s) => ({ drawingsLocked: !s.drawingsLocked })),
   toggleDrawingsHidden: () => set((s) => ({ drawingsHidden: !s.drawingsHidden })),
