@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useMarketStore } from '../../store/marketStore';
 import { useChartStore } from '../../store/chartStore';
+import { formatPrice } from '../../utils/priceFormat';
 
 interface Ticker24hr {
   lastPrice: string;
@@ -44,8 +45,7 @@ export function MarketInfo() {
   const low        = ticker ? parseFloat(ticker.lowPrice)          : null;
   const isPositive = changePct !== null && changePct >= 0;
 
-  const fmt = (n: number) =>
-    n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmt = formatPrice;
 
   const displayPrice = crosshairPrice ?? price;
 

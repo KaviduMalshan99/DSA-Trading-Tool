@@ -6,6 +6,7 @@ import { useCandleStyleStore } from '../../store/candleStyleStore';
 import { useThemeStore, type Theme } from '../../store/themeStore';
 import { useChartSync } from '../../hooks/useChartSync';
 import { toChartTime } from '../../utils/chartTime';
+import { decimalsForPrice, formatPrice } from '../../utils/priceFormat';
 import type { Candle } from '../../types/market';
 
 function chartThemeOptions(theme: Theme) {
@@ -56,11 +57,30 @@ export function TradingChart({ sharedChartRef, sharedSeriesRef }: TradingChartPr
   const loadingMoreRef = useRef(false);
   const reachedStartRef = useRef(false);
 
+  // Tracks the precision last applied to the series' priceFormat so the
+  // right-axis/crosshair labels size to the symbol's own price (BTC ~2
+  // decimals, PEPE ~8) instead of lightweight-charts' fixed 2-decimal
+  // default, without calling applyOptions on every single tick.
+  const appliedDecimalsRef = useRef<number | null>(null);
+
   const { activeSymbol, activeInterval, setCandles, appendCandle, prependCandles } = useMarketStore();
   const { onRangeChange, onCrosshairMove } = useChartSync();
   const { visibleOverlays } = useChartStore();
   const candleStyle = useCandleStyleStore();
   const theme = useThemeStore((s) => s.theme);
+
+  // Size the right-axis/crosshair price labels to this symbol's own price
+  // (BTC ~2 decimals, PEPE ~8) instead of the charting library's fixed
+  // 2-decimal default, which rounds sub-cent coins to "0.00".
+  useEffect(() => {
+    if (currentPrice === null || !seriesRef.current) return;
+    const decimals = decimalsForPrice(currentPrice);
+    if (decimals === appliedDecimalsRef.current) return;
+    appliedDecimalsRef.current = decimals;
+    seriesRef.current.applyOptions({
+      priceFormat: { type: 'price', precision: decimals, minMove: Math.pow(10, -decimals) },
+    });
+  }, [currentPrice]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -204,6 +224,7 @@ export function TradingChart({ sharedChartRef, sharedSeriesRef }: TradingChartPr
     oldestTimeRef.current = null;
     loadingMoreRef.current = false;
     reachedStartRef.current = false;
+    appliedDecimalsRef.current = null;
 
     let ws: WebSocket | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -354,10 +375,7 @@ export function TradingChart({ sharedChartRef, sharedSeriesRef }: TradingChartPr
         <span className="text-[var(--text-muted)] text-xs">{activeInterval}</span>
         {currentPrice !== null && (
           <span className="text-[#26a641] text-sm font-mono font-bold">
-            {currentPrice.toLocaleString('en-US', {
-              minimumFractionDigits: 2,
-              maximumFractionDigits: 2,
-            })}
+            {formatPrice(currentPrice)}
           </span>
         )}
         <span
