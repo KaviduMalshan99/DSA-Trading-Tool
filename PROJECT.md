@@ -220,7 +220,7 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 
 | Stage | Name                       | Completion | One-line status                                                                                       |
 | ----- | -------------------------- | ---------- | ----------------------------------------------------------------------------------------------------- |
-| 1     | Foundation & Workspace     | **~90%**   | Workspace, chart, live data, drawing tools all working; 2 position tools + UI polish + perf remain    |
+| 1     | Foundation & Workspace     | **~93%**   | Workspace, chart, live data, drawing tools (incl. Long/Short Position) all working; UI polish + perf + Undo remain |
 | 2     | Market Context & Structure | **~20%**   | Volume Profile core + SMC (OB/FVG) done; structure, VWAP, levels, sessions, dashboard not started     |
 | 3     | Order Flow & Execution     | **~50%**   | Footprint, Delta/CVD, Heatmap, Whale done; imbalance partial; stacked/absorption/DOM/tape not started |
 | 4     | Trade Confirmation         | **~3%**    | Nothing meaningfully built yet (Replay is 0%, not 50% as previously claimed)                          |
@@ -230,7 +230,7 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 
 ---
 
-## Stage 1 — Foundation & Workspace (~90%)
+## Stage 1 — Foundation & Workspace (~93%)
 
 **Objective:** a stable, high-performance, professional trading workspace that every later stage depends on. Not about strategies or indicators — about the infrastructure and UX that make advanced tools possible.
 
@@ -239,19 +239,20 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 - **Binance market data:** live trades, live candles, historical candles, order book, multi-symbol (all USDT pairs via search), multi-timeframe (1m–1M)
 - **Backend infrastructure:** FastAPI, Redis, PostgreSQL, async processing, WebSocket fan-out
 - **Chart engine:** candlesticks, zoom, pan, crosshair, resize, timeframe change, historical navigation (scroll-back pagination — Session 8), Asia/Colombo timezone (Session 9)
-- **Drawing engine:** Cursor, Crosshair, Trend Line, Horizontal Line, Horizontal Ray, Vertical Line, Rectangle, Rotated Rectangle, Circle, Brush, Arrow (+ marks), Fibonacci (with settings modal), Parallel Channel, Regression Channel, Undo, Clear All — all movable/resizable with floating style toolbar (Session 3)
+- **Drawing engine:** Cursor, Crosshair, Trend Line, Horizontal Line, Horizontal Ray, Vertical Line, Rectangle, Rotated Rectangle, Circle, Brush, Arrow (+ marks), Fibonacci (with settings modal), Parallel Channel, Regression Channel, **Long Position, Short Position** (entry/stop/target box, live RR + % readout, profit/loss color pickers), Clear All — all movable/resizable with floating style toolbar (Session 3; Long/Short Position built July 6–16 across commits `de4f7f6`/`91bf57d`/`2f92b41` but never logged here — reconciled Session 12)
 - **Workspace:** collapsible sidebar rail, top toolbar, dark/light theme (Session 7), watchlist (persisted, live search), market info panel, snapshot/screenshot, full screen, settings modal
 
-> **Session 11 note:** the Stage 2/3 order-flow overlays (Volume Profile, SMC, Delta/CVD, Footprint, Heatmap, Whale) went through a hardening + verification pass — non-BTC coin support fixed, whale threshold fixed, all six confirmed working live. This is cross-cutting work on other stages, not Stage 1 itself — Stage 1's own remaining scope below is unchanged. **Part C** (next up) = Long Position tool, Short Position tool, then UI cleanup.
+> **Session 11 note:** the Stage 2/3 order-flow overlays (Volume Profile, SMC, Delta/CVD, Footprint, Heatmap, Whale) went through a hardening + verification pass — non-BTC coin support fixed, whale threshold fixed, all six confirmed working live. This is cross-cutting work on other stages, not Stage 1 itself.
+>
+> **Session 12 correction:** Long Position and Short Position (listed here as "next up" in the original Session 11 note) turned out to already be fully built and committed weeks earlier (July 6–16) — just never logged. **Part C** now = UI cleanup only.
 
 ### Remaining to close Stage 1 🔴
 
 | Item                  | Type         | Owner       | Notes                                                                                                     |
 | --------------------- | ------------ | ----------- | --------------------------------------------------------------------------------------------------------- |
-| Long Position tool    | Drawing      | **Part C**  | Entry/stop/target box with live RR readout — pure annotation, belongs here                                |
-| Short Position tool   | Drawing      | **Part C**  | Mirror of Long Position                                                                                   |
-| Anchored VWAP button  | Toolbar hook | **Stage 2** | Button lives on the drawing rail; the VWAP engine is built in Stage 2. Placeholder wiring only in Stage 1 |
-| Fixed Range VP button | Toolbar hook | **Stage 2** | Same — button in Stage 1, engine in Stage 2                                                               |
+| Anchored VWAP button  | Toolbar hook | **Stage 2** | Confirmed no code anywhere in `frontend/src` (not even a placeholder button); VWAP engine is built in Stage 2 |
+| Fixed Range VP button | Toolbar hook | **Stage 2** | Same — confirmed no code; button in Stage 1, engine in Stage 2                                             |
+| Undo (Ctrl+Z)         | Drawing      | Stage 1     | **Discovered Session 12 — was wrongly marked done above.** No history stack, no keybind, no button anywhere in the drawing engine; only Escape (cancel in-progress) and Delete/Backspace (delete selected) exist |
 | UI cleanup            | Polish       | **Part C**  | Spacing, toolbar organisation, cleaner icon system, panel resizing                                        |
 | Responsive layout     | Polish       | Stage 1     |                                                                                                           |
 | Loading states        | Polish       | Stage 1     |                                                                                                           |
@@ -552,3 +553,22 @@ _(Sessions 1–9 preserved verbatim as the real build history. The "Next Session
 **Reconfirmed:** `logger.info(...)` lines in this app don't print under uvicorn's default log config (root logger defaults to WARNING — see the note under "How to Run Locally" above); only `logger.warning`+ are visible without extra setup. Came up again while debugging whale silence — a missing INFO log does not mean the code path didn't run.
 
 **Next up:** begin closing **Stage 1, Part C** — Long Position tool, Short Position tool, then UI cleanup. (Today's hardening pass was cross-cutting infrastructure work on the Stage 2/3 overlays, not Stage 1 itself; Stage 1's own remaining scope is unchanged.)
+
+### Session 12 — August 2, 2026
+
+**Doc reconciliation, no code changes.** Asked to build Long/Short Position — investigation found both **already fully implemented**: `PositionDrawing` type in `drawingStore.ts`, full render/drag/hit-test handling in `DrawingCanvas.tsx`, toolbar icons + "Prediction & measurement" group entry in `DrawingToolbar.tsx`, profit/loss color swatches in `DrawingStyleToolbar.tsx`. Built across commits `de4f7f6` (Jul 6), `91bf57d` (Jul 8), `2f92b41` (Jul 16) — weeks before Session 11 — but never logged in this file, so Stage 1's Remaining table still listed them as 🔴. Verified live in code (not just grepped): placement, independent drag on target/stop lines, whole-tool drag on entry (matches TradingView UX — confirmed as intended, not a bug), RR + % labels, style toolbar colors all present and correct.
+
+**Re-audited the rest of Stage 1's "not-built" list against actual code** while already in there:
+
+| Item | Doc claimed | Code actually has | Verdict |
+| --- | --- | --- | --- |
+| Long Position tool | 🔴 not built (Remaining, Part C) | ✅ fully built (see above) | **Drift — corrected** |
+| Short Position tool | 🔴 not built (Remaining, Part C) | ✅ fully built (see above) | **Drift — corrected** |
+| Anchored VWAP button | 🔴 not built, Stage 2-owned | 🔴 confirmed — zero matches for `VWAP`/`vwap` anywhere in `frontend/src` | Doc correct |
+| Fixed Range VP button | 🔴 not built, Stage 2-owned | 🔴 confirmed — zero matches for `Fixed Range`/`fixedRangeVp` anywhere in `frontend/src` | Doc correct |
+| Undo (Ctrl+Z) | ✅ done (Drawing engine bullet) | ❌ confirmed — zero matches for `undo`/`Undo` anywhere in `frontend/src`; only Escape (cancel) and Delete/Backspace (delete selected) keybinds exist | **Drift — corrected** (moved to Remaining) |
+| Clear All | ✅ done | ✅ "Remove All Drawings" button wired to `clearAll()` | Doc correct |
+
+**Bonus finding (out of scope, not actioned):** Price Range and Date Range drawing tools are *also* fully built (same files, same "Prediction & measurement" toolbar group) but appear nowhere in this document — not in Done, not in Remaining. Flagged for a future session; not added here to keep this pass scoped to what was asked.
+
+**Fixed:** Stage 1 Done list, Remaining table, Session 11's stale "next up" note, and the Stage 1 / overall completion percentages (~90%→~93%) all updated to match actual code.
