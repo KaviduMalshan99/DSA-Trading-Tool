@@ -220,7 +220,7 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 
 | Stage | Name                       | Completion | One-line status                                                                                       |
 | ----- | -------------------------- | ---------- | ----------------------------------------------------------------------------------------------------- |
-| 1     | Foundation & Workspace     | **~93%**   | Workspace, chart, live data, drawing tools (incl. Long/Short Position) all working; UI polish + perf + Undo remain |
+| 1     | Foundation & Workspace     | **~95%**   | Workspace, chart, live data, drawing tools (incl. Long/Short Position, Undo) all working; UI polish + perf remain |
 | 2     | Market Context & Structure | **~20%**   | Volume Profile core + SMC (OB/FVG) done; structure, VWAP, levels, sessions, dashboard not started     |
 | 3     | Order Flow & Execution     | **~50%**   | Footprint, Delta/CVD, Heatmap, Whale done; imbalance partial; stacked/absorption/DOM/tape not started |
 | 4     | Trade Confirmation         | **~3%**    | Nothing meaningfully built yet (Replay is 0%, not 50% as previously claimed)                          |
@@ -230,7 +230,7 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 
 ---
 
-## Stage 1 — Foundation & Workspace (~93%)
+## Stage 1 — Foundation & Workspace (~95%)
 
 **Objective:** a stable, high-performance, professional trading workspace that every later stage depends on. Not about strategies or indicators — about the infrastructure and UX that make advanced tools possible.
 
@@ -239,12 +239,14 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 - **Binance market data:** live trades, live candles, historical candles, order book, multi-symbol (all USDT pairs via search), multi-timeframe (1m–1M)
 - **Backend infrastructure:** FastAPI, Redis, PostgreSQL, async processing, WebSocket fan-out
 - **Chart engine:** candlesticks, zoom, pan, crosshair, resize, timeframe change, historical navigation (scroll-back pagination — Session 8), Asia/Colombo timezone (Session 9)
-- **Drawing engine:** Cursor, Crosshair, Trend Line, Horizontal Line, Horizontal Ray, Vertical Line, Rectangle, Rotated Rectangle, Circle, Brush, Arrow (+ marks), Fibonacci (with settings modal), Parallel Channel, Regression Channel, **Long Position, Short Position** (entry/stop/target box, live RR + % readout, profit/loss color pickers), Clear All — all movable/resizable with floating style toolbar (Session 3; Long/Short Position built July 6–16 across commits `de4f7f6`/`91bf57d`/`2f92b41` but never logged here — reconciled Session 12)
+- **Drawing engine:** Cursor, Crosshair, Trend Line, Horizontal Line, Horizontal Ray, Vertical Line, Rectangle, Rotated Rectangle, Circle, Brush, Arrow (+ marks), Fibonacci (with settings modal), Parallel Channel, Regression Channel, **Long Position, Short Position** (entry/stop/target box, live RR + % readout, profit/loss color pickers), Clear All, **Undo (Ctrl+Z)** — all movable/resizable with floating style toolbar (Session 3; Long/Short Position built July 6–16 across commits `de4f7f6`/`91bf57d`/`2f92b41` but never logged here — reconciled Session 12; Undo built Session 12/13)
 - **Workspace:** collapsible sidebar rail, top toolbar, dark/light theme (Session 7), watchlist (persisted, live search), market info panel, snapshot/screenshot, full screen, settings modal
 
 > **Session 11 note:** the Stage 2/3 order-flow overlays (Volume Profile, SMC, Delta/CVD, Footprint, Heatmap, Whale) went through a hardening + verification pass — non-BTC coin support fixed, whale threshold fixed, all six confirmed working live. This is cross-cutting work on other stages, not Stage 1 itself.
 >
 > **Session 12 correction:** Long Position and Short Position (listed here as "next up" in the original Session 11 note) turned out to already be fully built and committed weeks earlier (July 6–16) — just never logged. **Part C** now = UI cleanup only.
+>
+> **Session 13 note:** Undo (Ctrl+Z) — flagged as missing in Session 12 — is now built: per-action history snapshots (add/update/delete/clearAll) with 400ms coalescing for slider/input drags, scoped so it doesn't hijack typing in search/text inputs. Only UI cleanup, responsive layout, and performance polish remain to close Stage 1.
 
 ### Remaining to close Stage 1 🔴
 
@@ -252,7 +254,6 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 | --------------------- | ------------ | ----------- | --------------------------------------------------------------------------------------------------------- |
 | Anchored VWAP button  | Toolbar hook | **Stage 2** | Confirmed no code anywhere in `frontend/src` (not even a placeholder button); VWAP engine is built in Stage 2 |
 | Fixed Range VP button | Toolbar hook | **Stage 2** | Same — confirmed no code; button in Stage 1, engine in Stage 2                                             |
-| Undo (Ctrl+Z)         | Drawing      | Stage 1     | **Discovered Session 12 — was wrongly marked done above.** No history stack, no keybind, no button anywhere in the drawing engine; only Escape (cancel in-progress) and Delete/Backspace (delete selected) exist |
 | UI cleanup            | Polish       | **Part C**  | Spacing, toolbar organisation, cleaner icon system, panel resizing                                        |
 | Responsive layout     | Polish       | Stage 1     |                                                                                                           |
 | Loading states        | Polish       | Stage 1     |                                                                                                           |
@@ -572,3 +573,11 @@ _(Sessions 1–9 preserved verbatim as the real build history. The "Next Session
 **Bonus finding (out of scope, not actioned):** Price Range and Date Range drawing tools are *also* fully built (same files, same "Prediction & measurement" toolbar group) but appear nowhere in this document — not in Done, not in Remaining. Flagged for a future session; not added here to keep this pass scoped to what was asked.
 
 **Fixed:** Stage 1 Done list, Remaining table, Session 11's stale "next up" note, and the Stage 1 / overall completion percentages (~90%→~93%) all updated to match actual code.
+
+### Session 12/13 — August 2, 2026
+
+**Undo (Ctrl+Z) implemented**, closing the gap flagged earlier this session. `drawingStore.ts` gained a `history: Drawing[][]` stack — a snapshot of `drawings` is pushed before every mutating action (`addDrawing`, `updateDrawing`, `deleteDrawing`, `clearAll`), capped at 50 entries. `undo()` pops the last snapshot back into `drawings`. Continuous-input actions (opacity slider drags, Fib settings number inputs) call `updateDrawing` on every tick, not just on commit, so a single gesture would otherwise blow through the whole history cap — fixed with a 400ms coalescing window keyed by drawing id, so rapid same-id updates collapse into one history entry.
+
+Ctrl+Z is wired in `DrawingCanvas.tsx`'s keydown handler: if a shape/brush stroke is still mid-placement, Ctrl+Z cancels it (same as Escape) rather than reaching into history, since the in-progress shape isn't committed to `drawings` yet. Otherwise, and only when drawings aren't locked, it calls `undo()`. Verified the handler doesn't hijack typing in the symbol search box or other text inputs.
+
+**Stage 1 status:** Undo moved from Remaining 🔴 to Done ✅. Only UI cleanup, responsive layout, and performance polish remain to close Stage 1.
