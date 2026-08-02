@@ -7,7 +7,7 @@ import time
 from collections import deque
 
 MAX_SNAPSHOTS = 2000
-DEFAULT_STEP  = 10     # price rounding granularity — suitable for BTC ≈ $100 k
+DEFAULT_STEP  = 10.0   # fallback step if the caller can't size one from price
 SNAPSHOT_SECS = 1      # interval between snapshots (seconds)
 
 
@@ -17,14 +17,14 @@ class HeatmapAccumulator:
     Not thread-safe; call exclusively from one asyncio task.
     """
 
-    def __init__(self, price_step: int = DEFAULT_STEP) -> None:
-        self._step      : int              = price_step
-        self._book      : dict[int, float] = {}     # rounded_price → raw_qty
-        self._snapshots : deque[dict]      = deque(maxlen=MAX_SNAPSHOTS)
+    def __init__(self, price_step: float = DEFAULT_STEP) -> None:
+        self._step      : float              = price_step
+        self._book      : dict[float, float] = {}     # rounded_price → raw_qty
+        self._snapshots : deque[dict]        = deque(maxlen=MAX_SNAPSHOTS)
 
     # ── internal ──────────────────────────────────────────────────────────────
 
-    def _round(self, price: float) -> int:
+    def _round(self, price: float) -> float:
         return round(price / self._step) * self._step
 
     def _global_max(self) -> float:

@@ -15,7 +15,8 @@ import json
 import websockets
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from app.analytics.heatmap import HeatmapAccumulator, SNAPSHOT_SECS
+from app.analytics.heatmap import HeatmapAccumulator, SNAPSHOT_SECS, DEFAULT_STEP
+from app.analytics.price_step import fetch_current_price, price_step_for
 
 router = APIRouter()
 
@@ -76,7 +77,12 @@ async def heatmap_stream(ws: WebSocket, symbol: str) -> None:
     await ws.accept()
 
     if symbol not in _accumulators:
-        _accumulators[symbol] = HeatmapAccumulator()
+        try:
+            price = await fetch_current_price(symbol)
+            step = price_step_for(price)
+        except Exception:
+            step = DEFAULT_STEP
+        _accumulators[symbol] = HeatmapAccumulator(price_step=step)
 
     _clients.setdefault(symbol, set()).add(ws)
 

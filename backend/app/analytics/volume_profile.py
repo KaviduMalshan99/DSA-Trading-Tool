@@ -5,6 +5,8 @@ from dataclasses import dataclass
 
 import aiohttp
 
+from app.analytics.price_step import price_decimals_for
+
 
 # ── Legacy REST-endpoint interface ────────────────────────────────────────────
 # indicators.py imports build_volume_profile and VolumeProfileNode directly.
@@ -65,14 +67,9 @@ def build_volume_profile(
 _BINANCE_REST = "https://api.binance.com"
 
 
-def _tick_size_for(symbol: str) -> float:
-    """BTC rounds to nearest 10; all others to nearest 1."""
-    return 10.0 if "BTC" in symbol.upper() else 1.0
-
-
 def build_profile_from_klines(
     klines: list[list],
-    tick_size: float = 10.0,
+    tick_size: float,
     value_area_pct: float = 0.70,
 ) -> dict:
     """
@@ -137,9 +134,10 @@ def build_profile_from_klines(
     vah = max(va_prices)
     val = min(va_prices)
 
+    decimals = price_decimals_for(tick_size)
     result_levels = [
         {
-            "price":         round(p, 2),
+            "price":         round(p, decimals),
             "volume":        round(levels[p]["volume"],   4),
             "buy_vol":       round(levels[p]["buy_vol"],  4),
             "sell_vol":      round(levels[p]["sell_vol"], 4),
@@ -151,16 +149,15 @@ def build_profile_from_klines(
 
     return {
         "levels":       result_levels,
-        "poc":          round(poc_price, 2),
-        "vah":          round(vah, 2),
-        "val":          round(val, 2),
+        "poc":          round(poc_price, decimals),
+        "vah":          round(vah, decimals),
+        "val":          round(val, decimals),
         "total_volume": round(total_volume, 4),
     }
 
 
-async def fetch_and_build(symbol: str, interval: str, limit: int = 200) -> dict:
+async def fetch_and_build(symbol: str, interval: str, tick_size: float, limit: int = 200) -> dict:
     """Fetch klines from Binance REST and return a volume profile dict."""
-    tick_size = _tick_size_for(symbol)
     url    = f"{_BINANCE_REST}/api/v3/klines"
     params = {"symbol": symbol.upper(), "interval": interval, "limit": limit}
 
