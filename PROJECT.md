@@ -2,38 +2,42 @@
 
 ## Project Overview
 
-DSA Trading Tool is a real-time trading analytics platform that streams live market data from multiple asset classes (crypto, forex, equities) and renders advanced institutional-grade overlays on top of an interactive candlestick chart.
+DSA Trading Tool is a real-time trading analytics platform that streams live market data from Binance and renders advanced institutional-grade overlays on top of an interactive candlestick chart.
 
 The platform targets discretionary traders who rely on order flow analysis: delta/CVD, footprint charts, liquidity heatmaps, volume profile, and Smart Money Concepts (SMC) zones like Order Blocks and Fair Value Gaps.
+
+**Product vision:** _Build the easiest institutional trading platform powered by AI._ This is **not** a TradingView or ATAS clone. The goal is a focused, curated set of the **best** tools for understanding the market and executing trades — not every tool those platforms offer. Scope is **crypto only** (Binance); forex and stocks are explicitly out of scope for v1.
 
 ---
 
 ## Tech Stack
 
 ### Backend
-| Layer | Technology |
-|---|---|
-| API framework | Python FastAPI (async) |
-| WebSocket server | FastAPI WebSocket + Redis pub/sub fan-out |
-| Background worker | asyncio task runner |
-| Database | PostgreSQL 16 via SQLAlchemy 2 async |
-| Cache / message bus | Redis 7 |
-| Market data — crypto | Binance WebSocket streams |
-| Market data — forex | Alpha Vantage REST (polled) |
-| Market data — stocks | Polygon.io REST |
-| Analytics | Pure Python + NumPy |
-| Containerisation | Docker + Docker Compose |
+
+| Layer                | Technology                                                      |
+| -------------------- | --------------------------------------------------------------- |
+| API framework        | Python FastAPI (async)                                          |
+| WebSocket server     | FastAPI WebSocket + Redis pub/sub fan-out                       |
+| Background worker    | asyncio task runner                                             |
+| Database             | PostgreSQL 16 via SQLAlchemy 2 async                            |
+| Cache / message bus  | Redis 7                                                         |
+| Market data — crypto | Binance WebSocket streams                                       |
+| Market data — forex  | Alpha Vantage REST (polled) — _scaffolded, out of scope for v1_ |
+| Market data — stocks | Polygon.io REST — _scaffolded, out of scope for v1_             |
+| Analytics            | Pure Python + NumPy                                             |
+| Containerisation     | Docker + Docker Compose                                         |
 
 ### Frontend
-| Layer | Technology |
-|---|---|
-| UI framework | React 18 + TypeScript |
-| Chart engine | Lightweight Charts v4 (TradingView) |
-| Canvas overlays | HTML5 Canvas 2D API |
-| State management | Zustand |
-| Styling | Tailwind CSS v3 |
-| Build tool | Vite 5 |
-| WebSocket client | Native browser WebSocket |
+
+| Layer            | Technology                          |
+| ---------------- | ----------------------------------- |
+| UI framework     | React 18 + TypeScript               |
+| Chart engine     | Lightweight Charts v4 (TradingView) |
+| Canvas overlays  | HTML5 Canvas 2D API                 |
+| State management | Zustand                             |
+| Styling          | Tailwind CSS v3                     |
+| Build tool       | Vite 5                              |
+| WebSocket client | Native browser WebSocket            |
 
 ---
 
@@ -47,12 +51,15 @@ DSA-Trading-Tool/
 │   │   │   ├── config.py          # Pydantic-settings env config
 │   │   │   ├── database.py        # Async SQLAlchemy engine + session
 │   │   │   └── redis.py           # Redis client, pub/sub helpers, cache helpers
+│   │   ├── models/
+│   │   │   ├── __init__.py        # Re-exports CandleRecord (fixed Session 10)
+│   │   │   └── candle.py          # SQLAlchemy Candle model
 │   │   ├── market/
 │   │   │   ├── providers/
 │   │   │   │   ├── base.py        # Abstract BaseProvider + dataclasses
 │   │   │   │   ├── binance.py     # Binance WebSocket provider (crypto)
-│   │   │   │   ├── forex.py       # Alpha Vantage provider (forex)
-│   │   │   │   └── stocks.py      # Polygon.io provider (stocks)
+│   │   │   │   ├── forex.py       # Alpha Vantage provider (forex) — out of scope v1
+│   │   │   │   └── stocks.py      # Polygon.io provider (stocks) — out of scope v1
 │   │   │   └── collectors/
 │   │   │       ├── candle_collector.py   # Streams candles → Redis
 │   │   │       ├── trade_collector.py    # Streams trades, detects whale prints
@@ -64,13 +71,19 @@ DSA-Trading-Tool/
 │   │   │   ├── volume_profile.py  # VP nodes with POC + Value Area
 │   │   │   └── smc.py             # Order Blocks + Fair Value Gap detection
 │   │   ├── websocket/
-│   │   │   ├── manager.py         # ConnectionManager: Redis → WebSocket fan-out
-│   │   │   └── routes.py          # /ws/{channel} FastAPI WebSocket endpoint
+│   │   │   ├── manager.py             # ConnectionManager: Redis → WebSocket fan-out
+│   │   │   ├── routes.py              # /ws/{channel:path} catch-all (registered last)
+│   │   │   ├── candle_stream.py       # /ws/candles/{symbol}/{interval} — live klines + loadMore pagination, see Session 8
+│   │   │   ├── delta_stream.py        # /ws/delta/{symbol}/{interval} — delta/CVD bars
+│   │   │   ├── footprint_stream.py    # /ws/footprint/{symbol}/{interval}
+│   │   │   ├── volume_profile_stream.py # /ws/vprofile/{symbol}/{interval}
+│   │   │   ├── whale_stream.py        # /ws/whales/{symbol}
+│   │   │   └── heatmap_stream.py      # /ws/heatmap/{symbol}
 │   │   ├── api/
 │   │   │   ├── candles.py         # GET /api/v1/candles/{symbol}
 │   │   │   ├── symbols.py         # GET /api/v1/symbols/
 │   │   │   └── indicators.py      # GET /api/v1/indicators/{delta,vp,footprint,smc}
-│   │   └── main.py                # FastAPI app, CORS, router wiring, lifespan
+│   │   └── main.py                # FastAPI app, CORS, router wiring (specific WS routes before the /ws/{channel} catch-all), lifespan
 │   ├── worker/
 │   │   └── main.py                # Standalone asyncio worker (collectors entrypoint)
 │   ├── requirements.txt
@@ -80,32 +93,53 @@ DSA-Trading-Tool/
 │   ├── src/
 │   │   ├── components/
 │   │   │   ├── Chart/
-│   │   │   │   ├── TradingChart.tsx    # Lightweight Charts candlestick host
-│   │   │   │   ├── ChartToolbar.tsx   # Interval buttons + overlay toggles
-│   │   │   │   └── ChartContainer.tsx # Composes chart + all overlays
+│   │   │   │   ├── TradingChart.tsx    # Lightweight Charts candlestick host, scroll-back pagination
+│   │   │   │   ├── ChartToolbar.tsx    # Interval buttons + overlay toggles
+│   │   │   │   └── ChartContainer.tsx  # Composes chart + all overlays
+│   │   │   ├── Drawing/
+│   │   │   │   ├── DrawingCanvas.tsx        # Cursor/trend-line/shape/Fibonacci draw + edit engine
+│   │   │   │   ├── DrawingToolbar.tsx       # Left icon rail — grouped tool buttons
+│   │   │   │   ├── DrawingStyleToolbar.tsx  # Floating style toolbar for a selected drawing
+│   │   │   │   ├── FavoritesToolbar.tsx     # Pinned/favorited tool shortcuts
+│   │   │   │   ├── FibSettingsModal.tsx     # Fibonacci Style/Coordinates/Visibility dialog
+│   │   │   │   └── drawingStyleShared.tsx   # Shared color/width/line-style controls
 │   │   │   ├── Overlay/
-│   │   │   │   ├── HeatmapCanvas.tsx  # Canvas: liquidity heatmap
-│   │   │   │   ├── FootprintCanvas.tsx# Canvas: footprint bars
-│   │   │   │   ├── VolumeProfile.tsx  # Side-panel: VP nodes (POC, VA)
-│   │   │   │   └── WhaleMarkers.tsx   # Live whale trade ticker overlay
+│   │   │   │   ├── HeatmapCanvas.tsx   # Canvas: liquidity heatmap
+│   │   │   │   ├── FootprintCanvas.tsx # Canvas: footprint bars
+│   │   │   │   ├── VolumeProfile.tsx   # Side-panel: VP nodes (POC, VA)
+│   │   │   │   ├── SMCOverlay.tsx      # Canvas: Order Block + FVG rectangles
+│   │   │   │   ├── DeltaPanel.tsx      # Delta histogram + CVD line panel, one-way synced to main chart
+│   │   │   │   ├── WhaleMarkers.tsx    # Canvas: whale trade bubbles on the chart
+│   │   │   │   └── WhaleTicker.tsx     # Live whale trade sidebar ticker
 │   │   │   ├── Sidebar/
-│   │   │   │   ├── SymbolList.tsx     # Searchable symbol browser
-│   │   │   │   └── MarketInfo.tsx     # Current price, 24h change, OHLV
+│   │   │   │   ├── SymbolList.tsx     # Searchable symbol browser + watchlist add
+│   │   │   │   ├── MarketInfo.tsx     # Current price, 24h change, OHLV
+│   │   │   │   └── SidebarRail.tsx    # Collapsible icon rail toggling the watchlist panel
 │   │   │   └── UI/
-│   │   │       ├── Toolbar.tsx        # Top app header
-│   │   │       └── StatusBar.tsx      # Bottom status bar
+│   │   │       ├── Toolbar.tsx             # Top app header — snapshot menu, full screen, settings
+│   │   │       ├── StatusBar.tsx           # Bottom status bar
+│   │   │       ├── TimeframeDropdown.tsx   # Interval selector (1m–1M)
+│   │   │       └── ChartSettingsModal.tsx  # Appearance (theme) + candle color settings
 │   │   ├── hooks/
 │   │   │   ├── useMarketSocket.ts     # Subscribes to candle WS channel
 │   │   │   ├── useCandles.ts          # Fetches historical candles on mount
 │   │   │   └── useChartSync.ts        # Exports range/crosshair callbacks
 │   │   ├── store/
-│   │   │   ├── marketStore.ts         # activeSymbol, interval, candles
+│   │   │   ├── marketStore.ts         # activeSymbol, interval (default `1h`), candles, prependCandles
 │   │   │   ├── chartStore.ts          # visibleOverlays, crosshair, range
 │   │   │   ├── socketStore.ts         # WebSocket channel connection states
-│   │   │   └── themeStore.ts          # dark/light theme, localStorage-persisted
+│   │   │   ├── themeStore.ts          # dark/light theme, localStorage-persisted
+│   │   │   ├── candleStyleStore.ts    # Candle body/border/wick colors, localStorage-persisted
+│   │   │   ├── drawingStore.ts        # All placed drawings + active tool state
+│   │   │   ├── watchlistStore.ts      # Persisted watchlist symbol list
+│   │   │   └── whaleStore.ts          # Recent whale trades buffer
 │   │   ├── services/
 │   │   │   ├── api.ts                 # Typed REST wrappers (fetch)
-│   │   │   └── socket.ts              # Auto-reconnecting WebSocket client
+│   │   │   └── socket.ts             # Auto-reconnecting WebSocket client
+│   │   ├── utils/
+│   │   │   ├── interval.ts            # CandleInterval → seconds
+│   │   │   ├── chartTime.ts           # epoch-ms → Asia/Colombo chart time, shared by every series/overlay, see Session 9
+│   │   │   └── chartSnapshot.ts       # Composites chart + overlay canvases into one exportable image
 │   │   ├── types/
 │   │   │   ├── market.ts              # Candle, Trade, Depth, Symbol types
 │   │   │   └── analytics.ts           # Delta, Footprint, VP, SMC types
@@ -133,8 +167,7 @@ DSA-Trading-Tool/
 ```
 ┌───────────────┐   WebSocket / REST poll   ┌─────────────────┐
 │  Binance WS   │ ─────────────────────────▶│  BinanceProvider│
-│  Alpha Vantage│                            │  ForexProvider  │
-│  Polygon.io   │                            │  StocksProvider │
+│  (crypto only)│                            │                 │
 └───────────────┘                            └────────┬────────┘
                                                       │ Candle / Trade / Depth
                                              ┌────────▼────────┐
@@ -169,64 +202,205 @@ DSA-Trading-Tool/
 
 ---
 
-## Sprint Plan Summary
+## Roadmap — Five Stages
 
-### Sprint 1 — Infrastructure & Live Data (Weeks 1–2) ✅ Completed 2025-06-25
-- [x] Project scaffolding (folder structure, Dockerfiles, configs)
-- [x] PostgreSQL + Redis Docker setup running
-- [x] Binance WebSocket provider + candle collector working
-- [x] FastAPI server with `/health`, `/candles`, `/symbols` routes
-- [x] ConnectionManager Redis → WebSocket fan-out working
-- [x] Frontend: Vite + React + Zustand bootstrap
-- [x] TradingChart renders live candles via WebSocket
+The project is organised into **five stages**. The goal is not to hit stage numbers on a calendar — it is that **when all five stages are done, the product is genuinely complete and correct**. Each stage builds on a stable version of the one before it, mirroring how professional order-flow traders actually work.
 
-### Sprint 2 — Analytics Engine (Weeks 3–4) ✅ Completed 2026-06-29
-- [x] Delta / CVD calculation + WebSocket endpoint (`/ws/delta/{symbol}/{interval}`)
-- [x] Delta panel rendering below chart (histogram: green/red bars)
-- [x] CVD line synced with delta histogram (shared time-scale, bidirectional scroll)
-- [x] Volume Profile with POC + Value Area (`/ws/vprofile/{symbol}/{interval}`)
-- [x] Symbol switching — all 15 crypto USDT pairs wired end-to-end
-- [x] Market info panel with real 24h stats from Binance ticker API
-- [x] Search filter in symbol sidebar
-- [x] Timeframe dropdown — all intervals 1m to 1M wired end-to-end
-- [x] Whale detector — bubbles on chart + live sidebar ticker
-- [x] Heatmap liquidity visualization — colour gradient order book depth overlay
-- [x] Footprint chart — data working, UI polish done (imbalance highlight box + row separators, see Session 4)
+```
+Stage 1  Foundation & Workspace      →  a stable, professional trading workspace
+Stage 2  Market Context & Structure  →  "Where should I pay attention?"
+Stage 3  Order Flow & Execution      →  "Is now the right time to enter?"
+Stage 4  Trade Confirmation          →  "Is this trade worth taking?"
+Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
+```
 
-### Sprint 3 — Overlay Rendering (Weeks 5–6)
-- [x] Footprint chart final polish (removed full-row background fill, tighter imbalance highlight, row separators) — see Session 4
-- [x] SMC zones drawn on chart (OB rectangles, FVG fills) — see Session 4
-- [x] Drawing tools (cursor group, trend line group, shapes group, Fibonacci) — see Session 3
-- [ ] UI general cleanup and improvements
-- [ ] Prepare for client demo
+> **Roadmap history:** Development through July 2026 was tracked as _Sprints 1–5_ (see Session Log below, Sessions 1–9). That sprint numbering is retired in favour of these stages. Everything the old Sprints 1–2 and most of Sprint 3 delivered now lives inside **Stage 1**. The Session Log is preserved unchanged as the project's real build history.
 
-### Sprint 4 — Multi-Asset & Polish (Weeks 7–8)
-- [ ] Forex provider wired end-to-end
-- [ ] Stocks provider wired end-to-end
-- [ ] Symbol search + market switcher (crypto / forex / stocks)
-- [ ] Interval switching (1m → 1d) with data reload
-- [ ] Performance optimisation (canvas throttle, React memo)
-- [x] Dark/light theme toggle — see Session 7
-- [ ] Responsive layout polish
+### Overall completion (measured against code, not estimated)
 
-### Sprint 5 — Production Hardening (Week 9–10)
-- [ ] Alembic migrations
-- [ ] NGINX config + frontend Docker build
-- [ ] Docker Compose production profile
-- [ ] Rate limiting on REST API
-- [ ] Error boundaries + reconnection UX
-- [ ] Basic E2E tests
+| Stage | Name                       | Completion | One-line status                                                                                       |
+| ----- | -------------------------- | ---------- | ----------------------------------------------------------------------------------------------------- |
+| 1     | Foundation & Workspace     | **~90%**   | Workspace, chart, live data, drawing tools all working; 2 position tools + UI polish + perf remain    |
+| 2     | Market Context & Structure | **~20%**   | Volume Profile core + SMC (OB/FVG) done; structure, VWAP, levels, sessions, dashboard not started     |
+| 3     | Order Flow & Execution     | **~50%**   | Footprint, Delta/CVD, Heatmap, Whale done; imbalance partial; stacked/absorption/DOM/tape not started |
+| 4     | Trade Confirmation         | **~3%**    | Nothing meaningfully built yet (Replay is 0%, not 50% as previously claimed)                          |
+| 5     | AI Intelligence & Polish   | **~8%**    | Theme + Docker Compose only; all AI modules not started                                               |
+
+> **Correction note:** the earlier stage drafts overstated a few items. This document corrects them against the actual code: Volume Profile **POC/VAH/VAL are already built** (not 🔴), the **Delta panel already is a green/red histogram with CVD** (not 🔴), footprint **already highlights imbalances** (Session 4), and **Replay has no code at all** → 0%.
+
+---
+
+## Stage 1 — Foundation & Workspace (~90%)
+
+**Objective:** a stable, high-performance, professional trading workspace that every later stage depends on. Not about strategies or indicators — about the infrastructure and UX that make advanced tools possible.
+
+### Done ✅
+
+- **Binance market data:** live trades, live candles, historical candles, order book, multi-symbol (all USDT pairs via search), multi-timeframe (1m–1M)
+- **Backend infrastructure:** FastAPI, Redis, PostgreSQL, async processing, WebSocket fan-out
+- **Chart engine:** candlesticks, zoom, pan, crosshair, resize, timeframe change, historical navigation (scroll-back pagination — Session 8), Asia/Colombo timezone (Session 9)
+- **Drawing engine:** Cursor, Crosshair, Trend Line, Horizontal Line, Horizontal Ray, Vertical Line, Rectangle, Rotated Rectangle, Circle, Brush, Arrow (+ marks), Fibonacci (with settings modal), Parallel Channel, Regression Channel, Undo, Clear All — all movable/resizable with floating style toolbar (Session 3)
+- **Workspace:** collapsible sidebar rail, top toolbar, dark/light theme (Session 7), watchlist (persisted, live search), market info panel, snapshot/screenshot, full screen, settings modal
+
+> **Session 11 note:** the Stage 2/3 order-flow overlays (Volume Profile, SMC, Delta/CVD, Footprint, Heatmap, Whale) went through a hardening + verification pass — non-BTC coin support fixed, whale threshold fixed, all six confirmed working live. This is cross-cutting work on other stages, not Stage 1 itself — Stage 1's own remaining scope below is unchanged. **Part C** (next up) = Long Position tool, Short Position tool, then UI cleanup.
+
+### Remaining to close Stage 1 🔴
+
+| Item                  | Type         | Owner       | Notes                                                                                                     |
+| --------------------- | ------------ | ----------- | --------------------------------------------------------------------------------------------------------- |
+| Long Position tool    | Drawing      | **Part C**  | Entry/stop/target box with live RR readout — pure annotation, belongs here                                |
+| Short Position tool   | Drawing      | **Part C**  | Mirror of Long Position                                                                                   |
+| Anchored VWAP button  | Toolbar hook | **Stage 2** | Button lives on the drawing rail; the VWAP engine is built in Stage 2. Placeholder wiring only in Stage 1 |
+| Fixed Range VP button | Toolbar hook | **Stage 2** | Same — button in Stage 1, engine in Stage 2                                                               |
+| UI cleanup            | Polish       | **Part C**  | Spacing, toolbar organisation, cleaner icon system, panel resizing                                        |
+| Responsive layout     | Polish       | Stage 1     |                                                                                                           |
+| Loading states        | Polish       | Stage 1     |                                                                                                           |
+| Performance           | Perf         | Stage 1     | Canvas throttle, React memo, FPS, memory, WebSocket reconnection/health                                   |
+
+> **Ownership decision:** Anchored VWAP and Fixed Range Volume Profile appeared in both Stage 1 (as drawing tools) and Stage 2 (as analysis modules). They are **owned by Stage 2** (they need analytics engines). Stage 1 only provides the toolbar buttons that call into them once built — so they're built once, not twice.
+
+---
+
+## Stage 2 — Market Context & Structure (~20%)
+
+**Objective:** help the trader understand the market _before_ considering a trade. Answers _"Where should I pay attention?"_ — trend, institutional levels, high-probability zones, session context.
+
+> **Scope guard:** Stage 2 is **context only**. Execution tools — footprint, delta, DOM, tape, absorption, imbalance — belong to Stage 3, not here. Keeping context and execution separate keeps the codebase clean and mirrors the real institutional workflow.
+
+| Module                       | Feature                                            | Status                                                        |
+| ---------------------------- | -------------------------------------------------- | ------------------------------------------------------------- |
+| **Volume Profile**           | Volume by price                                    | ✅ Done                                                       |
+|                              | POC / VAH / VAL                                    | ✅ **Done** (dashed lines on chart — _was wrongly marked 🔴_) |
+|                              | HVN / LVN                                          | 🔴                                                            |
+|                              | Developing POC (live)                              | 🔴                                                            |
+|                              | Composite (multi-day)                              | 🔵 Future                                                     |
+| **SMC**                      | Order Blocks                                       | ✅ Done                                                       |
+|                              | Fair Value Gaps                                    | ✅ Done                                                       |
+|                              | Break of Structure (BOS)                           | 🔴 Critical                                                   |
+|                              | Change of Character (CHOCH)                        | 🔴 Critical                                                   |
+|                              | Market Structure Shift (MSS)                       | 🔴                                                            |
+|                              | Liquidity Sweep                                    | 🔴                                                            |
+|                              | Equal Highs / Equal Lows                           | 🔴                                                            |
+|                              | Premium / Discount zones                           | 🔵 Future                                                     |
+|                              | _SMC mitigation_ (fade zones once price re-enters) | 🔴 _(carried over from Session 4)_                            |
+| **Market Structure**         | Trend detection (bull/bear/side)                   | 🔴 Critical                                                   |
+|                              | Swing High / Low detection                         | 🔴                                                            |
+|                              | Structure lines                                    | 🔴                                                            |
+| **VWAP**                     | Session VWAP                                       | 🔴 Critical                                                   |
+|                              | Anchored VWAP _(owns S1 button)_                   | 🔴                                                            |
+|                              | Fixed Range VP _(owns S1 button)_                  | 🔴                                                            |
+|                              | VWAP bands                                         | 🔵                                                            |
+| **Institutional Levels**     | Daily Open                                         | 🔴 Critical                                                   |
+|                              | Prev Day High / Low (PDH/PDL)                      | 🔴                                                            |
+|                              | Prev Week / Month High / Low                       | 🔵                                                            |
+| **Session Analysis**         | Asia / London / New York boxes                     | 🔴                                                            |
+|                              | Session High / Low                                 | 🔴                                                            |
+| **Market Context Dashboard** | Summary of all of the above                        | 🔴                                                            |
+
+**Development priority:** Phase 1 → POC/VAH/VAL (done) + Session VWAP + Daily Open. Phase 2 → BOS/CHOCH/MSS/Liquidity Sweep. Phase 3 → Session boxes, Anchored VWAP, Context Dashboard.
+
+---
+
+## Stage 3 — Order Flow & Execution (~50%)
+
+**Objective:** understand what is happening _right now_ — the live battle between buyers and sellers. Answers _"Is this the right time to enter?"_
+
+| Module                    | Feature                                         | Status                                                           |
+| ------------------------- | ----------------------------------------------- | ---------------------------------------------------------------- |
+| **Footprint**             | Bid × Ask footprint                             | ✅ Done                                                          |
+|                           | Buy/Sell volume, Candle Delta                   | ✅ Done                                                          |
+|                           | Imbalance highlight (5× ratio box)              | ✅ Done _(Session 4 — was wrongly marked 🔴)_                    |
+|                           | Volume / Delta footprint modes                  | 🟡 Partial                                                       |
+|                           | Large Volume Highlight                          | 🔴                                                               |
+|                           | Zero Prints, Unfinished Auction                 | 🔴                                                               |
+| **Delta**                 | Delta, Bar Delta                                | ✅ Done                                                          |
+|                           | Cumulative Delta (CVD)                          | ✅ Done                                                          |
+|                           | Delta Histogram                                 | ✅ **Done** (green/red bars — _was wrongly marked 🔴_)           |
+|                           | Session Delta, Delta Divergence                 | 🔴                                                               |
+| **Imbalance (dedicated)** | Buy/Sell imbalance, custom ratio (default 300%) | 🟡 Partial (footprint highlights; no standalone module)          |
+| **Stacked Imbalance**     | Consecutive imbalances + highlight              | 🔴                                                               |
+| **Absorption**            | Hidden institutional buying/selling             | 🔴                                                               |
+| **Liquidity Heatmap**     | Order book heatmap                              | ✅ Done                                                          |
+|                           | Liquidity zones, large-order highlight          | 🔴                                                               |
+| **Whale Detection**       | Detection + sidebar ticker                      | ✅ Done                                                          |
+|                           | History, alerts, statistics                     | 🔴                                                               |
+| **Time & Sales (Tape)**   | Live tape, filters, aggressive buyers/sellers   | 🔴 _(backend `trade_collector` already streams the source data)_ |
+| **DOM (Depth of Market)** | Live order book, bid/ask size, liquidity        | 🔴 _(backend `depth_collector` already streams the source data)_ |
+
+**Design direction (recommended):** rather than scattered indicators, build a single **Order Flow Workspace** — main chart on top; Footprint / DOM / Tape as a synchronised row; Delta / CVD / Heatmap / Whale / Execution along the bottom. This mirrors how ATAS users actually watch multiple order-flow signals at once.
+
+---
+
+## Stage 4 — Trade Confirmation & Decision Support (~3%)
+
+**Objective:** confirm whether a setup is worth taking by combining multiple independent signals. Answers _"Is this trade worth taking?"_
+
+| Module                                                             | Status                                                             |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------ |
+| Open Interest analysis (OI, OI change, funding)                    | 🔴 _(needs Binance **futures** API — currently only spot streams)_ |
+| Liquidation analysis / heatmap                                     | 🔴                                                                 |
+| Cluster Scanner (auto-detect large delta/volume/absorption/whales) | 🔴                                                                 |
+| Professional Trade Checklist                                       | 🔴                                                                 |
+| Position Calculator (size, $ risk, RR)                             | 🔴                                                                 |
+| Replay & Practice                                                  | 🔴 **0%** _(no code — previously mis-stated as 50%)_               |
+| Trade Journal                                                      | 🔵 Future                                                          |
+| Alerts (price/volume/delta/whale/absorption/imbalance)             | 🔴                                                                 |
+
+**Differentiator (recommended):** a **Trade Decision Engine** that rolls Stages 2–3 into a single _Trade Score_ (e.g. Context 25 / Order Flow 35 / Liquidity 20 / Risk 20) with a confidence % and a LONG/SHORT/WAIT recommendation. It **summarises** analysis — it never auto-trades.
+
+---
+
+## Stage 5 — AI Intelligence, Learning & Product Excellence (~8%)
+
+**Objective:** turn the platform from a charting app into an intelligent assistant. Uses everything from Stages 1–4 — adds no new market data.
+
+| Module                                                          | Status                        |
+| --------------------------------------------------------------- | ----------------------------- |
+| AI Market Analyst (summary, trend, strength, confidence)        | 🔴                            |
+| AI Trade Assistant (entry/stop/target/RR suggestions)           | 🔴                            |
+| AI Learning Assistant (explain footprint/delta/VP/OB)           | 🔴                            |
+| AI Chat (natural-language market questions)                     | 🔴                            |
+| Trading Journal AI (review, mistake detection)                  | 🔴                            |
+| Educational Mode (lessons for DSA Academy students)             | 🔴                            |
+| Personal Workspace (saved layouts, hotkeys, templates)          | 🔴                            |
+| Product polish (icons, typography, animations)                  | 🟡 ~25% (theme done)          |
+| Deployment (CI/CD, NGINX prod, monitoring, auth, rate limiting) | 🟡 ~15% (Docker Compose only) |
+
+**One dashboard, not three:** the Execution Dashboard (Stage 3), Decision Dashboard (Stage 4), and AI Market Analyst (Stage 5) are the **same component growing over time** — build it once and extend it each stage, rather than three separate panels.
+
+---
+
+## Stage ↔ Code Map
+
+Where each area currently lives in the repo:
+
+| Area                                 | Backend                                                           | Frontend                                                       |
+| ------------------------------------ | ----------------------------------------------------------------- | -------------------------------------------------------------- |
+| Candles / chart                      | `candle_stream.py`, `api/candles.py`                              | `TradingChart.tsx`, `useCandles.ts`, `marketStore.ts`          |
+| Delta / CVD                          | `analytics/delta.py`, `delta_stream.py`                           | `DeltaPanel.tsx`                                               |
+| Footprint                            | `analytics/footprint.py`, `footprint_stream.py`                   | `FootprintCanvas.tsx`                                          |
+| Volume Profile                       | `analytics/volume_profile.py`, `volume_profile_stream.py`         | `VolumeProfile.tsx`                                            |
+| Heatmap                              | `analytics/heatmap.py`, `heatmap_stream.py`, `depth_collector.py` | `HeatmapCanvas.tsx`                                            |
+| Whale                                | `trade_collector.py`, `whale_stream.py`                           | `WhaleMarkers.tsx`, `WhaleTicker.tsx`, `whaleStore.ts`         |
+| SMC                                  | `analytics/smc.py`, `api/indicators.py`                           | `SMCOverlay.tsx`                                               |
+| Drawing tools                        | —                                                                 | `DrawingCanvas.tsx`, `DrawingToolbar.tsx`, `drawingStore.ts`   |
+| Theme / workspace                    | —                                                                 | `themeStore.ts`, `index.css`, `Toolbar.tsx`, `SidebarRail.tsx` |
+| DOM _(Stage 3, not built)_           | `depth_collector.py` streams source                               | _needs new panel_                                              |
+| Tape _(Stage 3, not built)_          | `trade_collector.py` streams source                               | _needs new panel_                                              |
+| Open Interest _(Stage 4, not built)_ | _needs Binance futures provider_                                  | _needs new panel_                                              |
 
 ---
 
 ## How to Run Locally
 
 ### Prerequisites
+
 - Docker Desktop
 - Node.js 20+ (for local frontend dev)
 - Python 3.12+ (for local backend dev)
 
 ### 1. Clone & configure
+
 ```bash
 git clone <repo-url>
 cd DSA-Trading-Tool
@@ -235,278 +409,146 @@ cp .env.example .env
 ```
 
 ### 2. Start with Docker Compose (recommended)
+
 ```bash
 docker compose up --build
 ```
-Services:
-- Frontend: http://localhost:80
-- Backend API: http://localhost:8000
-- API docs: http://localhost:8000/docs
+
+Services: Frontend `http://localhost:80` · Backend API `http://localhost:8000` · API docs `http://localhost:8000/docs`
 
 ### 3. Local development (hot reload)
 
-**Backend:**
+**Known issue — PostgreSQL port conflict (Windows).** Local Windows PostgreSQL steals port 5432 from Docker. Fix every session, in order:
+
+1. `net stop postgresql-x64-16`
+2. Start Docker Desktop
+3. `docker compose up postgres redis -d`
+4. `cd backend && uvicorn app.main:app --reload --port 8000`
+5. `cd frontend && npm run dev`
+
+**Worker (separate terminal, only if you need the Redis collector pipeline):**
+
 ```bash
-cd backend
-python -m venv .venv
-.venv\Scripts\activate      # Windows
-pip install -r requirements.txt
-uvicorn app.main:app --reload
+cd backend && python -m worker.main
 ```
 
-**Worker (separate terminal):**
-```bash
+Note: the real-time overlays (candles, footprint, VP, SMC) fetch from Binance REST/WS directly and **do not** require the worker.
+
+### 4. Local dev without Docker (Windows)
+
+For when Docker Desktop itself is too heavy to run (e.g. it's slowing the machine down). Uses native Postgres + Memurai (a Redis-compatible Windows service) instead of containers. `.env` is unchanged — Postgres/Redis are just configured to match what it already expects (`localhost:5432` / `dsa_trading` / user `postgres`, `localhost:6379`).
+
+**One-time setup:**
+
+1. **Postgres** — install PostgreSQL for Windows if you don't have it (this project uses `postgresql-x64-18`). If Docker Desktop has ever been run on this machine, quit it fully first — its backend/WSL relay can hold port 5432 and block the native service from starting:
+   ```powershell
+   Get-NetTCPConnection -LocalPort 5432   # check what (if anything) already owns the port
+   Start-Service postgresql-x64-18
+   ```
+2. Create the database (only needed once — the role `postgres` already exists by default):
+   ```powershell
+   $env:PGPASSWORD = "postgres"
+   & "C:\Program Files\PostgreSQL\18\bin\psql.exe" -U postgres -h localhost -p 5432 -d postgres -c "CREATE DATABASE dsa_trading OWNER postgres;"
+   ```
+3. **Redis** — install [Memurai](https://www.memurai.com/) Developer Edition (free, native Windows service, Redis-compatible, listens on `localhost:6379` by default — no config needed). It registers itself as a Windows service named `Memurai` and starts automatically.
+
+**Every-session startup (2 terminals):**
+
+```powershell
+# Terminal 1 — make sure the services are up, then run the backend
+Start-Service postgresql-x64-18      # if not already Running
+Start-Service Memurai                 # if not already Running
 cd backend
-python -m worker.main
+.venv\Scripts\activate
+uvicorn app.main:app --reload --port 8000
 ```
 
-**Frontend:**
-```bash
+```powershell
+# Terminal 2 — frontend
 cd frontend
-npm install
 npm run dev
-# → http://localhost:5173
 ```
 
-**Infrastructure only (Postgres + Redis):**
-```bash
-docker compose up postgres redis
-```
+Verify both connections with `curl http://localhost:8000/health` → `{"status":"ok","database":"connected","redis":"connected"}`. (The app's own "Database connected" / "Redis connected" startup log lines are silently swallowed by Python's default logging level — `/health` is the reliable check, not the console output.)
 
----
-
-## Current Progress Tracker
-
-| Component | Status | Notes |
-|---|---|---|
-| Folder structure | **Done** | All files scaffolded |
-| Backend: config/db/redis | **Done** | Awaiting real DB connection test |
-| Binance provider | **Done** | Needs live key test |
-| Forex provider | **Done** | Polling based |
-| Stocks provider | **Done** | Polling based |
-| Candle collector | **Done** | Redis pub/sub wired |
-| Trade collector | **Done** | Whale threshold configurable |
-| Depth collector | **Done** | 5s cache TTL |
-| Delta analytics | ✅ Done | Live `/ws/delta/` endpoint, CVD line synced |
-| Footprint analytics | ✅ Done | Data live, UI polish complete |
-| Heatmap analytics | ✅ Done | 10s bucketing, colour LUT, 2000 snapshot history |
-| Volume Profile | ✅ Done | Canvas overlay, POC/VAH/VAL lines + bars |
-| SMC: Order Blocks | **Done** | Basic impulse detection, now drawn on chart |
-| SMC: Fair Value Gaps | **Done** | 3-candle pattern, now drawn on chart |
-| WebSocket manager | **Done** | Auto-cleanup on disconnect |
-| REST API routes | **Done** | Candles, symbols, indicators |
-| FastAPI main app | **Done** | CORS, lifespan wired |
-| Background worker | **Done** | Signal-aware shutdown |
-| Frontend types | **Done** | market.ts + analytics.ts |
-| Zustand stores | **Done** | market, chart, socket, candleStyle, watchlist, theme stores |
-| Socket service | **Done** | Auto-reconnect, per-channel |
-| API service | **Done** | Typed REST wrappers |
-| Hooks | **Done** | useCandles, useMarketSocket, useChartSync |
-| TradingChart | **Done** | Lightweight Charts, resize-aware |
-| ChartToolbar | **Done** | Interval + overlay toggles |
-| HeatmapCanvas | ✅ Done | Colour gradient, 10s buckets, 2000-snap history |
-| FootprintCanvas | ✅ Done | Data live, UI polish complete |
-| SMCOverlay | ✅ Done | Canvas overlay, OB + FVG rectangles |
-| VolumeProfile | ✅ Done | Canvas overlay, POC/VAH/VAL dashed lines |
-| WhaleMarkers | ✅ Done | Bubbles on chart, live sidebar ticker |
-| SymbolList | ✅ Done | Live backend symbol search (was a hardcoded-list filter), + button adds to a persisted watchlist |
-| MarketInfo | ✅ Done | Real 24h stats from Binance ticker REST API |
-| SidebarRail | ✅ Done | Collapsible watchlist rail — icon toggles the symbol/market-info panel |
-| Toolbar (header) | ✅ Done | Snapshot menu (download/copy/copy-link/open-in-tab), full screen toggle, candle color + theme settings modal |
-| Dark/light theme | ✅ Done | CSS-variable token system + `themeStore`, toggle in Settings → Appearance, see Session 7 |
-| Timeframe switching | ✅ Done | All intervals 1m to 1M |
-| Database PostgreSQL | ✅ Done | Docker Compose, port conflict documented |
-| docker-compose.yml | **Done** | 4-service stack |
-| Dockerfiles | **Done** | backend + frontend |
-| .env.example | **Done** | |
-| .gitignore | **Done** | |
-| Drawing tools (chart overlay) | ✅ Done | Cursor, Trend Line, Shapes, Fibonacci groups — see Session 3 |
+To go back to Docker later: stop the native services (`Stop-Service postgresql-x64-18`, `Stop-Service Memurai`) so they don't fight Docker for the same ports, then resume with `docker compose up --build` as usual — no app code or `docker-compose.yml` changes were made to support this.
 
 ---
 
 ## Session Log
 
+_(Sessions 1–9 preserved verbatim as the real build history. The "Next Session Tasks" inside them reflect thinking at the time; the authoritative to-do list now lives in the Stage sections above.)_
+
 ### Session 1 — June 25, 2025
 
-**What we built:**
-- Full project scaffold (64 files) — backend, frontend, Docker config
-- Docker setup: PostgreSQL + Redis running via `docker compose up postgres redis`
-- Live BTCUSDT candle chart with real Binance WebSocket data
-- Delta histogram + CVD line panel below chart, bidirectional time-scale sync
-- Footprint chart canvas overlay (per-price-level buy/sell volume with imbalance highlighting)
-- Symbol switching for 15 USDT crypto pairs with instant chart clear on switch
-- Volume Profile canvas overlay — POC (yellow), Value Area (blue), dashed reference lines
-- Market info sidebar with real 24h stats (price change %, 24H high/low) from Binance ticker API
-
-**Stack confirmed working:**
-- Frontend: React + TypeScript + Vite on http://localhost:5173
-- Backend: FastAPI + Python on http://localhost:8000
-- Database: PostgreSQL in Docker
-- Cache: Redis in Docker
-- Data: Live Binance WebSocket streams (`@kline_1m`, `@aggTrade`)
-
-**Key technical decisions made:**
-- Volume profile built from klines REST (OHLCV approximation), not aggTrade stream — simpler and sufficient
-- Footprint imbalance threshold: 5× ratio AND both sides ≥ 0.5 BTC (eliminates single-side false positives)
-- Canvas overlay pattern: stable `scheduleDraw` ref + `drawFnRef.current` for stale-closure-free animation
-- Route ordering: specific WS routes registered before catch-all `/ws/{channel:path}` in FastAPI
-
-**Next Session Tasks:**
-- Footprint chart UI polish (better text layout, cleaner colours)
-- Whale trade detector (aggTrade notional threshold → `/ws/whales/{symbol}`)
-- Heatmap overlay (order book depth → 2D colour grid)
-- Timeframe switching fully wired (already in toolbar, needs interval propagation fix)
-
----
+**Built:** full scaffold (64 files); Docker Postgres+Redis; live BTCUSDT candles via Binance WS; delta histogram + CVD panel with bidirectional sync; footprint canvas; 15-pair symbol switching; Volume Profile (POC/VA); market info with real 24h stats.
+**Decisions:** VP from klines REST (not aggTrade); footprint imbalance = 5× ratio AND both sides ≥ 0.5 BTC; stable `scheduleDraw` ref pattern; specific WS routes before catch-all.
 
 ### Session 2 — June 29, 2026
 
-**What we built:**
-- Timeframe dropdown (1m to 1M — all intervals wired end-to-end)
-- Whale detector (bubbles on chart + live sidebar ticker, $500K notional threshold)
-- Heatmap liquidity visualization (colour gradient, 10-second bucketing, 2000-snapshot history)
-- Footprint chart (data working — $10 price buckets for BTC, clipping, dynamic font; UI still being polished)
-- Fixed PostgreSQL port conflict permanently (documented startup order below)
-
-**Known Issues & Fixes:**
-- Local Windows PostgreSQL steals port 5432 from Docker
-- Fix every session:
-  1. `net stop postgresql-x64-16`
-  2. Start Docker Desktop
-  3. `docker compose up postgres redis -d`
-  4. `cd backend && uvicorn app.main:app --reload --port 8000`
-  5. `cd frontend && npm run dev`
-
-**Key technical decisions made:**
-- Heatmap DOM order fix: HeatmapCanvas must render *after* TradingChart in JSX — React effects run in DOM order, so mounting before means chart refs are null at subscription time
-- Footprint price bucketing: `round(price, -1)` = nearest $10 for BTC; `round(price, 1)` = nearest $0.10 for others
-- Footprint candle body dimming: TradingChart sets `upColor/downColor` to `rgba(0,0,0,0)` when footprint overlay is active so candle bodies are fully transparent (wicks remain)
-- Canvas clipping: `ctx.save/rect/clip/restore` per candle prevents footprint text from overflowing into neighbouring candles
-
-**Current Platform Status:**
-- Live BTCUSDT candles ✅
-- Delta + CVD panel ✅
-- Volume Profile POC/VAH/VAL ✅
-- Symbol switching all pairs ✅
-- Timeframe 1m to 1M ✅
-- Whale detector $500K threshold ✅
-- Heatmap order book depth ✅
-- Footprint chart ⚠️ polish needed
-
-**Next Session Tasks:**
-- Footprint chart final polish (background fills, layout)
-- SMC zones (Order Blocks + Fair Value Gaps)
-- Drawing tools (trend lines, horizontal lines)
-- UI general cleanup and improvements
-- Prepare for client demo
-
----
+**Built:** timeframe dropdown (1m–1M); whale detector ($500K notional, bubbles + ticker); heatmap (10s buckets, 2000-snapshot history); footprint data ($10 buckets for BTC, clipping, dynamic font); fixed Postgres port conflict (documented above).
+**Decisions:** HeatmapCanvas must mount _after_ TradingChart (effects run in DOM order); footprint bucketing `round(price,-1)`; candle bodies transparent under footprint; per-candle canvas clip.
 
 ### Session 3 — July 7, 2026
 
-**What we built — a full TradingView-style drawing/annotation toolset on the chart:**
-- **Cursor group:** Cross, Dot, Arrow, Demonstration (with crosshair + spotlight), Eraser (with "Remove All Drawings")
-- **Trend Line group:** Trend Line, Horizontal Line, Horizontal Ray, Vertical Line (shows its timestamp), Parallel Channel (drag-editable, mid dotted line), Regression Trend (drawn as a line, auto-converts to a statistical deviation channel)
-- **Fibonacci Retracement:** exact TradingView levels (0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.618), dotted diagonal trend line connector, movable/resizable after drawing, and a full Style/Coordinates/Visibility settings modal matching TradingView's real dialog
-- **Shapes group:** Rectangle, Rotated Rectangle, Circle, Path (with arrowhead), Arrow Marker, Arrow, Arrow Mark Up, Arrow Mark Down, Brush — every shape is movable and resizable after selecting with the cursor
-- Every drawing type supports click-to-select with a floating style toolbar (color palette + opacity, width, line style, delete), matching TradingView's UI
-- Hover-reveal dropdown arrows on grouped toolbar buttons (Cursor/Trend Line/Shapes), same interaction pattern as TradingView
-- Candle colors updated to TradingView's real green/red palette
-
-**Refinements after initial pass (based on reference screenshots):**
-- Arrow Mark Up/Down: single click to place a solid chunky block-arrow icon (not a 2-point line), with one "size" control only
-- Arrow Marker: solid tapered-dart shape (thin shaft flaring to a proper arrowhead at the tip) instead of a thin line + separate arrowhead triangle, resizable by dragging either endpoint
-
-**Key technical decisions made:**
-- One generalized multi-click state machine (`CLICKS_REQUIRED` + `drawingRef`) handles every 1–3 click tool instead of per-tool duplication
-- Drag-to-edit reuses a `kind` discriminant so structurally identical types (Trend Line/Arrow, Channel/Rotated Rectangle) share one drag implementation
-- `data-drawing-overlay` attribute + `instanceof Element` (not `HTMLElement`, which misses SVG icon glyphs) prevents floating toolbar clicks from being swallowed by the chart's window-level handlers
-
-**Next Session Tasks:**
-- Footprint chart final polish (background fills, layout)
-- SMC zones (Order Blocks + Fair Value Gaps)
-- UI general cleanup and improvements
-- Prepare for client demo
-
----
+**Built:** full TradingView-style drawing toolset — Cursor group, Trend Line group, Fibonacci (exact levels + settings modal), Shapes group; every drawing movable/resizable with floating style toolbar; hover-reveal group dropdowns; TradingView green/red candles.
+**Decisions:** one generalised multi-click state machine (`CLICKS_REQUIRED` + `drawingRef`); shared drag-edit via `kind` discriminant; `data-drawing-overlay` + `instanceof Element` to protect toolbar clicks.
 
 ### Session 4 — July 9, 2026
 
-**Footprint chart final polish:**
-- Removed the full-row translucent yellow wash on imbalanced price levels — replaced with a tight highlight box behind only the dominant side's number (green/red tint + bold), so the highlight reads as a signal instead of a blocky band
-- Added thin row-separator lines between price levels for a cleaner ladder layout
-- Padding now scales with the dynamic font size instead of a fixed 4px
-- Removed leftover debug `console.log` calls from the footprint WebSocket handler
-
-**SMC zones drawn on chart:**
-- New `SMCOverlay.tsx` canvas overlay (same pattern as FootprintCanvas/VolumeProfile — shared chart/series refs, `scheduleDraw` + `drawFnRef`), wired into `ChartContainer` and gated on the existing `smc` toolbar toggle
-- Order Blocks: one-candle-wide rectangle at the OB candle, green tint for bullish / red for bearish, opacity scaled by detection `strength`
-- Fair Value Gaps: rectangle spanning the 3-candle detection window (c1 open → c3 close) computed from the single `ts` field the API returns, dashed border, neutral purple tint (API doesn't expose gap direction)
-- Data is polled via REST every 5s (`api.getSMCZones`) since no `/ws/smc` stream exists yet — same limitation the REST-based endpoints already had
-
-**Key fix — SMC endpoint was dead in the current dev setup:**
-- `GET /indicators/smc/{symbol}` read candles from a Redis key (`candles:{symbol}:{interval}`) that's only populated by the standalone `worker/main.py` collector process, which isn't part of the documented dev startup (`docker compose up postgres redis` + `uvicorn` + `npm run dev`) and wasn't running — every request 404'd/500'd
-- Fixed by fetching klines directly from Binance's REST API inside `indicators.py` (mirrors `candle_stream.py`'s working pattern), matching how every other *working* real-time overlay (footprint, candles, volume profile) sources data — no dependency on the Redis worker pipeline
-- Also found the `postgres`/`redis` Docker containers had exited ~9h earlier; restarted them (`docker start dsa-trading-tool-postgres-1 dsa-trading-tool-redis-1`)
-
-**Next Session Tasks:**
-- SMC: mark zones as mitigated once price re-enters (backend `mitigated` field is currently always `False`) and stop drawing/fade them out
-- Consider a `/ws/smc/{symbol}/{interval}` push stream to replace the 5s REST poll
-- UI general cleanup and improvements
-- Prepare for client demo
-
----
+**Built:** footprint final polish (tight imbalance highlight box, row separators, scaled padding, removed debug logs); **SMC overlay on chart** (`SMCOverlay.tsx`) — Order Blocks (green/red, opacity by strength) + FVG (dashed purple, 3-candle span).
+**Key fix:** SMC endpoint was reading a Redis key only the worker populates (not running) → every request failed. Fixed by fetching klines directly from Binance REST in `indicators.py`, matching the working overlays. Also restarted exited Postgres/Redis containers.
 
 ### Session 5 — July 9, 2026
 
-**What we built:**
-- Enlarged the drawing toolbar icons: left-sidebar `DrawingToolbar` buttons (32px → 36px, icons 16–18px → 20px) and the floating `FavoritesToolbar` tool buttons, sized up via a Tailwind `[&_svg]` child-selector so the dropdown/flyout option lists keep their original size
-
----
+**Built:** enlarged drawing toolbar icons (32→36px buttons, 20px glyphs) via Tailwind `[&_svg]` child-selector so flyout lists keep original size.
 
 ### Session 6 — July 10, 2026
 
-**Header toolbar — snapshot, full screen, settings:**
-- New camera icon in the top header opens a dropdown: Download image, Copy image, Copy link, Open in new tab (Tweet image intentionally skipped)
-- Snapshot capture composites lightweight-charts' own `takeScreenshot()` with every overlay `<canvas>` on top of it (footprint, heatmap, SMC, drawings), so the exported image matches what's actually on screen, not just bare candles
-- Full screen icon toggles the whole app via the Fullscreen API, icon swaps enter/exit state, listens for Esc
-- Settings (gear) icon opens a `ChartSettingsModal` scoped to what was actually asked for — candle Body/Borders/Wick colors (separate up/down swatches + visibility checkboxes), not the full TradingView settings surface. Backed by a new `candleStyleStore` (localStorage-persisted); `TradingChart` now reads colors from it instead of hardcoded constants
-- Fixed a bug in that modal where the color-swatch popovers didn't render correctly — root cause was `overflow-y-auto` on the modal's content wrapper clipping the popover (not a z-index issue as first suspected); removed the scroll wrapper since the content is only 3 short rows
-- Follow-up sizing pass: bumped the 3 header icons 28px→36px buttons / 15px→20px glyphs, then tightened header padding (`py-2`→`py-1`) and icon gap (`gap-3`→`gap-1.5`) back down after the bigger icons made the bar feel over-padded
-
-**Right sidebar — collapsible watchlist:**
-- Replaced the always-visible MarketInfo/SymbolList/WhaleTicker panel with a collapsed-by-default layout: a slim icon rail (`SidebarRail.tsx`) sits at the edge, and its watchlist icon toggles the exact same panel open/closed
-- Fixed watchlist search, which was actually broken: it only filtered a hardcoded 15-symbol array client-side, so searching anything outside that list (e.g. "SHIB", "PEPE") returned nothing — even though the backend's `/symbols/search` endpoint already worked fine and covered every Binance pair. Wired the search box to that endpoint (300ms debounce, filtered to USDT pairs for consistency with the rest of the app)
-- Added a persisted `watchlistStore` (localStorage) holding the coin list; search results show a **+** button to add a coin to it (swaps to a checkmark once added)
-
-**Left drawing toolbar — icon consistency:**
-- The tools below the Prediction & Measurement group (Measure, Zoom In, Pin, Eye/Eye-off, Lock/Unlock, favorites Star, Trash) were rendering at their old intrinsic 13–18px SVG sizes instead of the 20px the rest of the toolbar already used — bumped all of them to 20px without touching any button/padding size
-- Removed the extra divider lines between the Cursor / Trend Line / Shape / Annotation buttons so they sit at the same tight `gap-1` spacing as the bottom utility tools, instead of the wider divider-separated gaps they had before
-
-**Next Session Tasks:**
-- SMC: mark zones as mitigated once price re-enters (still outstanding from Session 4)
-- Consider a `/ws/smc/{symbol}/{interval}` push stream to replace the 5s REST poll
-- Watchlist: no remove/delete affordance yet — only adding via search is wired up
-- UI general cleanup and improvements
-- Prepare for client demo
-
----
+**Built:** header snapshot menu (download/copy/copy-link/open-in-tab) compositing lightweight-charts `takeScreenshot()` with all overlay canvases; full screen toggle; `ChartSettingsModal` for candle Body/Border/Wick colors backed by `candleStyleStore`; collapsible watchlist rail (`SidebarRail.tsx`); fixed watchlist search (was filtering a hardcoded 15-symbol array — wired to `/symbols/search` with 300ms debounce); persisted `watchlistStore` with +/✓ add button; left-toolbar icon-size consistency (all 20px), removed divider lines.
+**Key fix:** swatch popover clipping was `overflow-y-auto` on the modal wrapper, not z-index.
 
 ### Session 7 — July 13, 2026
 
-**Dark/light theme toggle:**
-- New `themeStore.ts` (localStorage-persisted, same pattern as `candleStyleStore`) holding `theme: 'dark' | 'light'`, applied as a `data-theme` attribute on `<html>` — set eagerly at module load (before first React render) to avoid a flash of the wrong theme on refresh
-- `index.css` now defines the app's color palette as CSS custom properties under `:root[data-theme='dark']` / `:root[data-theme='light']` (`--bg-app`, `--bg-panel`, `--bg-panel-alt`, `--bg-hover`, `--border-color` variants, `--text-primary/secondary/tertiary/muted`, `--accent`, scrollbar colors, plus chart-specific `--chart-grid/text/border/crosshair` tokens)
-- Toggle lives in the existing Settings modal (`ChartSettingsModal.tsx`) under a new "Appearance" section, above "Candles"
-- Migrated every hardcoded chrome color (header, chart toolbar, drawing toolbar + style toolbar, Fibonacci settings modal, sidebar rail, watchlist/market info panel, delta panel, status bar, whale ticker + tooltip) to the CSS variable tokens
-- `TradingChart.tsx` and `DeltaPanel.tsx` (native Lightweight Charts canvases) re-skin their grid/axis/crosshair colors via `chart.applyOptions()` on theme change, since the charting library can't read CSS custom properties directly — chart is *not* recreated on toggle, so zoom/pan state and loaded data survive the switch
+**Built:** dark/light theme — `themeStore` (localStorage, applied as `data-theme` on `<html>` before first render); `index.css` CSS-variable token system; toggle in Settings → Appearance; migrated all chrome colors to tokens; `TradingChart`/`DeltaPanel` re-skin grid/axis/crosshair via `applyOptions()` without recreating the chart.
+**Scope:** deliberately left semantic colors (candles, buy/sell, POC/VAH/VAL, measurement chips) constant across themes.
 
-**Scope decision — chrome vs. content colors:**
-- Deliberately left unthemed: candle up/down colors (`candleStyleStore`), drawing-tool color swatches/palettes, buy/sell/bullish/bearish colors (footprint, whale markers, delta histogram, volume profile POC/VAH/VAL), and DrawingCanvas's floating measurement/range-label chips — these carry semantic meaning or are already user-customizable, same principle as leaving candle colors alone. Matches how TradingView/ThinkorSwim keep those constant across light/dark UI themes.
+### Session 8 — July 13, 2026
 
-**Next Session Tasks:**
-- SMC: mark zones as mitigated once price re-enters (still outstanding from Session 4)
-- Consider a `/ws/smc/{symbol}/{interval}` push stream to replace the 5s REST poll
-- Watchlist: no remove/delete affordance yet — only adding via search is wired up
-- UI general cleanup and improvements
-- Prepare for client demo
+**Built:** scroll-back pagination — `candle_stream.py` runs `relay_live()` + `handle_requests()` (`loadMore`→`historical_prepend`) concurrently; initial load 200→1000; `TradingChart` fires debounced `loadMore` near bar 0, guarded by refs; `prependCandles()` merges + de-dupes; visible range preserved across prepend; explicit last-100-bars range on load/switch.
+**Delta sync (first pass):** removed post-load "align to main chart" call — diagnosis incomplete (see Session 9).
+
+### Session 9 — July 16, 2026
+
+**Built:** `chartTime.ts` — all epoch-ms timestamps shifted +5.5h (Asia/Colombo) before hitting lightweight-charts (`toChartTime`, `toChartTimeSeconds`, `shiftEpochSeconds`), applied across every series/overlay + all DrawingCanvas time math; default interval `1m`→`1h`.
+**Delta sync — real fix:** bidirectional sync's same-tick guard didn't catch async range-change echoes (ResizeObserver relayout) → charts fought over range. Made sync **strictly one-directional** (delta follows main; main never written from delta); panel now pulls main range after its own historical load.
+
+### Session 10 — August 2, 2026
+
+**Audit + roadmap merge.**
+
+- Verified codebase against PROJECT.md (all three areas): folder structure, progress-tracker items, and the Session 8/9 fixes all confirmed present and accurate.
+- **Fix:** removed a stray committed temp file `backend/app/models/__init__.py.tmp.17904.8526f3603ef3` (an interrupted atomic-save that got committed instead of the real file) and created the proper `backend/app/models/__init__.py` (`from .candle import CandleRecord`).
+- **Roadmap:** retired the old Sprint numbering and merged the five detailed Stage documents into this file as the single roadmap. Corrected all stage percentages against actual code (notably: Volume Profile POC/VAH/VAL and the delta histogram are already built; footprint already highlights imbalances; **Replay is 0%, not 50%**). Locked scope to **crypto only** (forex/stocks out for v1). Assigned Anchored VWAP + Fixed Range VP to Stage 2 to avoid double-building.
+
+### Session 11 — August 2, 2026
+
+**Stage 1 hardening pass:** audited all six order-flow/context overlays for non-BTC coin support — earlier sessions were built and tested almost exclusively against BTCUSDT.
+
+**Fixed — single-bucket collapse on non-BTC coins:** footprint, heatmap, and volume profile all hardcoded a BTC-scale price step (nearest $10, or a flat $0.10/$1 fallback), which collapsed every trade on sub-$1 coins (XRP, DOGE, PEPE, SHIB, ...) into one bucket. Added a shared `analytics/price_step.py` helper (`price_step_for` + `fetch_current_price`) that derives the bucket step from the symbol's own current price, used by volume profile and heatmap (both bucket across the whole visible price axis).
+
+**Important exception — do not consolidate:** footprint deliberately does **not** use `price_step_for`. It buckets trades *within a single candle*, not across the chart axis, so it needs a much finer step tied to intra-candle volatility. It uses its own `footprint_step_for(typical_range, tick_size)` (also in `price_step.py`), sized off the symbol's 80th-percentile recent 1-minute range and floored at the exchange tick size. **A future cleanup pass must not merge footprint onto the shared whole-axis helper** — it re-breaks immediately (BTC collapses back to one bucket; illiquid coins spam thousands of empty ones).
+
+**Fixed — whale threshold never fired:** `whale_stream.py` used a flat $500K notional threshold; live sampling during this session found BTC trades rarely exceed ~$150K–$165K short-term, so the feature looked permanently broken. Replaced with a per-symbol threshold — 97th percentile of that symbol's own last 1000 aggTrades (Binance REST, sampled once when the shared listener starts), $1,000 floor, $100,000 fallback if the sample fetch fails. Example values seen during testing: BTC ~$5K–$20K depending on the moment sampled, PEPE ~$5K — both far more representative than a flat $500K. Also fixed the reconnect loop's bare `except Exception: sleep(3)`, which swallowed every error with no logging (a stuck connection was indistinguishable from a quiet market) — added `logger.warning` on lost connection and `logger.info` on threshold computation / clean cancellation.
+
+**Known/accepted limitation:** both the whale threshold and the footprint step are computed **once**, when the listener/task starts for that symbol (i.e. on first client connect). Neither re-samples if the market regime shifts significantly mid-session. Acceptable for now — documented here so it isn't rediscovered as a surprise later.
+
+**Verified:** all six overlays (Volume Profile, SMC, Delta/CVD, Footprint, Heatmap, Whale) render correctly on BTCUSDT, XRPUSDT, and PEPEUSDT via a live click-test — symbol switch, overlay toggles, scroll, and a full page reload, with the browser console checked and clean (no errors/exceptions) throughout. Heatmap/VP price axis scales correctly per symbol (real gradations on XRP, not collapsed); footprint renders distinct levels on PEPE instead of one flat bar; whale ticker + threshold logging both confirmed live.
+
+**Found, not fixed today (separate from the bucket-sizing work above):** the price ticker / MarketInfo panel displays "0.00" for PEPEUSDT — its ~$0.000009 price rounds to zero under a fixed low-decimal display format elsewhere in the UI. Unrelated to today's analytics bucket-sizing fix (that only touches VP/heatmap/footprint internals, not the chart's native price display). Left for a future session.
+
+**Cleanup-later item:** `trade_collector.py` has its own separate whale-notional check that publishes to a Redis channel (`whales:{symbol}`) nothing subscribes to — dead code. The real whale pipeline is entirely inside `whale_stream.py`, which connects to Binance directly and never touches Redis or the worker.
+
+**Reconfirmed:** `logger.info(...)` lines in this app don't print under uvicorn's default log config (root logger defaults to WARNING — see the note under "How to Run Locally" above); only `logger.warning`+ are visible without extra setup. Came up again while debugging whale silence — a missing INFO log does not mean the code path didn't run.
+
+**Next up:** begin closing **Stage 1, Part C** — Long Position tool, Short Position tool, then UI cleanup. (Today's hardening pass was cross-cutting infrastructure work on the Stage 2/3 overlays, not Stage 1 itself; Stage 1's own remaining scope is unchanged.)
