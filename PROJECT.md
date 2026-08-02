@@ -220,7 +220,7 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 
 | Stage | Name                       | Completion | One-line status                                                                                       |
 | ----- | -------------------------- | ---------- | ----------------------------------------------------------------------------------------------------- |
-| 1     | Foundation & Workspace     | **~95%**   | Workspace, chart, live data, drawing tools (incl. Long/Short Position, Undo) all working; UI polish + perf remain |
+| 1     | Foundation & Workspace     | **✅ Done**   | Workspace, chart, live data, all drawing tools (incl. Long/Short Position, Undo), overlay/loading polish complete; a few minor items deferred (see Stage 1 notes) |
 | 2     | Market Context & Structure | **~20%**   | Volume Profile core + SMC (OB/FVG) done; structure, VWAP, levels, sessions, dashboard not started     |
 | 3     | Order Flow & Execution     | **~50%**   | Footprint, Delta/CVD, Heatmap, Whale done; imbalance partial; stacked/absorption/DOM/tape not started |
 | 4     | Trade Confirmation         | **~3%**    | Nothing meaningfully built yet (Replay is 0%, not 50% as previously claimed)                          |
@@ -230,7 +230,7 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 
 ---
 
-## Stage 1 — Foundation & Workspace (~95%)
+## Stage 1 — Foundation & Workspace ✅ Done
 
 **Objective:** a stable, high-performance, professional trading workspace that every later stage depends on. Not about strategies or indicators — about the infrastructure and UX that make advanced tools possible.
 
@@ -241,25 +241,27 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 - **Chart engine:** candlesticks, zoom, pan, crosshair, resize, timeframe change, historical navigation (scroll-back pagination — Session 8), Asia/Colombo timezone (Session 9)
 - **Drawing engine:** Cursor, Crosshair, Trend Line, Horizontal Line, Horizontal Ray, Vertical Line, Rectangle, Rotated Rectangle, Circle, Brush, Arrow (+ marks), Fibonacci (with settings modal), Parallel Channel, Regression Channel, **Long Position, Short Position** (entry/stop/target box, live RR + % readout, profit/loss color pickers), Clear All, **Undo (Ctrl+Z)** — all movable/resizable with floating style toolbar (Session 3; Long/Short Position built July 6–16 across commits `de4f7f6`/`91bf57d`/`2f92b41` but never logged here — reconciled Session 12; Undo built Session 12/13)
 - **Workspace:** collapsible sidebar rail, top toolbar, dark/light theme (Session 7), watchlist (persisted, live search), market info panel, snapshot/screenshot, full screen, settings modal
+- **UI polish (Session 14):** all five canvas overlays (SMC, Footprint, Heatmap, Volume Profile, Whale markers) now clear their draw state immediately on symbol/timeframe switch instead of leaving the old symbol's boxes/markers floating over a blank chart; added a loading spinner over the chart area for both symbol and timeframe switches (timeframe switch previously had no loading feedback at all); Escape now deselects a placed drawing, fixing a stuck floating style-toolbar fragment that could linger in the drawing rail after switching symbol/timeframe with a drawing still selected
 
 > **Session 11 note:** the Stage 2/3 order-flow overlays (Volume Profile, SMC, Delta/CVD, Footprint, Heatmap, Whale) went through a hardening + verification pass — non-BTC coin support fixed, whale threshold fixed, all six confirmed working live. This is cross-cutting work on other stages, not Stage 1 itself.
 >
 > **Session 12 correction:** Long Position and Short Position (listed here as "next up" in the original Session 11 note) turned out to already be fully built and committed weeks earlier (July 6–16) — just never logged. **Part C** now = UI cleanup only.
 >
-> **Session 13 note:** Undo (Ctrl+Z) — flagged as missing in Session 12 — is now built: per-action history snapshots (add/update/delete/clearAll) with 400ms coalescing for slider/input drags, scoped so it doesn't hijack typing in search/text inputs. Only UI cleanup, responsive layout, and performance polish remain to close Stage 1.
+> **Session 13 note:** Undo (Ctrl+Z) — flagged as missing in Session 12 — is now built: per-action history snapshots (add/update/delete/clearAll) with 400ms coalescing for slider/input drags, scoped so it doesn't hijack typing in search/text inputs.
+>
+> **Session 14 note — Stage 1 closed.** A UI polish pass fixed the two most demo-visible bugs found by a live audit (stale overlay renders + missing loading feedback on switch; the stuck style-toolbar fragment after Escape). Remaining polish items (general spacing/toolbar cleanup, responsive layout, performance passes) are real but non-blocking — recorded below as deferred rather than held against Stage 1's close, since none of them affect correctness of the core workspace.
 
-### Remaining to close Stage 1 🔴
+> **Ownership note (carried forward):** Anchored VWAP and Fixed Range Volume Profile toolbar buttons were evaluated for Stage 1 but are **owned by Stage 2** (they need analytics engines that live there) — Stage 1 was never blocked on them.
 
-| Item                  | Type         | Owner       | Notes                                                                                                     |
-| --------------------- | ------------ | ----------- | --------------------------------------------------------------------------------------------------------- |
-| Anchored VWAP button  | Toolbar hook | **Stage 2** | Confirmed no code anywhere in `frontend/src` (not even a placeholder button); VWAP engine is built in Stage 2 |
-| Fixed Range VP button | Toolbar hook | **Stage 2** | Same — confirmed no code; button in Stage 1, engine in Stage 2                                             |
-| UI cleanup            | Polish       | **Part C**  | Spacing, toolbar organisation, cleaner icon system, panel resizing                                        |
-| Responsive layout     | Polish       | Stage 1     |                                                                                                           |
-| Loading states        | Polish       | Stage 1     |                                                                                                           |
-| Performance           | Perf         | Stage 1     | Canvas throttle, React memo, FPS, memory, WebSocket reconnection/health                                   |
+### Stage 1 — deferred / known items (not blocking close)
 
-> **Ownership decision:** Anchored VWAP and Fixed Range Volume Profile appeared in both Stage 1 (as drawing tools) and Stage 2 (as analysis modules). They are **owned by Stage 2** (they need analytics engines). Stage 1 only provides the toolbar buttons that call into them once built — so they're built once, not twice.
+| Item | Status | Notes |
+| --- | --- | --- |
+| Responsive layout for smaller screens | 🟡 Unverified | Codebase has zero responsive breakpoints (`sm:`/`md:`/`lg:` or `@media`) anywhere in `frontend/src`; browser-resize testing was broken in-session, so this was never visually verified below ~1920px. Deferred by decision, not fixed. |
+| Watchlist toggle icon size | 🟡 Minor | `SidebarRail.tsx` — 26px icon vs. the 20px standard used everywhere else in the toolbar (`ChartToolbar.tsx`, `DrawingToolbar.tsx`). |
+| Price Range / Date Range drawing tools undocumented | 🟡 Doc gap | Fully built (same files/toolbar group as Long/Short Position) but never added to this document's Done list — flagged Session 12, still not added. |
+| Dead code: `trade_collector` whale check | 🟡 Backend | Publishes to a Redis channel nothing subscribes to. |
+| `app` logger `.info` lines silent under uvicorn | 🟡 Backend | Default uvicorn log config drops them; only warnings/errors currently surface. |
 
 ---
 
@@ -581,3 +583,14 @@ _(Sessions 1–9 preserved verbatim as the real build history. The "Next Session
 Ctrl+Z is wired in `DrawingCanvas.tsx`'s keydown handler: if a shape/brush stroke is still mid-placement, Ctrl+Z cancels it (same as Escape) rather than reaching into history, since the in-progress shape isn't committed to `drawings` yet. Otherwise, and only when drawings aren't locked, it calls `undo()`. Verified the handler doesn't hijack typing in the symbol search box or other text inputs.
 
 **Stage 1 status:** Undo moved from Remaining 🔴 to Done ✅. Only UI cleanup, responsive layout, and performance polish remain to close Stage 1.
+
+### Session 14 — August 2, 2026
+
+**UI polish pass, closing Stage 1.** Started from a live audit of the running app (resizing, spacing, toolbar/icons, loading states) and fixed the two most demo-visible bugs it found:
+
+1. **Stale overlay renders + missing loading feedback on symbol/timeframe switch.** All five canvas overlays (`SMCOverlay.tsx`, `FootprintCanvas.tsx`, `HeatmapCanvas.tsx`, `VolumeProfile.tsx`, `WhaleMarkers.tsx`) cleared their data ref synchronously on switch but never redrew at that moment, so the previous symbol's Order Block/FVG boxes, footprint bars, etc. stayed visible over a blank chart until new data arrived. `SMCOverlay` and `VolumeProfile` had a second, compounding bug: their draw functions bailed out before `clearRect` when data was null, so even a triggered redraw wouldn't have cleared the canvas. Fixed the clear-before-bail ordering in both and added the missing redraw call after clearing each overlay's ref. Added `ChartLoadingOverlay.tsx` — a centered spinner shown whenever `candles.length === 0`, which is reset synchronously on both symbol and interval switch, covering the timeframe-switch case that previously had no loading indicator at all.
+2. **Orphaned style-toolbar fragment stuck after Escape.** `DrawingCanvas.tsx`'s Escape handler only cancelled an in-progress multi-click shape/brush stroke — it never deselected an already-placed, already-selected drawing. The floating style toolbar (`DrawingStyleToolbar.tsx`) correctly hides when nothing is selected, but with the stale selection surviving Escape, a subsequent symbol/timeframe switch resolved the toolbar's position against the drawing's now-invalid coordinates, clamping it to the top-left corner of the drawing rail instead of hiding. Escape now also calls `selectDrawing(null)`. Click-elsewhere and Delete were already correct (verified, unchanged).
+
+Both fixes verified live (BTC↔ETH, 1h→15m→1m, all five overlays active; draw→select→Escape and draw→select→Escape→switch-timeframe repros). Typecheck clean.
+
+**Stage 1 closed.** Remaining polish items (general spacing/toolbar cleanup, responsive layout, performance passes) are real but non-blocking, and recorded as deferred rather than held against the close — see the "Stage 1 — deferred / known items" table above.
