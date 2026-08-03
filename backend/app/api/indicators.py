@@ -5,6 +5,8 @@ from app.analytics.delta import compute_delta
 from app.analytics.volume_profile import build_volume_profile
 from app.analytics.footprint import build_footprint
 from app.analytics.smc import detect_order_blocks, detect_fair_value_gaps
+from app.analytics.levels import compute_levels
+from app.analytics.price_step import fetch_tick_size
 import json
 
 router = APIRouter(prefix="/indicators", tags=["indicators"])
@@ -94,4 +96,22 @@ async def get_smc_zones(symbol: str, interval: str = Query("1m"), lookback: int 
                           "ts": z.timestamp, "strength": z.strength} for z in obs],
         "fair_value_gaps": [{"type": z.zone_type.value, "high": z.price_high, "low": z.price_low,
                              "ts": z.timestamp, "strength": z.strength} for z in fvgs],
+    }
+
+
+@router.get("/levels/{symbol}")
+async def get_institutional_levels(symbol: str):
+    try:
+        candles = await _fetch_klines(symbol, "1d", 2)
+        tick_size = await fetch_tick_size(symbol)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Could not fetch levels: {exc}")
+    if len(candles) < 2:
+        raise HTTPException(status_code=404, detail="No candle data")
+    levels = compute_levels(candles, tick_size)
+    return {
+        "daily_open": levels.daily_open,
+        "pdh": levels.pdh,
+        "pdl": levels.pdl,
+        "decimals": levels.decimals,
     }
