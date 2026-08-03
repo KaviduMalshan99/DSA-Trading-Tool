@@ -221,7 +221,7 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 | Stage | Name                       | Completion | One-line status                                                                                       |
 | ----- | -------------------------- | ---------- | ----------------------------------------------------------------------------------------------------- |
 | 1     | Foundation & Workspace     | **✅ Done**   | Workspace, chart, live data, all drawing tools (incl. Long/Short Position, Undo), overlay/loading polish complete; a few minor items deferred (see Stage 1 notes) |
-| 2     | Market Context & Structure | **~20%**   | Volume Profile core + SMC (OB/FVG) done; structure, VWAP, levels, sessions, dashboard not started     |
+| 2     | Market Context & Structure | **~25%**   | Volume Profile core + SMC (OB/FVG) + Institutional Levels (Daily Open/PDH/PDL) done; structure, VWAP, sessions, dashboard not started |
 | 3     | Order Flow & Execution     | **~50%**   | Footprint, Delta/CVD, Heatmap, Whale done; imbalance partial; stacked/absorption/DOM/tape not started |
 | 4     | Trade Confirmation         | **~3%**    | Nothing meaningfully built yet (Replay is 0%, not 50% as previously claimed)                          |
 | 5     | AI Intelligence & Polish   | **~8%**    | Theme + Docker Compose only; all AI modules not started                                               |
@@ -265,7 +265,7 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 
 ---
 
-## Stage 2 — Market Context & Structure (~20%)
+## Stage 2 — Market Context & Structure (~25%, in progress)
 
 **Objective:** help the trader understand the market _before_ considering a trade. Answers _"Where should I pay attention?"_ — trend, institutional levels, high-probability zones, session context.
 
@@ -294,14 +294,15 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 |                              | Anchored VWAP _(owns S1 button)_                   | 🔴                                                            |
 |                              | Fixed Range VP _(owns S1 button)_                  | 🔴                                                            |
 |                              | VWAP bands                                         | 🔵                                                            |
-| **Institutional Levels**     | Daily Open                                         | 🔴 Critical                                                   |
-|                              | Prev Day High / Low (PDH/PDL)                      | 🔴                                                            |
-|                              | Prev Week / Month High / Low                       | 🔵                                                            |
+| **Institutional Levels**     | Daily Open                                         | ✅ Done _(Session 15)_                                        |
+|                              | Prev Day High (PDH)                                | ✅ Done _(Session 15)_                                        |
+|                              | Prev Day Low (PDL)                                 | ✅ Done _(Session 15)_                                        |
+|                              | Prev Week / Month High / Low                       | 🔵 Future                                                     |
 | **Session Analysis**         | Asia / London / New York boxes                     | 🔴                                                            |
 |                              | Session High / Low                                 | 🔴                                                            |
 | **Market Context Dashboard** | Summary of all of the above                        | 🔴                                                            |
 
-**Development priority:** Phase 1 → POC/VAH/VAL (done) + Session VWAP + Daily Open. Phase 2 → BOS/CHOCH/MSS/Liquidity Sweep. Phase 3 → Session boxes, Anchored VWAP, Context Dashboard.
+**Development priority:** Phase 1 → POC/VAH/VAL (done) + Daily Open/PDH/PDL (done) + Session VWAP. Phase 2 → BOS/CHOCH/MSS/Liquidity Sweep. Phase 3 → Session boxes, Anchored VWAP, Context Dashboard.
 
 ---
 
@@ -594,3 +595,17 @@ Ctrl+Z is wired in `DrawingCanvas.tsx`'s keydown handler: if a shape/brush strok
 Both fixes verified live (BTC↔ETH, 1h→15m→1m, all five overlays active; draw→select→Escape and draw→select→Escape→switch-timeframe repros). Typecheck clean.
 
 **Stage 1 closed.** Remaining polish items (general spacing/toolbar cleanup, responsive layout, performance passes) are real but non-blocking, and recorded as deferred rather than held against the close — see the "Stage 1 — deferred / known items" table above.
+
+### Session 15 — August 3, 2026
+
+**Stage 2 feature 1: Institutional Levels (Daily Open, PDH, PDL).** First Stage 2 feature built and verified live.
+
+**Backend:** new `app/analytics/levels.py` — `compute_levels()` derives today's daily open and the prior day's high/low straight from Binance's own last two 1d candles (no timezone math needed, since Binance's daily boundary is authoritative). Wired up via a new `GET /indicators/levels/{symbol}` endpoint in `indicators.py`, reusing the existing `price_step.py` helper for decimal precision.
+
+**Frontend:** new `LevelsOverlay.tsx` — draws Daily Open (dashed grey), PDH (orange), PDL (cyan) lines, toggled from `ChartToolbar` (`levels` added to `OverlayType`). Iterated on label placement after an initial pass drew labels hard against the right-edge price axis, colliding with the axis's own price numbers: labels now right-align inside the plotting area using the chart's actual right price-scale width (`chart.priceScale('right').width()`, not a guessed fixed offset, so it stays correct at any zoom/decimal width), rendered as colored pill backgrounds with auto-computed black/white contrast text (readable regardless of theme since the pill supplies its own contrast, independent of the app's light/dark toggle — which only affects UI chrome, not the chart canvas). A sort-and-nudge pass keeps labels vertically separated by a minimum gap when two levels sit close together, verified down to the extreme case (price scale compressed until PDH/Daily Open lines nearly touch) with no overlap.
+
+**Debugging lesson — zombie uvicorn processes serving stale code:** while verifying the new `/levels` route, `/docs` didn't list it even though the server "started with zero errors." `python -c "import app.api.indicators"` proved the module and route were fine — the router had it registered. The real problem: multiple orphaned `uvicorn --reload` processes had piled up from earlier sessions (reloader parents had already died, but their spawned worker subprocesses lived on as zombies still holding port 8000), and the zombie actually bound to the port was running code from before the new route existed — no file edit could ever reach it. **Fix pattern for next time a new route silently 404s / is missing from `/docs` despite a clean server start:** check what's actually listening on the port (`netstat -ano` / `Get-NetTCPConnection`), kill *all* stray python/uvicorn processes (not just the most recent terminal's), confirm the port is fully free, then start a single fresh instance.
+
+**Verified live in browser:** BTC and a cheap coin, both themes, lines at correct prices, labels clear of the axis with no collisions, pill contrast readable, anti-collision nudge confirmed under compression.
+
+**Stage 2 status:** Institutional Levels → Daily Open, PDH, PDL done; Prev Week/Month High/Low remains future scope. Stage 2 now in progress (~20% → ~25%).
