@@ -9,6 +9,7 @@ import { HeatmapCanvas } from '../Overlay/HeatmapCanvas';
 import { VolumeProfile } from '../Overlay/VolumeProfile';
 import { WhaleMarkers } from '../Overlay/WhaleMarkers';
 import { SMCOverlay } from '../Overlay/SMCOverlay';
+import { LevelsOverlay } from '../Overlay/LevelsOverlay';
 import { DrawingToolbar } from '../Drawing/DrawingToolbar';
 import { DrawingCanvas } from '../Drawing/DrawingCanvas';
 import { DrawingStyleToolbar } from '../Drawing/DrawingStyleToolbar';
@@ -72,6 +73,12 @@ export function ChartContainer({ sharedChartRef, sharedSeriesRef, chartAreaRef }
         )}
         {visibleOverlays.has('smc') && (
           <SMCOverlay
+            sharedChartRef={sharedChartRef}
+            sharedSeriesRef={sharedSeriesRef}
+          />
+        )}
+        {visibleOverlays.has('levels') && (
+          <LevelsOverlay
             sharedChartRef={sharedChartRef}
             sharedSeriesRef={sharedSeriesRef}
           />

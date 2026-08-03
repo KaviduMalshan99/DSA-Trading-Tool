@@ -44,6 +44,13 @@ export interface SMCData {
   fair_value_gaps: SMCZone[];
 }
 
+export interface LevelsData {
+  daily_open: number;
+  pdh: number;
+  pdl: number;
+  decimals: number;
+}
+
 export interface HeatmapData {
   timestamps: number[];
   price_levels: number[];

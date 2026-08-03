@@ -7,6 +7,7 @@ const OVERLAYS: { key: OverlayType; label: string }[] = [
   { key: 'volumeProfile', label: 'Vol Profile' },
   { key: 'whaleMarkers',  label: 'Whales'      },
   { key: 'smc',           label: 'SMC'         },
+  { key: 'levels',        label: 'Levels'      },
 ];
 
 export function ChartToolbar() {
