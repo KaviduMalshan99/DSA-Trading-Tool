@@ -27,9 +27,10 @@ from app.analytics.price_step import price_decimals_for
 
 @dataclass
 class SwingPoint:
-    time: int      # candle open time, epoch ms
-    price: float   # the high (for 'high') or low (for 'low') of that candle
-    type: str      # 'high' | 'low'
+    time: int             # candle open time, epoch ms
+    price: float          # the high (for 'high') or low (for 'low') of that candle
+    type: str             # 'high' | 'low'
+    label: str | None = None  # 'HH'|'LH' for highs, 'HL'|'LL' for lows; None if unlabelable
 
 
 @dataclass
@@ -37,6 +38,51 @@ class MarketStructure:
     swings: list[SwingPoint]
     swing_strength: int
     decimals: int
+    current_trend: str = "range"  # 'up' | 'down' | 'range'
+
+
+def _label_swings(swings: list[SwingPoint]) -> None:
+    """
+    Tag each swing against the previous swing of the *same* type: a high is
+    HH/LH versus the last high, a low is HL/LL versus the last low.
+
+    The first swing of each type has nothing to compare against and keeps
+    `label = None` — the frontend skips those rather than inventing a
+    direction. Exact ties resolve to LH/LL: a double top isn't a higher high,
+    and the four-label vocabulary has no separate "equal" state.
+    """
+    prev_high: float | None = None
+    prev_low: float | None = None
+
+    for swing in swings:
+        if swing.type == "high":
+            if prev_high is not None:
+                swing.label = "HH" if swing.price > prev_high else "LH"
+            prev_high = swing.price
+        else:
+            if prev_low is not None:
+                swing.label = "HL" if swing.price > prev_low else "LL"
+            prev_low = swing.price
+
+
+def _derive_trend(swings: list[SwingPoint]) -> str:
+    """
+    Overall trend from the most recent labelled high and low — the standard
+    market-structure reading: rising peaks *and* rising troughs is an uptrend,
+    falling peaks *and* falling troughs a downtrend, anything mixed is a range.
+
+    Requires both a labelled high and a labelled low, so at least two of each
+    type must exist; until then there's no structure to read and it stays
+    'range' rather than guessing from one side.
+    """
+    last_high = next((s.label for s in reversed(swings) if s.type == "high" and s.label), None)
+    last_low = next((s.label for s in reversed(swings) if s.type == "low" and s.label), None)
+
+    if last_high == "HH" and last_low == "HL":
+        return "up"
+    if last_high == "LH" and last_low == "LL":
+        return "down"
+    return "range"
 
 
 def detect_swings(
@@ -58,7 +104,9 @@ def detect_swings(
     swings: list[SwingPoint] = []
 
     if n < 1 or len(candles) < 2 * n + 1:
-        return MarketStructure(swings=[], swing_strength=swing_strength, decimals=decimals)
+        return MarketStructure(
+            swings=[], swing_strength=swing_strength, decimals=decimals, current_trend="range"
+        )
 
     for i in range(n, len(candles) - n):
         candle = candles[i]
@@ -76,4 +124,10 @@ def detect_swings(
         if is_low:
             swings.append(SwingPoint(time=candle["t"], price=round(low, decimals), type="low"))
 
-    return MarketStructure(swings=swings, swing_strength=swing_strength, decimals=decimals)
+    _label_swings(swings)
+    return MarketStructure(
+        swings=swings,
+        swing_strength=swing_strength,
+        decimals=decimals,
+        current_trend=_derive_trend(swings),
+    )

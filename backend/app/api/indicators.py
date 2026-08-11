@@ -199,8 +199,10 @@ async def get_market_structure(
     structure = detect_swings(candles, tick_size, swing_strength)
     return {
         "swings": [
-            {"time": s.time, "price": s.price, "type": s.type} for s in structure.swings
+            {"time": s.time, "price": s.price, "type": s.type, "label": s.label}
+            for s in structure.swings
         ],
+        "current_trend": structure.current_trend,
         "swing_strength": structure.swing_strength,
         "decimals": structure.decimals,
     }
