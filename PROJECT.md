@@ -221,7 +221,7 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 | Stage | Name                       | Completion | One-line status                                                                                       |
 | ----- | -------------------------- | ---------- | ----------------------------------------------------------------------------------------------------- |
 | 1     | Foundation & Workspace     | **✅ Done**   | Workspace, chart, live data, all drawing tools (incl. Long/Short Position, Undo), overlay/loading polish complete; a few minor items deferred (see Stage 1 notes) |
-| 2     | Market Context & Structure | **~30%**   | Volume Profile core + SMC (OB/FVG) + Institutional Levels (Daily Open/PDH/PDL) + Session VWAP done; structure, Anchored VWAP, sessions, dashboard not started |
+| 2     | Market Context & Structure | **~35%**   | Volume Profile core + SMC (OB/FVG) + Institutional Levels (Daily Open/PDH/PDL) + Session VWAP + Session boxes done; structure, Anchored VWAP, session H/L, dashboard not started |
 | 3     | Order Flow & Execution     | **~50%**   | Footprint, Delta/CVD, Heatmap, Whale done; imbalance partial; stacked/absorption/DOM/tape not started |
 | 4     | Trade Confirmation         | **~3%**    | Nothing meaningfully built yet (Replay is 0%, not 50% as previously claimed)                          |
 | 5     | AI Intelligence & Polish   | **~8%**    | Theme + Docker Compose only; all AI modules not started                                               |
@@ -265,7 +265,7 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 
 ---
 
-## Stage 2 — Market Context & Structure (~30%, in progress)
+## Stage 2 — Market Context & Structure (~35%, in progress)
 
 **Objective:** help the trader understand the market _before_ considering a trade. Answers _"Where should I pay attention?"_ — trend, institutional levels, high-probability zones, session context.
 
@@ -298,11 +298,13 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 |                              | Prev Day High (PDH)                                | ✅ Done _(Session 15)_                                        |
 |                              | Prev Day Low (PDL)                                 | ✅ Done _(Session 15)_                                        |
 |                              | Prev Week / Month High / Low                       | 🔵 Future                                                     |
-| **Session Analysis**         | Asia / London / New York boxes                     | 🔴                                                            |
+| **Session Analysis**         | Asia session box _(00:00–09:00 UTC)_               | ✅ Done _(Session 17)_ — intraday timeframes only              |
+|                              | London session box _(07:00–16:00 UTC)_             | ✅ Done _(Session 17)_ — intraday timeframes only              |
+|                              | New York session box _(12:00–21:00 UTC)_           | ✅ Done _(Session 17)_ — intraday timeframes only              |
 |                              | Session High / Low                                 | 🔴                                                            |
 | **Market Context Dashboard** | Summary of all of the above                        | 🔴                                                            |
 
-**Development priority:** Phase 1 complete → POC/VAH/VAL + Daily Open/PDH/PDL + Session VWAP all done. Phase 2 (next) → BOS/CHOCH/MSS/Liquidity Sweep. Phase 3 → Session boxes, Anchored VWAP, Context Dashboard.
+**Development priority:** Phase 1 complete → POC/VAH/VAL + Daily Open/PDH/PDL + Session VWAP all done. Phase 2 (next) → BOS/CHOCH/MSS/Liquidity Sweep. Phase 3 → Session boxes (done early, Session 17), Anchored VWAP, Context Dashboard.
 
 ---
 
@@ -627,3 +629,19 @@ Both fixes verified live (BTC↔ETH, 1h→15m→1m, all five overlays active; dr
 **Note:** the backend restart went cleanly this time — port 8000 was checked before starting (nothing listening, no stray python processes), applying Session 15's zombie-process lesson up front rather than after a confusing 404.
 
 **Stage 2 status:** VWAP → Session VWAP done; Anchored VWAP, Fixed Range VP and VWAP bands unchanged. Phase 1 of the Stage 2 priority list is now complete (POC/VAH/VAL + Daily Open/PDH/PDL + Session VWAP); Phase 2 (BOS/CHOCH/MSS/Liquidity Sweep) is next. Stage 2 ~25% → ~30%.
+
+### Session 17 — August 11, 2026
+
+**Stage 2 feature 3: Session Boxes (Asia / London / New York).** Shaded vertical bands marking each major session's active hours, one set per UTC day across the visible range. Pulled forward from Phase 3 of the Stage 2 priority list.
+
+**Fully client-side — no backend route.** Session hours are fixed clock times (Asia 00:00–09:00, London 07:00–16:00, NY 12:00–21:00 UTC), so there is nothing for the server to compute: everything is derived from the candles already in `marketStore`. The UTC basis is deliberate, matching `levels.py` and `vwap.py` so all three features share one day boundary. The windows overlap on purpose — London/NY is the high-activity window — and the translucent fills stack, so that overlap reads visibly darker than either session alone.
+
+**Positioned by interpolated bar index, NOT by `toChartTime`.** This is the one place where following the established overlay pattern would have been wrong, and it's worth recording why. Every other overlay converts a timestamp with `toChartTime`/`toChartTimeSeconds` and calls `timeScale().timeToCoordinate()`. That works for them because they only ever plot times that *are* candle timestamps. Session boundaries aren't: 07:00 is mid-candle on a 2h/3h/4h chart, where bars open at 00/02/04/… or 00/04/08/…, and `timeToCoordinate()` returns `null` for any time not present in the series data. Following the pattern would have made the bands silently vanish on exactly those timeframes — a null return, not a visible error. Instead `timeToLogical()` interpolates a fractional bar index from the candles' own **raw UTC** `t` values and goes through `logicalToCoordinate()`, which handles sub-candle times, extrapolates past both data edges, and — because lightweight-charts lays bars out by index rather than elapsed time — stays correct across gaps in the data, where a linear time→x mapping would drift.
+
+**Corollary — the Colombo shift must NOT be applied on this path.** `CHART_TZ_OFFSET_SECONDS` exists for values handed to the library as a `time`. These timestamps are only ever compared against the candles' own raw `t` to derive an index, and the index is what maps to a pixel, so applying the shift would have slid every band 5.5h off the candles it describes. (The first draft did apply it; caught and removed before the browser test.) Verified the index math against hand-computed values on 1h/4h/15m — notably 07:00 → index 1.75 on 4h, i.e. three-quarters through the 04:00–08:00 bar — plus multi-day offsets, extrapolation past both edges, and a deliberately gapped series.
+
+**Display rules:** bands are inset from the price and time axes so the axes aren't tinted; hidden on 1d+ where a whole session is sub-candle (same principle as session VWAP); and hidden below **~45px per day**, where three overlapping bands collapse into an illegible stripe — a guard that doubles as the bound on how many days can be drawn at once, so a zoomed-out chart never tries to paint hundreds of boxes. Fill alpha is 0.06 so three overlapping bands still don't drown the candles, and each session labels itself on its own row so labels stay legible through the overlap. Toolbar toggle `Sessions`, off by default; renders first among the z-10 overlays so zones, levels and drawings layer above it.
+
+**Verified live in browser:** BTC intraday — Asia/London/NY bands align correctly against the Colombo-shifted axis (NY correctly crosses displayed midnight), overlap shading correct. Frontend typecheck clean.
+
+**Stage 2 status:** Session Analysis → Asia, London, New York boxes done; Session High/Low remains 🔴. Stage 2 ~30% → ~35%.
