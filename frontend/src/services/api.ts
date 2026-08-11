@@ -1,5 +1,5 @@
 import type { Candle, CandleInterval, MarketType } from '../types/market';
-import type { DeltaBar, FootprintBar, VolumeProfileNode, SMCData, LevelsData } from '../types/analytics';
+import type { DeltaBar, FootprintBar, VolumeProfileNode, SMCData, LevelsData, VWAPData } from '../types/analytics';
 
 const BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000/api/v1';
 
@@ -40,4 +40,7 @@ export const api = {
 
   getLevels: (symbol: string) =>
     request<LevelsData>(`/indicators/levels/${symbol}`),
+
+  getSessionVWAP: (symbol: string, interval: CandleInterval) =>
+    request<VWAPData>(`/indicators/vwap/${symbol}/${interval}`),
 };

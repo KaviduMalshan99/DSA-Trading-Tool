@@ -10,6 +10,7 @@ import { VolumeProfile } from '../Overlay/VolumeProfile';
 import { WhaleMarkers } from '../Overlay/WhaleMarkers';
 import { SMCOverlay } from '../Overlay/SMCOverlay';
 import { LevelsOverlay } from '../Overlay/LevelsOverlay';
+import { VWAPOverlay } from '../Overlay/VWAPOverlay';
 import { DrawingToolbar } from '../Drawing/DrawingToolbar';
 import { DrawingCanvas } from '../Drawing/DrawingCanvas';
 import { DrawingStyleToolbar } from '../Drawing/DrawingStyleToolbar';
@@ -82,6 +83,11 @@ export function ChartContainer({ sharedChartRef, sharedSeriesRef, chartAreaRef }
             sharedChartRef={sharedChartRef}
             sharedSeriesRef={sharedSeriesRef}
           />
+        )}
+        {/* VWAP owns a real line series on the shared chart, so it only needs
+            the chart ref — no canvas, no price-coordinate math. */}
+        {visibleOverlays.has('vwap') && (
+          <VWAPOverlay sharedChartRef={sharedChartRef} />
         )}
 
         {/* Drawing canvas — always on top */}
