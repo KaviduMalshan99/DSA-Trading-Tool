@@ -7,6 +7,7 @@ from app.analytics.footprint import build_footprint
 from app.analytics.smc import detect_order_blocks, detect_fair_value_gaps
 from app.analytics.levels import compute_levels
 from app.analytics.vwap import compute_session_vwap, utc_day_start_ms
+from app.analytics.structure import detect_swings
 from app.analytics.price_step import fetch_tick_size
 import json
 import time
@@ -172,4 +173,34 @@ async def get_session_vwap(symbol: str, interval: str):
         "current": result.current,
         "session_start": result.session_start,
         "decimals": result.decimals,
+    }
+
+
+@router.get("/structure/{symbol}/{interval}")
+async def get_market_structure(
+    symbol: str,
+    interval: str,
+    swing_strength: int = Query(3, ge=1, le=20),
+    limit: int = Query(200, le=1000),
+):
+    """
+    Swing highs/lows (pivots) over the last `limit` candles at this timeframe.
+
+    Layer 1 of market structure — trend labelling and BOS/CHOCH will be built on
+    these points, so they're exposed on their own first to be verified.
+    """
+    try:
+        candles = await _fetch_klines(symbol, interval, limit)
+        tick_size = await fetch_tick_size(symbol)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Could not fetch candles: {exc}")
+    if not candles:
+        raise HTTPException(status_code=404, detail="No candle data")
+    structure = detect_swings(candles, tick_size, swing_strength)
+    return {
+        "swings": [
+            {"time": s.time, "price": s.price, "type": s.type} for s in structure.swings
+        ],
+        "swing_strength": structure.swing_strength,
+        "decimals": structure.decimals,
     }
