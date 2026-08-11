@@ -9,6 +9,7 @@ const OVERLAYS: { key: OverlayType; label: string }[] = [
   { key: 'smc',           label: 'SMC'         },
   { key: 'levels',        label: 'Levels'      },
   { key: 'vwap',          label: 'VWAP'        },
+  { key: 'sessions',      label: 'Sessions'    },
 ];
 
 export function ChartToolbar() {

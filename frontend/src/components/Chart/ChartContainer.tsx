@@ -11,6 +11,7 @@ import { WhaleMarkers } from '../Overlay/WhaleMarkers';
 import { SMCOverlay } from '../Overlay/SMCOverlay';
 import { LevelsOverlay } from '../Overlay/LevelsOverlay';
 import { VWAPOverlay } from '../Overlay/VWAPOverlay';
+import { SessionBoxes } from '../Overlay/SessionBoxes';
 import { DrawingToolbar } from '../Drawing/DrawingToolbar';
 import { DrawingCanvas } from '../Drawing/DrawingCanvas';
 import { DrawingStyleToolbar } from '../Drawing/DrawingStyleToolbar';
@@ -51,6 +52,12 @@ export function ChartContainer({ sharedChartRef, sharedSeriesRef, chartAreaRef }
             sharedChartRef={sharedChartRef}
             sharedSeriesRef={sharedSeriesRef}
           />
+        )}
+
+        {/* Session bands are background context, so they render first among the
+            z-10 overlays — later siblings (zones, levels, drawings) layer above. */}
+        {visibleOverlays.has('sessions') && (
+          <SessionBoxes sharedChartRef={sharedChartRef} />
         )}
 
         {/* Canvas overlays — positioned absolutely over the chart */}
