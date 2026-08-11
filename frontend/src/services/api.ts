@@ -1,5 +1,7 @@
 import type { Candle, CandleInterval, MarketType } from '../types/market';
-import type { DeltaBar, FootprintBar, VolumeProfileNode, SMCData, LevelsData, VWAPData } from '../types/analytics';
+import type {
+  DeltaBar, FootprintBar, VolumeProfileNode, SMCData, LevelsData, VWAPData, StructureData,
+} from '../types/analytics';
 
 const BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000/api/v1';
 
@@ -43,4 +45,11 @@ export const api = {
 
   getSessionVWAP: (symbol: string, interval: CandleInterval) =>
     request<VWAPData>(`/indicators/vwap/${symbol}/${interval}`),
+
+  // swing_strength is tunable server-side; the overlay uses the backend default (3)
+  getStructure: (symbol: string, interval: CandleInterval, swingStrength?: number) =>
+    request<StructureData>(
+      `/indicators/structure/${symbol}/${interval}` +
+        (swingStrength === undefined ? '' : `?swing_strength=${swingStrength}`)
+    ),
 };

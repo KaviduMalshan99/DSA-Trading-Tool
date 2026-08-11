@@ -12,6 +12,7 @@ import { SMCOverlay } from '../Overlay/SMCOverlay';
 import { LevelsOverlay } from '../Overlay/LevelsOverlay';
 import { VWAPOverlay } from '../Overlay/VWAPOverlay';
 import { SessionBoxes } from '../Overlay/SessionBoxes';
+import { StructureOverlay } from '../Overlay/StructureOverlay';
 import { DrawingToolbar } from '../Drawing/DrawingToolbar';
 import { DrawingCanvas } from '../Drawing/DrawingCanvas';
 import { DrawingStyleToolbar } from '../Drawing/DrawingStyleToolbar';
@@ -95,6 +96,12 @@ export function ChartContainer({ sharedChartRef, sharedSeriesRef, chartAreaRef }
             the chart ref — no canvas, no price-coordinate math. */}
         {visibleOverlays.has('vwap') && (
           <VWAPOverlay sharedChartRef={sharedChartRef} />
+        )}
+        {visibleOverlays.has('structure') && (
+          <StructureOverlay
+            sharedChartRef={sharedChartRef}
+            sharedSeriesRef={sharedSeriesRef}
+          />
         )}
 
         {/* Drawing canvas — always on top */}

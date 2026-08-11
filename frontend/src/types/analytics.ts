@@ -63,6 +63,24 @@ export interface VWAPData {
   decimals: number;
 }
 
+export type SwingLabel = 'HH' | 'LH' | 'HL' | 'LL';
+export type MarketTrend = 'up' | 'down' | 'range';
+
+export interface SwingPoint {
+  time: number;   // candle open time (ms) — shift via toChartTime before charting
+  price: number;
+  type: 'high' | 'low';
+  /** null for the first swing of each type — nothing to compare it against. */
+  label: SwingLabel | null;
+}
+
+export interface StructureData {
+  swings: SwingPoint[];
+  current_trend: MarketTrend;
+  swing_strength: number;
+  decimals: number;
+}
+
 export interface HeatmapData {
   timestamps: number[];
   price_levels: number[];
