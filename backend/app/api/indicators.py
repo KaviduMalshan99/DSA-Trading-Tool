@@ -6,12 +6,16 @@ from app.analytics.volume_profile import build_volume_profile
 from app.analytics.footprint import build_footprint
 from app.analytics.smc import detect_order_blocks, detect_fair_value_gaps
 from app.analytics.levels import compute_levels
+from app.analytics.vwap import compute_session_vwap, utc_day_start_ms
 from app.analytics.price_step import fetch_tick_size
 import json
+import time
 
 router = APIRouter(prefix="/indicators", tags=["indicators"])
 
 _BINANCE_REST = "https://api.binance.com"
+_KLINES_PER_PAGE = 1000   # Binance's per-response cap
+_MAX_KLINE_PAGES = 3      # 3000 candles — covers a full UTC day at 1m with room to spare
 
 
 async def _get_trades(symbol: str, limit: int = 500) -> list[dict]:
@@ -20,20 +24,48 @@ async def _get_trades(symbol: str, limit: int = 500) -> list[dict]:
     return [json.loads(t) for t in raw]
 
 
-async def _fetch_klines(symbol: str, interval: str, limit: int = 100) -> list[dict]:
+async def _fetch_klines(
+    symbol: str,
+    interval: str,
+    limit: int = 100,
+    start_time: int | None = None,
+) -> list[dict]:
     """Pull recent candles straight from Binance — mirrors candle_stream.py's
     approach so this endpoint works without the standalone Redis-fed worker."""
     url = f"{_BINANCE_REST}/api/v3/klines"
-    params = {"symbol": symbol.upper(), "interval": interval, "limit": limit}
+    params: dict = {"symbol": symbol.upper(), "interval": interval, "limit": limit}
+    if start_time is not None:
+        params["startTime"] = start_time
     timeout = aiohttp.ClientTimeout(total=10)
     async with aiohttp.ClientSession(timeout=timeout) as session:
         async with session.get(url, params=params) as resp:
             resp.raise_for_status()
             rows = await resp.json()
     return [
-        {"t": row[0], "o": float(row[1]), "h": float(row[2]), "l": float(row[3]), "c": float(row[4])}
+        {"t": row[0], "o": float(row[1]), "h": float(row[2]), "l": float(row[3]),
+         "c": float(row[4]), "v": float(row[5])}
         for row in rows
     ]
+
+
+async def _fetch_klines_since(symbol: str, interval: str, start_ms: int) -> list[dict]:
+    """
+    Every candle from `start_ms` to now, paging as needed. Binance caps a
+    single klines response at 1000 rows, which isn't enough to cover a full
+    UTC day at 1m (1440 candles), so keep requesting from just past the last
+    row received until a short (final) page comes back.
+    """
+    out: list[dict] = []
+    cursor = start_ms
+    for _ in range(_MAX_KLINE_PAGES):
+        page = await _fetch_klines(symbol, interval, _KLINES_PER_PAGE, cursor)
+        if not page:
+            break
+        out.extend(page)
+        if len(page) < _KLINES_PER_PAGE:
+            break
+        cursor = page[-1]["t"] + 1  # startTime is inclusive — step past it
+    return out
 
 
 @router.get("/delta/{symbol}")
@@ -114,4 +146,30 @@ async def get_institutional_levels(symbol: str):
         "pdh": levels.pdh,
         "pdl": levels.pdl,
         "decimals": levels.decimals,
+    }
+
+
+@router.get("/vwap/{symbol}/{interval}")
+async def get_session_vwap(symbol: str, interval: str):
+    """
+    Running session VWAP for the current UTC day, one point per candle at the
+    viewing timeframe (hence `interval` in the path — VWAP is computed
+    per-candle, so 1m and 1h give genuinely different series).
+    """
+    session_start = utc_day_start_ms(int(time.time() * 1000))
+    try:
+        candles = await _fetch_klines_since(symbol, interval, session_start)
+        tick_size = await fetch_tick_size(symbol)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Could not fetch VWAP candles: {exc}")
+    if not candles:
+        raise HTTPException(status_code=404, detail="No candle data")
+    result = compute_session_vwap(candles, tick_size, session_start)
+    if not result.points:
+        raise HTTPException(status_code=404, detail="No traded volume in this session yet")
+    return {
+        "points": [{"time": p.time, "vwap": p.vwap} for p in result.points],
+        "current": result.current,
+        "session_start": result.session_start,
+        "decimals": result.decimals,
     }
