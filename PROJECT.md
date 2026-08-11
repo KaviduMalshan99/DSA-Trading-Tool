@@ -221,7 +221,7 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 | Stage | Name                       | Completion | One-line status                                                                                       |
 | ----- | -------------------------- | ---------- | ----------------------------------------------------------------------------------------------------- |
 | 1     | Foundation & Workspace     | **✅ Done**   | Workspace, chart, live data, all drawing tools (incl. Long/Short Position, Undo), overlay/loading polish complete; a few minor items deferred (see Stage 1 notes) |
-| 2     | Market Context & Structure | **~25%**   | Volume Profile core + SMC (OB/FVG) + Institutional Levels (Daily Open/PDH/PDL) done; structure, VWAP, sessions, dashboard not started |
+| 2     | Market Context & Structure | **~30%**   | Volume Profile core + SMC (OB/FVG) + Institutional Levels (Daily Open/PDH/PDL) + Session VWAP done; structure, Anchored VWAP, sessions, dashboard not started |
 | 3     | Order Flow & Execution     | **~50%**   | Footprint, Delta/CVD, Heatmap, Whale done; imbalance partial; stacked/absorption/DOM/tape not started |
 | 4     | Trade Confirmation         | **~3%**    | Nothing meaningfully built yet (Replay is 0%, not 50% as previously claimed)                          |
 | 5     | AI Intelligence & Polish   | **~8%**    | Theme + Docker Compose only; all AI modules not started                                               |
@@ -265,7 +265,7 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 
 ---
 
-## Stage 2 — Market Context & Structure (~25%, in progress)
+## Stage 2 — Market Context & Structure (~30%, in progress)
 
 **Objective:** help the trader understand the market _before_ considering a trade. Answers _"Where should I pay attention?"_ — trend, institutional levels, high-probability zones, session context.
 
@@ -290,7 +290,7 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 | **Market Structure**         | Trend detection (bull/bear/side)                   | 🔴 Critical                                                   |
 |                              | Swing High / Low detection                         | 🔴                                                            |
 |                              | Structure lines                                    | 🔴                                                            |
-| **VWAP**                     | Session VWAP                                       | 🔴 Critical                                                   |
+| **VWAP**                     | Session VWAP                                       | ✅ Done _(Session 16)_ — intraday timeframes only              |
 |                              | Anchored VWAP _(owns S1 button)_                   | 🔴                                                            |
 |                              | Fixed Range VP _(owns S1 button)_                  | 🔴                                                            |
 |                              | VWAP bands                                         | 🔵                                                            |
@@ -302,7 +302,7 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 |                              | Session High / Low                                 | 🔴                                                            |
 | **Market Context Dashboard** | Summary of all of the above                        | 🔴                                                            |
 
-**Development priority:** Phase 1 → POC/VAH/VAL (done) + Daily Open/PDH/PDL (done) + Session VWAP. Phase 2 → BOS/CHOCH/MSS/Liquidity Sweep. Phase 3 → Session boxes, Anchored VWAP, Context Dashboard.
+**Development priority:** Phase 1 complete → POC/VAH/VAL + Daily Open/PDH/PDL + Session VWAP all done. Phase 2 (next) → BOS/CHOCH/MSS/Liquidity Sweep. Phase 3 → Session boxes, Anchored VWAP, Context Dashboard.
 
 ---
 
@@ -609,3 +609,21 @@ Both fixes verified live (BTC↔ETH, 1h→15m→1m, all five overlays active; dr
 **Verified live in browser:** BTC and a cheap coin, both themes, lines at correct prices, labels clear of the axis with no collisions, pill contrast readable, anti-collision nudge confirmed under compression.
 
 **Stage 2 status:** Institutional Levels → Daily Open, PDH, PDL done; Prev Week/Month High/Low remains future scope. Stage 2 now in progress (~20% → ~25%).
+
+### Session 16 — August 11, 2026
+
+**Stage 2 feature 2: Session VWAP.** Second Stage 2 feature built and verified live, completing Phase 1 of the Stage 2 priority list.
+
+**Backend:** new `app/analytics/vwap.py` — `compute_session_vwap()` accumulates `Σ(typical_price × volume) / Σ(volume)` with `typical_price = (h+l+c)/3`, emitting a running value per candle rather than a single number, so the frontend can draw a line that tracks across the day. The session resets at **00:00 UTC** (`utc_day_start_ms()`) — the same boundary Binance's own 1d candles use, so it lines up with `levels.py`'s Daily Open/PDH/PDL. Deliberately *not* the chart's display timezone: the chart renders Asia/Colombo wall-clock time (see `chartTime.ts`), but a viewer-dependent reset would show different people a different VWAP for the same symbol. Candles before the session start are ignored (so passing extra history is harmless), and zero-volume candles emit no point, avoiding a divide-by-zero on a dead session open. Decimals come from the existing `price_decimals_for(tick_size)`, same as levels. Exposed as `GET /indicators/vwap/{symbol}/{interval}` on the same router as `/levels` and `/smc` — interval is in the path because VWAP is computed per-candle, so the viewing timeframe genuinely changes the series.
+
+**Binance 1000-row paging fix:** `_fetch_klines` was extended to return volume (`v`) and accept `start_time`, and a new `_fetch_klines_since()` pages until a short page comes back. This was necessary, not incidental: Binance caps a klines response at 1000 rows, but a full UTC day at `1m` is 1440 candles — a single request would have silently truncated the session from mid-afternoon onward, producing a VWAP that looked plausible but quietly stopped including the most recent hours. The volume field is additive, so `/smc` and `/levels` ignore it.
+
+**Frontend:** new `VWAPOverlay.tsx` — drawn as a real lightweight-charts **line series** rather than a canvas overlay. This is the deliberate departure from `LevelsOverlay`'s canvas approach: levels are horizontal lines at fixed prices, which canvas draws directly, but VWAP is a time-series line, so handing it to the library gives time-axis alignment, clipping, and price-scale autoscaling for free and keeps it glued to the candles through any zoom/pan. Timestamps still go through `toChartTime()` like every other series. Series teardown is guarded on `sharedChartRef.current === chart`: if `TradingChart` unmounts first it has already called `chart.remove()`, which disposes every series, and calling `removeSeries` on that would throw. Refresh is keyed on the last candle's `t` — which `appendCandle` only changes when a *new bar opens*, not on every intra-bar tick — plus a 30s poll so the still-forming candle stays fresh. Label is a small legend under `TradingChart`'s existing symbol/price row, using the backend's tick-size decimals so sub-cent coins don't read "0.00". Toolbar toggle `VWAP` added to `OverlayType`, off by default.
+
+**Design decision — intraday only, hidden on 1d+:** on `1d` and above a UTC-day session contains exactly one candle, so the "line" degenerates to a single invisible point. Rather than fake it, the overlay renders nothing and hides its label on those timeframes (the endpoint 404s with "No traded volume in this session yet" / no candles, which the overlay swallows silently). Session VWAP is an intraday tool by nature; if a daily-anchored variant is wanted later, that's Anchored VWAP's job, which is still 🔴 and owns its own S1 toolbar button.
+
+**Verified:** hand-checked math (typical prices 100 @ vol 1 then 200 @ vol 3 → 100.0, then 175.0), zero-volume skip, pre-session exclusion, empty input. Live against Binance: BTC 1m (265 candles → 64052.86) vs BTC 1h (5 candles → 64056.62) agreeing within ~$4 is the cross-check that the accumulation is correct at different timeframes; PEPE 5m returned 8 decimals, cheap-coin safe. Frontend typecheck clean. Verified in browser on BTC 1h — line tracks today's session, label clean, value correct.
+
+**Note:** the backend restart went cleanly this time — port 8000 was checked before starting (nothing listening, no stray python processes), applying Session 15's zombie-process lesson up front rather than after a confusing 404.
+
+**Stage 2 status:** VWAP → Session VWAP done; Anchored VWAP, Fixed Range VP and VWAP bands unchanged. Phase 1 of the Stage 2 priority list is now complete (POC/VAH/VAL + Daily Open/PDH/PDL + Session VWAP); Phase 2 (BOS/CHOCH/MSS/Liquidity Sweep) is next. Stage 2 ~25% → ~30%.
