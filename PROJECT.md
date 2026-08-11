@@ -221,7 +221,7 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 | Stage | Name                       | Completion | One-line status                                                                                       |
 | ----- | -------------------------- | ---------- | ----------------------------------------------------------------------------------------------------- |
 | 1     | Foundation & Workspace     | **✅ Done**   | Workspace, chart, live data, all drawing tools (incl. Long/Short Position, Undo), overlay/loading polish complete; a few minor items deferred (see Stage 1 notes) |
-| 2     | Market Context & Structure | **~35%**   | Volume Profile core + SMC (OB/FVG) + Institutional Levels (Daily Open/PDH/PDL) + Session VWAP + Session boxes done; structure, Anchored VWAP, session H/L, dashboard not started |
+| 2     | Market Context & Structure | **~45%**   | Volume Profile core + SMC (OB/FVG) + Institutional Levels + Session VWAP + Session boxes + Market Structure (swings/trend/lines) done; BOS/CHOCH/MSS, Anchored VWAP, session H/L, dashboard not started |
 | 3     | Order Flow & Execution     | **~50%**   | Footprint, Delta/CVD, Heatmap, Whale done; imbalance partial; stacked/absorption/DOM/tape not started |
 | 4     | Trade Confirmation         | **~3%**    | Nothing meaningfully built yet (Replay is 0%, not 50% as previously claimed)                          |
 | 5     | AI Intelligence & Polish   | **~8%**    | Theme + Docker Compose only; all AI modules not started                                               |
@@ -265,7 +265,7 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 
 ---
 
-## Stage 2 — Market Context & Structure (~35%, in progress)
+## Stage 2 — Market Context & Structure (~45%, in progress)
 
 **Objective:** help the trader understand the market _before_ considering a trade. Answers _"Where should I pay attention?"_ — trend, institutional levels, high-probability zones, session context.
 
@@ -287,9 +287,10 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 |                              | Equal Highs / Equal Lows                           | 🔴                                                            |
 |                              | Premium / Discount zones                           | 🔵 Future                                                     |
 |                              | _SMC mitigation_ (fade zones once price re-enters) | 🔴 _(carried over from Session 4)_                            |
-| **Market Structure**         | Trend detection (bull/bear/side)                   | 🔴 Critical                                                   |
-|                              | Swing High / Low detection                         | 🔴                                                            |
-|                              | Structure lines                                    | 🔴                                                            |
+| **Market Structure**         | Trend detection (bull/bear/side)                   | ✅ Done _(Session 18)_ — HH+HL / LH+LL, else ranging           |
+|                              | Swing High detection                               | ✅ Done _(Session 18)_ — fractal, `swing_strength=3` tunable   |
+|                              | Swing Low detection                                | ✅ Done _(Session 18)_ — fractal, `swing_strength=3` tunable   |
+|                              | Structure lines                                    | ✅ Done _(Session 18)_ — zigzag through consecutive swings     |
 | **VWAP**                     | Session VWAP                                       | ✅ Done _(Session 16)_ — intraday timeframes only              |
 |                              | Anchored VWAP _(owns S1 button)_                   | 🔴                                                            |
 |                              | Fixed Range VP _(owns S1 button)_                  | 🔴                                                            |
@@ -304,7 +305,7 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 |                              | Session High / Low                                 | 🔴                                                            |
 | **Market Context Dashboard** | Summary of all of the above                        | 🔴                                                            |
 
-**Development priority:** Phase 1 complete → POC/VAH/VAL + Daily Open/PDH/PDL + Session VWAP all done. Phase 2 (next) → BOS/CHOCH/MSS/Liquidity Sweep. Phase 3 → Session boxes (done early, Session 17), Anchored VWAP, Context Dashboard.
+**Development priority:** Phase 1 complete → POC/VAH/VAL + Daily Open/PDH/PDL + Session VWAP all done. Phase 2 (in progress) → Market Structure swings/trend/lines done (Session 18); BOS/CHOCH/MSS/Liquidity Sweep next, and they build directly on the Session 18 swing points. Phase 3 → Session boxes (done early, Session 17), Anchored VWAP, Context Dashboard.
 
 ---
 
@@ -645,3 +646,21 @@ Both fixes verified live (BTC↔ETH, 1h→15m→1m, all five overlays active; dr
 **Verified live in browser:** BTC intraday — Asia/London/NY bands align correctly against the Colombo-shifted axis (NY correctly crosses displayed midnight), overlap shading correct. Frontend typecheck clean.
 
 **Stage 2 status:** Session Analysis → Asia, London, New York boxes done; Session High/Low remains 🔴. Stage 2 ~30% → ~35%.
+
+### Session 18 — August 11, 2026
+
+**Stage 2 feature 4: Market Structure (swings + trend labels + structure lines).** The largest Stage 2 feature so far, and the first built in explicitly verified layers.
+
+**Layered build approach — and why it mattered.** Rather than building the whole feature and verifying at the end, this was built as three layers with a browser check between each: (1) swing detection alone, (2) HH/HL/LH/LL labels + `current_trend`, (3) the connecting zigzag. The reason is dependency: labels are defined *relative to* swings, the trend is derived *from* labels, and BOS/CHOCH in Phase 2 will be defined against these same swing points. A wrong pivot silently corrupts everything above it, and would have been far harder to isolate if all three layers landed together. Layer 1 was confirmed on BTC 1h (placement accurate, density good) before layer 2 was written. This is a pattern worth repeating for BOS/CHOCH.
+
+**Layer 1 — swing detection.** New `app/analytics/structure.py`: fractal/pivot method, where a candle is a swing high if its high beats every candle within `swing_strength` bars on each side (mirror for lows). Exposed at `GET /indicators/structure/{symbol}/{interval}` on the same router as `/levels` and `/vwap`, with **`swing_strength` default 3** (range 1–20) and `limit` (default 200) as query params — deliberately tunable without a code change, since the useful sensitivity depends on timeframe and coin. BTC 1h gives 55 swings at strength 2, 36 at 3, 29 at 5; 3 was verified as the right density. Comparison is strict on the left and inclusive on the right rather than the textbook strict-both-sides, because strict-both-sides silently drops pivots whenever adjacent candles share an exact high or low — rare on BTC, routine on sub-cent coins where prices repeat at tick size. A flat double-top therefore yields exactly one swing, at the first candle of the plateau. **Inherent property to remember:** the most recent `swing_strength` candles can never be classified — a pivot isn't confirmed until enough candles print to its right, so detection always lags the live edge by that many bars. That's the method, not a defect.
+
+**Layer 2 — trend labels.** Each swing is classified against the previous swing of the *same* type (high vs last high, low vs last low). `current_trend` reads the most recent labelled high and low **together**: HH+HL → up, LH+LL → down, anything mixed → range. It requires both sides labelled, so it reports `range` rather than guessing from one side alone. The first swing of each type keeps `label=None` (nothing to compare against) and the frontend draws no tag for it. Exact ties resolve to LH/LL — a double top isn't a higher high, and the four-label vocabulary has no separate "equal" state.
+
+**Layer 3 — structure lines, and the deliberate decision NOT to filter pivots.** The zigzag connects swings in strict chronological order. This does **not** enforce high→low→high alternation, because fractal detection genuinely emits consecutive same-type swings — measured at 5 of 36 adjacent pairs on BTC 1h and 10 of 36 on 15m. Filtering those out (keeping only the most extreme of each run) would produce a tidier zigzag, and was explicitly rejected: **the discarded points are real pivots, and BOS/CHOCH is defined against exactly those swing points.** A prettier line now would mean a structurally wrong break/shift signal later. The occasional flatter high→high or low→low segment is the honest shape of the data, and is expected on the chart rather than a bug.
+
+**Frontend.** New `StructureOverlay.tsx`. Unlike `SessionBoxes`, swings sit on real candle timestamps, so the standard `toChartTimeSeconds` + `timeToCoordinate` path resolves exactly and every marker lands on its own candle — the bar-index workaround from Session 17 isn't needed here. Triangles point apex-at-the-candle; colours reuse the levels palette (orange = high, cyan = low) for a consistent "orange is a high, cyan is a low" reading across the app. Two zoom thresholds rather than one: the HH/LH tag is the point of the feature and shows at bar spacing ≥9, while the price is secondary detail shown only at ≥18, so the two never compete for the same gap. The zigzag is clipped to the plot area rather than filtered by visibility, so a segment leaving the viewport exits at the correct angle instead of bending toward the edge. Trend badge sits bottom-left — the only corner clear of the symbol/VWAP legends at the top and the Session 17 session labels below them. Toggle `Structure`, off by default. **No 1d restriction**, unlike VWAP and session boxes: pivots are a bar-count method with no inherent timeframe meaning, so hiding them on daily would be arbitrary.
+
+**Verified:** every reported swing is provably the extreme of its own window (0 mismatches across BTC 1h/15m and PEPE 1h); all three trend outcomes exercised on hand-built zigzags plus the tie and unlabelled-first cases; live reads BTC 1h `range`, BTC 15m `up`, PEPE 1h `down`. Browser-verified on BTC — labels spot-checked against prices, trend matches price action. Typechecks clean both sides.
+
+**Stage 2 status:** Market Structure → trend detection, swing high, swing low, structure lines all done. BOS/CHOCH/MSS and Liquidity Sweep remain 🔴 and build directly on these swing points. Stage 2 ~35% → ~45%.
