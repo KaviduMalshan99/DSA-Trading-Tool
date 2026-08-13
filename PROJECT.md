@@ -221,7 +221,7 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 | Stage | Name                       | Completion | One-line status                                                                                       |
 | ----- | -------------------------- | ---------- | ----------------------------------------------------------------------------------------------------- |
 | 1     | Foundation & Workspace     | **✅ Done**   | Workspace, chart, live data, all drawing tools (incl. Long/Short Position, Undo), overlay/loading polish complete; a few minor items deferred (see Stage 1 notes) |
-| 2     | Market Context & Structure | **~53%**   | Volume Profile core + SMC (OB/FVG/BOS/CHOCH/Liquidity Sweep) + Institutional Levels + Session VWAP + Session boxes + Market Structure (swings/trend/lines) done; MSS (possibly covered by CHOCH — flagged), Equal Highs/Lows, Anchored VWAP, session H/L, dashboard not started |
+| 2     | Market Context & Structure | **✅ Done**   | All 6 planned features shipped: Institutional Levels, Session VWAP, Session boxes, Market Structure (swings/trend/lines), SMC expansion (OB/FVG/BOS/CHOCH/Liquidity Sweep), Market Context Dashboard; several nice-to-have sub-items deliberately deferred (see Stage 2 notes) |
 | 3     | Order Flow & Execution     | **~50%**   | Footprint, Delta/CVD, Heatmap, Whale done; imbalance partial; stacked/absorption/DOM/tape not started |
 | 4     | Trade Confirmation         | **~3%**    | Nothing meaningfully built yet (Replay is 0%, not 50% as previously claimed)                          |
 | 5     | AI Intelligence & Polish   | **~8%**    | Theme + Docker Compose only; all AI modules not started                                               |
@@ -265,7 +265,7 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 
 ---
 
-## Stage 2 — Market Context & Structure (~53%, in progress)
+## Stage 2 — Market Context & Structure ✅ Done
 
 **Objective:** help the trader understand the market _before_ considering a trade. Answers _"Where should I pay attention?"_ — trend, institutional levels, high-probability zones, session context.
 
@@ -303,9 +303,26 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 |                              | London session box _(07:00–16:00 UTC)_             | ✅ Done _(Session 17)_ — intraday timeframes only              |
 |                              | New York session box _(12:00–21:00 UTC)_           | ✅ Done _(Session 17)_ — intraday timeframes only              |
 |                              | Session High / Low                                 | 🔴                                                            |
-| **Market Context Dashboard** | Summary of all of the above                        | 🔴                                                            |
+| **Market Context Dashboard** | Summary of all of the above                        | ✅ Done _(Session 20)_ — 6-row panel, 2-of-3 majority Bias      |
 
-**Development priority:** Phase 1 complete → POC/VAH/VAL + Daily Open/PDH/PDL + Session VWAP all done. Phase 2 (in progress) → Market Structure swings/trend/lines done (Session 18); BOS/CHOCH/Liquidity Sweep done (Session 19); Equal Highs/Lows next, plus a decision on whether MSS needs to be built separately from CHOCH. Phase 3 → Session boxes (done early, Session 17), Anchored VWAP, Context Dashboard.
+**Development priority — complete.** All three phases of the original plan shipped: Phase 1 (POC/VAH/VAL + Daily Open/PDH/PDL + Session VWAP), Phase 2 (Market Structure swings/trend/lines — Session 18; BOS/CHOCH/Liquidity Sweep — Session 19), Phase 3 (Session boxes — Session 17; Market Context Dashboard — Session 20, tying the other five features together into one panel). Stage 2's objective — help the trader read market context at a glance — is met. Remaining sub-items below are real but non-blocking, same as Stage 1's deferred list.
+
+### Stage 2 — deferred / future (not blocking completion)
+
+| Item | Status | Notes |
+| --- | --- | --- |
+| Volume Profile HVN / LVN | 🔴 | High/low-volume node highlighting on top of the existing POC/VAH/VAL. |
+| Volume Profile Developing POC (live) | 🔴 | Live-updating POC as the current session builds, vs. the static per-request profile today. |
+| Volume Profile Composite (multi-day) | 🔵 Future | Explicitly out of scope for now. |
+| Market Structure Shift (MSS) | 🟡 Flagged | MSS and CHOCH (Session 19) describe the same event — the first structure break against the prevailing trend — in most SMC frameworks. Not built as a separate feature; flagged rather than closed so it isn't silently dropped if a distinct definition turns out to be wanted later. |
+| Equal Highs / Equal Lows | 🔴 | Not built. |
+| Premium / Discount zones | 🔵 Future | Explicitly out of scope for now. |
+| SMC mitigation (fade zones once price re-enters) | 🔴 | Carried over from Session 4, still open. |
+| Anchored VWAP _(owns a Stage 1 toolbar button)_ | 🔴 | Button exists, unwired — needs its own analytics engine. |
+| Fixed Range VP _(owns a Stage 1 toolbar button)_ | 🔴 | Same as above. |
+| VWAP bands | 🔵 Future | Explicitly out of scope for now. |
+| Prev Week / Month High / Low | 🔵 Future | Institutional Levels currently covers daily only. |
+| Session High / Low | 🔴 | Not built; Session boxes (Asia/London/NY) themselves are done. |
 
 ---
 
@@ -678,3 +695,17 @@ Both fixes verified live (BTC↔ETH, 1h→15m→1m, all five overlays active; dr
 **Frontend.** `StructureOverlay.tsx` gained two more layers: `structure_breaks` draw as a short dashed horizontal tick at the broken level (blue = BOS, amber = CHOCH), and `liquidity_sweeps` as a small purple diamond at the swept wick level — a different *shape*, not just a different color, so break vs. sweep reads apart even without checking color. Both share the existing swing-label bar-spacing gate.
 
 **Stage 2 status:** SMC → Order Blocks, FVG, BOS, CHOCH, Liquidity Sweep all done. Equal Highs/Equal Lows remains 🔴. Market Structure Shift (MSS) is flagged rather than marked done or 🔴: in most SMC frameworks MSS and CHOCH describe the same event (the first structure break against the prevailing trend), so it may already be effectively covered by this session's CHOCH — treating it as a separate build item without confirming that would risk duplicating the same signal under a second name. Stage 2 ~45% → ~53%.
+
+### Session 20 — August 13, 2026
+
+**Stage 2 feature 6 (final): Market Context Dashboard — Stage 2 complete.** The payoff panel: a compact, read-only summary that collects what the other five Stage 2 features already compute into one glance, rather than computing anything new itself (aside from one derived value, Bias).
+
+**What it reads, and from where — no new backend route.** `ContextDashboard.tsx` fetches `/levels`, `/vwap`, and `/structure` directly (the same endpoints LevelsOverlay/VWAPOverlay/StructureOverlay already use), each at that source's own existing poll cadence — Levels every 5 minutes, VWAP every 30s (plus refetch on a new bar), Structure every 15s — so turning the dashboard on adds no more request load than turning on the overlay it's summarizing would. Session is a pure client-clock check reusing `SessionBoxes`' own exported `SESSIONS` hours rather than redefining them. Six rows: Trend (`current_trend`), VWAP position (current price vs. latest VWAP), Session (joins overlapping windows, e.g. "Asia + London"), Nearest level (closest of Daily Open/PDH/PDL with signed distance, formatted with that symbol's own `decimals` so PEPE reads `0.00000004`, not `0.00`), Last structure event (most recent of `structure_breaks`/`liquidity_sweeps` by time), and Bias.
+
+**Bias — went through one revision.** First pass required all three signals (trend, VWAP, last event) to agree before firing Bullish/Bearish, falling back to Neutral otherwise — simple, but stricter than intended and read Neutral more often than useful. Corrected to an explicit 2-of-3 majority vote: each signal scores `bullish` / `bearish` / `neutral` independently (trend: up/down/range; VWAP: Above/Below; last event: its own direction, sweep included), a missing signal scores neutral so absent data can't tip the vote, and Bias is Bullish on 2+ bullish votes (and not 2+ bearish), Bearish on 2+ bearish votes, Neutral otherwise — covering a 1-1-1 split and an all-neutral 0-0-3 the same way.
+
+**Placement.** Top-right corner — the only one of the four corners not already occupied (symbol/price legend and VWAP badge sit top-left, the Structure trend badge bottom-left). Visible by default via a new "Context" toolbar toggle (unlike every other Stage 2 overlay, which defaults off), plus its own collapse button so it can be tucked away without hiding it from the toolbar state.
+
+**Verified live** on BTCUSDT and PEPEUSDT with Levels/VWAP/Structure/Context all on simultaneously: all six rows matched what the chart itself showed (nearest-level distance matched the visible level lines exactly on both symbols; last event matched the rightmost BOS/CHOCH/sweep marker), collapse/expand worked both directions, no console errors, and a symbol switch showed a graceful brief "—" on the rows still fetching rather than stale or crashed data. Frontend-only — no backend restart needed.
+
+**Stage 2 status — complete.** All 6 planned features shipped: Institutional Levels (Session 15), Session VWAP (Session 16), Session boxes (Session 17), Market Structure (Session 18), SMC expansion — BOS/CHOCH/Liquidity Sweep (Session 19), Market Context Dashboard (Session 20). Remaining sub-items (HVN/LVN, developing POC, Anchored VWAP, Fixed Range VP, VWAP bands, session high/low, Equal Highs/Lows, MSS, Premium/Discount zones, SMC mitigation) are real but deliberately deferred — recorded in the new "Stage 2 — deferred / future" table rather than held against Stage 2's close, mirroring how Stage 1 closed with its own deferred list. Stage 2 ~53% → ✅ Done.
