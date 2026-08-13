@@ -38,10 +38,10 @@ class SwingPoint:
 
 @dataclass
 class StructureBreak:
-    time: int             # candle open time of the breaking candle, epoch ms
-    price: float           # the swing level that was broken
-    type: str              # 'BOS' | 'CHOCH'
-    direction: str         # 'bullish' | 'bearish' — the direction the break implies
+    time: int             # candle open time of the breaking/sweeping candle, epoch ms
+    price: float           # the swing level that was broken or swept
+    type: str              # 'BOS' | 'CHOCH' | 'sweep'
+    direction: str         # 'bullish' | 'bearish' — the direction the event implies
 
 
 @dataclass
@@ -51,6 +51,7 @@ class MarketStructure:
     decimals: int
     current_trend: str = "range"  # 'up' | 'down' | 'range'
     structure_breaks: list[StructureBreak] = field(default_factory=list)
+    liquidity_sweeps: list[StructureBreak] = field(default_factory=list)
 
 
 def _label_swings(swings: list[SwingPoint]) -> None:
@@ -101,20 +102,30 @@ def _detect_breaks(
     candles: list[dict],
     swings: list[SwingPoint],
     swing_strength: int,
-) -> list[StructureBreak]:
+) -> tuple[list[StructureBreak], list[StructureBreak]]:
     """
     Replay candles in order, tracking the most-recently-confirmed swing high,
     the most-recently-confirmed swing low, and the trend those two imply (same
-    HH/HL-vs-LH/LL rule as `_derive_trend`), and flag the first close that
-    breaks each level.
+    HH/HL-vs-LH/LL rule as `_derive_trend`), and flag:
+
+    * the first CLOSE that breaks each level — a BOS (continuation) or CHOCH
+      (reversal warning), exactly as before;
+    * on any candle that didn't break a level, a WICK past that level that
+      closes back on the original side — a liquidity sweep (failed break /
+      stop hunt). Checking sweeps only when no break fired keeps a candle
+      from ever being both: a real break already consumes the level, and the
+      close conditions for break vs. sweep are mutually exclusive by
+      definition anyway.
 
     A swing at loop index i isn't confirmed until candle i + swing_strength
     prints (the same lag `detect_swings` documents), so it only becomes
-    eligible to be broken from its confirmation candle onward — using it
-    earlier would let a later candle decide a break in the past.
+    eligible to be broken/swept from its confirmation candle onward — using it
+    earlier would let a later candle decide an event in the past.
 
-    Each swing level fires at most one break: once broken, it's inert until a
-    new swing of the same type is confirmed and replaces it as "most recent".
+    Each swing level fires at most one break: once broken, it's inert (no more
+    breaks *or* sweeps against it) until a new swing of the same type is
+    confirmed and replaces it as "most recent". Sweeps don't consume the
+    level — a level can be swept repeatedly until it's actually broken.
     """
     time_to_index = {c["t"]: i for i, c in enumerate(candles)}
     confirms_at: dict[int, list[SwingPoint]] = {}
@@ -123,6 +134,7 @@ def _detect_breaks(
         confirms_at.setdefault(confirm_index, []).append(swing)
 
     breaks: list[StructureBreak] = []
+    sweeps: list[StructureBreak] = []
     last_high: SwingPoint | None = None
     last_low: SwingPoint | None = None
     high_broken = False
@@ -144,22 +156,44 @@ def _detect_breaks(
             trend = "range"
 
         close = candle["c"]
+        broke = False
         if trend == "up":
             if last_low is not None and not low_broken and close < last_low.price:
                 breaks.append(StructureBreak(candle["t"], last_low.price, "CHOCH", "bearish"))
                 low_broken = True
+                broke = True
             elif last_high is not None and not high_broken and close > last_high.price:
                 breaks.append(StructureBreak(candle["t"], last_high.price, "BOS", "bullish"))
                 high_broken = True
+                broke = True
         elif trend == "down":
             if last_high is not None and not high_broken and close > last_high.price:
                 breaks.append(StructureBreak(candle["t"], last_high.price, "CHOCH", "bullish"))
                 high_broken = True
+                broke = True
             elif last_low is not None and not low_broken and close < last_low.price:
                 breaks.append(StructureBreak(candle["t"], last_low.price, "BOS", "bearish"))
                 low_broken = True
+                broke = True
 
-    return breaks
+        if not broke:
+            high, low = candle["h"], candle["l"]
+            if (
+                last_high is not None
+                and not high_broken
+                and high > last_high.price
+                and close <= last_high.price
+            ):
+                sweeps.append(StructureBreak(candle["t"], last_high.price, "sweep", "bearish"))
+            if (
+                last_low is not None
+                and not low_broken
+                and low < last_low.price
+                and close >= last_low.price
+            ):
+                sweeps.append(StructureBreak(candle["t"], last_low.price, "sweep", "bullish"))
+
+    return breaks, sweeps
 
 
 def detect_swings(
@@ -202,10 +236,12 @@ def detect_swings(
             swings.append(SwingPoint(time=candle["t"], price=round(low, decimals), type="low"))
 
     _label_swings(swings)
+    breaks, sweeps = _detect_breaks(candles, swings, swing_strength)
     return MarketStructure(
         swings=swings,
         swing_strength=swing_strength,
         decimals=decimals,
         current_trend=_derive_trend(swings),
-        structure_breaks=_detect_breaks(candles, swings, swing_strength),
+        structure_breaks=breaks,
+        liquidity_sweeps=sweeps,
     )

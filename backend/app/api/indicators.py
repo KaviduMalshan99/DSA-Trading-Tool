@@ -184,8 +184,8 @@ async def get_market_structure(
     limit: int = Query(200, le=1000),
 ):
     """
-    Swing highs/lows (pivots), trend labels, and BOS/CHOCH structure breaks
-    over the last `limit` candles at this timeframe.
+    Swing highs/lows (pivots), trend labels, BOS/CHOCH structure breaks, and
+    liquidity sweeps over the last `limit` candles at this timeframe.
     """
     try:
         candles = await _fetch_klines(symbol, interval, limit)
@@ -206,5 +206,9 @@ async def get_market_structure(
         "structure_breaks": [
             {"time": b.time, "price": b.price, "type": b.type, "direction": b.direction}
             for b in structure.structure_breaks
+        ],
+        "liquidity_sweeps": [
+            {"time": s.time, "price": s.price, "type": s.type, "direction": s.direction}
+            for s in structure.liquidity_sweeps
         ],
     }
