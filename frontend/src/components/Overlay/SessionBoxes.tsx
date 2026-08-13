@@ -18,8 +18,12 @@ import type { Candle } from '../../types/market';
 
 const DAY_MS = 86_400_000;
 
-/** Session windows in UTC hours — the same UTC-day basis levels.py and vwap.py use. */
-const SESSIONS = [
+/**
+ * Session windows in UTC hours — the same UTC-day basis levels.py and vwap.py
+ * use. Exported so ContextDashboard can read "which session is active now"
+ * off the same hours instead of redefining them.
+ */
+export const SESSIONS = [
   { key: 'asia',   label: 'Asia',   startHour: 0,  endHour: 9,  color: '#42a5f5' },
   { key: 'london', label: 'London', startHour: 7,  endHour: 16, color: '#ffa726' },
   { key: 'ny',     label: 'NY',     startHour: 12, endHour: 21, color: '#66bb6a' },

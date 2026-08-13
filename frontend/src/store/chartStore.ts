@@ -2,7 +2,7 @@ import { create } from 'zustand';
 
 export type OverlayType =
   | 'heatmap' | 'footprint' | 'volumeProfile' | 'whaleMarkers'
-  | 'smc' | 'levels' | 'vwap' | 'sessions' | 'structure';
+  | 'smc' | 'levels' | 'vwap' | 'sessions' | 'structure' | 'context';
 
 interface ChartState {
   visibleOverlays: Set<OverlayType>;
@@ -16,7 +16,9 @@ interface ChartState {
 }
 
 export const useChartStore = create<ChartState>((set) => ({
-  visibleOverlays: new Set(['heatmap', 'smc']),
+  // 'context' (the Market Context Dashboard) is visible by default, unlike
+  // the other analytics overlays — it's the summary panel, not a chart layer.
+  visibleOverlays: new Set(['heatmap', 'smc', 'context']),
   visibleRange: null,
   crosshairPrice: null,
   crosshairTime: null,

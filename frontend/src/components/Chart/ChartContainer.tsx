@@ -13,6 +13,7 @@ import { LevelsOverlay } from '../Overlay/LevelsOverlay';
 import { VWAPOverlay } from '../Overlay/VWAPOverlay';
 import { SessionBoxes } from '../Overlay/SessionBoxes';
 import { StructureOverlay } from '../Overlay/StructureOverlay';
+import { ContextDashboard } from '../Overlay/ContextDashboard';
 import { DrawingToolbar } from '../Drawing/DrawingToolbar';
 import { DrawingCanvas } from '../Drawing/DrawingCanvas';
 import { DrawingStyleToolbar } from '../Drawing/DrawingStyleToolbar';
@@ -119,6 +120,11 @@ export function ChartContainer({ sharedChartRef, sharedSeriesRef, chartAreaRef }
         {/* Floating, draggable strip of starred tools — viewport-fixed, so it
             can be dragged anywhere regardless of where it's mounted */}
         <FavoritesToolbar />
+
+        {/* Market Context Dashboard — mounted after DrawingCanvas so its
+            collapse button stays clickable regardless of the active drawing
+            tool's pointer-events handling. */}
+        {visibleOverlays.has('context') && <ContextDashboard />}
       </div>
 
       {/* Delta panel — 20% */}
