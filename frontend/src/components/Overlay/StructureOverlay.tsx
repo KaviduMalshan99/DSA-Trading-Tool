@@ -1,14 +1,20 @@
 /**
- * StructureOverlay — canvas overlay drawing market structure in three layers:
+ * StructureOverlay — canvas overlay drawing market structure in five layers:
  *
  *   1. Swing highs/lows (pivots) as triangles pointing at their candle.
  *   2. HH/LH/HL/LL tags classifying each swing against the previous swing of
  *      the same type, plus an overall trend tag in the corner.
  *   3. A thin zigzag connecting consecutive swings, so the structure the tags
  *      describe is visible as a shape rather than inferred from labels.
+ *   4. BOS/CHOCH structure breaks as a short tick at the broken swing level,
+ *      on the candle whose close broke it.
+ *   5. Liquidity sweeps as a small diamond at the swept wick level, on the
+ *      candle whose wick reached past the level before closing back.
  *
  * Colours match the levels palette (orange = high, cyan = low) so "orange is a
- * high, cyan is a low" reads consistently across the app.
+ * high, cyan is a low" reads consistently across the app. BOS/CHOCH/sweep each
+ * get their own colour (blue/amber/purple) so they read as a distinct signal
+ * layer from the swings underneath.
  */
 
 import { useEffect, useRef, useState } from 'react';
@@ -24,10 +30,15 @@ const HIGH_COLOR = '#ff9800'; // same orange as PDH
 const LOW_COLOR = '#26c6da';  // same cyan as PDL
 const PRICE_TEXT_COLOR = '#8b8f9a'; // muted, so the HH/LH tag stays the primary read
 const ZIGZAG_COLOR = 'rgba(149,152,161,0.45)'; // background guide — thinner/fainter than drawing tools
+const BOS_COLOR = '#4c8bf5';    // blue — continuation
+const CHOCH_COLOR = '#e8890c';  // amber — reversal warning; kept off HIGH_COLOR's orange so the two don't blur together
+const SWEEP_COLOR = '#c15cf5';  // purple — failed break / stop hunt, distinct from both break colours
 
 const MARKER_HALF_W = 4;   // half the triangle's base
 const MARKER_H = 6;        // triangle height
 const MARKER_GAP = 5;      // clear space between the candle's wick and the marker
+const BREAK_LINE_HALF_W = 12; // half the length of a BOS/CHOCH tick
+const SWEEP_RADIUS = 4;       // half-diagonal of the sweep diamond
 
 // Two thresholds: the structure tag is the point of the feature so it appears
 // first, and the price is secondary detail that only earns its space when the
@@ -163,6 +174,66 @@ export function StructureOverlay({ sharedChartRef, sharedSeriesRef }: StructureO
         ctx.fillStyle = PRICE_TEXT_COLOR;
         ctx.fillText(swing.price.toFixed(data.decimals), x, priceY);
       }
+    }
+
+    // ── Layers 4 & 5: BOS/CHOCH breaks and liquidity sweeps ──────────────────
+    const projectEvent = (evt: { time: number; price: number }): { x: number; y: number } | null => {
+      const rawX = timeScale.timeToCoordinate(toChartTimeSeconds(evt.time) as unknown as LWTime);
+      if (rawX === null) return null;
+      const rawY = series.priceToCoordinate(evt.price);
+      if (rawY === null) return null;
+      return { x: rawX as unknown as number, y: rawY as unknown as number };
+    };
+
+    ctx.textAlign = 'left';
+    for (const brk of data.structure_breaks) {
+      const pt = projectEvent(brk);
+      if (!pt) continue;
+      const { x, y } = pt;
+      if (x < 0 || x > plotRight || y < 0 || y > H) continue;
+
+      const color = brk.type === 'BOS' ? BOS_COLOR : CHOCH_COLOR;
+
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([3, 2]);
+      ctx.beginPath();
+      ctx.moveTo(x - BREAK_LINE_HALF_W, y);
+      ctx.lineTo(x + BREAK_LINE_HALF_W, y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      if (!showLabels) continue;
+
+      ctx.fillStyle = color;
+      ctx.textBaseline = brk.direction === 'bullish' ? 'bottom' : 'top';
+      const labelY = brk.direction === 'bullish' ? y - 3 : y + 3;
+      ctx.fillText(brk.type, x + BREAK_LINE_HALF_W + 3, labelY);
+    }
+
+    for (const sweep of data.liquidity_sweeps) {
+      const pt = projectEvent(sweep);
+      if (!pt) continue;
+      const { x, y } = pt;
+      if (x < 0 || x > plotRight || y < 0 || y > H) continue;
+
+      // Small diamond, distinct from the break tick's horizontal line so the
+      // two event types are shaped differently, not just coloured differently.
+      ctx.beginPath();
+      ctx.moveTo(x, y - SWEEP_RADIUS);
+      ctx.lineTo(x + SWEEP_RADIUS, y);
+      ctx.lineTo(x, y + SWEEP_RADIUS);
+      ctx.lineTo(x - SWEEP_RADIUS, y);
+      ctx.closePath();
+      ctx.fillStyle = SWEEP_COLOR;
+      ctx.fill();
+
+      if (!showLabels) continue;
+
+      ctx.fillStyle = SWEEP_COLOR;
+      ctx.textBaseline = sweep.direction === 'bullish' ? 'bottom' : 'top';
+      const labelY = sweep.direction === 'bullish' ? y - SWEEP_RADIUS - 2 : y + SWEEP_RADIUS + 2;
+      ctx.fillText('SWEEP', x + SWEEP_RADIUS + 3, labelY);
     }
   };
 

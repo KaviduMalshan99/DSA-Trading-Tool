@@ -74,11 +74,30 @@ export interface SwingPoint {
   label: SwingLabel | null;
 }
 
+export type StructureBreakType = 'BOS' | 'CHOCH';
+export type BreakDirection = 'bullish' | 'bearish';
+
+export interface StructureBreak {
+  time: number;   // candle open time (ms) of the breaking candle — shift via toChartTime before charting
+  price: number;  // the swing level that was broken
+  type: StructureBreakType;
+  direction: BreakDirection;
+}
+
+export interface LiquiditySweep {
+  time: number;   // candle open time (ms) of the sweeping candle — shift via toChartTime before charting
+  price: number;  // the swing level that was swept (wicked past, then closed back on the original side)
+  type: 'sweep';
+  direction: BreakDirection;
+}
+
 export interface StructureData {
   swings: SwingPoint[];
   current_trend: MarketTrend;
   swing_strength: number;
   decimals: number;
+  structure_breaks: StructureBreak[];
+  liquidity_sweeps: LiquiditySweep[];
 }
 
 export interface HeatmapData {
