@@ -1,9 +1,11 @@
 """
-Market structure — swing high / swing low (pivot) detection.
+Market structure — swing detection, trend labelling, and BOS/CHOCH breaks.
 
-Layer 1 of the market-structure feature: find the peaks and valleys everything
-else is defined against. Trend labelling and BOS/CHOCH build on these, so the
-pivots need to be right before anything is layered on top.
+Swing highs/lows (pivots) are the peaks and valleys everything else is defined
+against. Trend labels (HH/HL/LH/LL) classify each swing against the previous
+one of the same type, and BOS/CHOCH flag the candle closes that break those
+swing levels — a continuation of the prevailing trend or the first warning
+against it.
 
 Fractal/pivot method: a candle is a swing high if its high beats every candle
 within `swing_strength` bars on each side, and a swing low if its low is under
@@ -14,13 +16,14 @@ implementation:
 
 * The most recent `swing_strength` candles can never be classified — a pivot
   isn't confirmed until enough candles have printed to its right. Swing
-  detection always lags the live edge by that many bars.
+  detection always lags the live edge by that many bars. BOS/CHOCH inherit the
+  same lag: a swing only becomes eligible to be broken once it's confirmed.
 * Larger `swing_strength` means fewer, more significant pivots; smaller means
   more, noisier ones. It's exposed as a parameter because the useful value
   depends on the timeframe and the coin.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from app.analytics.price_step import price_decimals_for
 
@@ -34,11 +37,20 @@ class SwingPoint:
 
 
 @dataclass
+class StructureBreak:
+    time: int             # candle open time of the breaking candle, epoch ms
+    price: float           # the swing level that was broken
+    type: str              # 'BOS' | 'CHOCH'
+    direction: str         # 'bullish' | 'bearish' — the direction the break implies
+
+
+@dataclass
 class MarketStructure:
     swings: list[SwingPoint]
     swing_strength: int
     decimals: int
     current_trend: str = "range"  # 'up' | 'down' | 'range'
+    structure_breaks: list[StructureBreak] = field(default_factory=list)
 
 
 def _label_swings(swings: list[SwingPoint]) -> None:
@@ -83,6 +95,71 @@ def _derive_trend(swings: list[SwingPoint]) -> str:
     if last_high == "LH" and last_low == "LL":
         return "down"
     return "range"
+
+
+def _detect_breaks(
+    candles: list[dict],
+    swings: list[SwingPoint],
+    swing_strength: int,
+) -> list[StructureBreak]:
+    """
+    Replay candles in order, tracking the most-recently-confirmed swing high,
+    the most-recently-confirmed swing low, and the trend those two imply (same
+    HH/HL-vs-LH/LL rule as `_derive_trend`), and flag the first close that
+    breaks each level.
+
+    A swing at loop index i isn't confirmed until candle i + swing_strength
+    prints (the same lag `detect_swings` documents), so it only becomes
+    eligible to be broken from its confirmation candle onward — using it
+    earlier would let a later candle decide a break in the past.
+
+    Each swing level fires at most one break: once broken, it's inert until a
+    new swing of the same type is confirmed and replaces it as "most recent".
+    """
+    time_to_index = {c["t"]: i for i, c in enumerate(candles)}
+    confirms_at: dict[int, list[SwingPoint]] = {}
+    for swing in swings:
+        confirm_index = time_to_index[swing.time] + swing_strength
+        confirms_at.setdefault(confirm_index, []).append(swing)
+
+    breaks: list[StructureBreak] = []
+    last_high: SwingPoint | None = None
+    last_low: SwingPoint | None = None
+    high_broken = False
+    low_broken = False
+    trend = "range"
+
+    for k, candle in enumerate(candles):
+        for swing in confirms_at.get(k, []):
+            if swing.type == "high":
+                last_high, high_broken = swing, False
+            else:
+                last_low, low_broken = swing, False
+
+        if last_high and last_high.label == "HH" and last_low and last_low.label == "HL":
+            trend = "up"
+        elif last_high and last_high.label == "LH" and last_low and last_low.label == "LL":
+            trend = "down"
+        else:
+            trend = "range"
+
+        close = candle["c"]
+        if trend == "up":
+            if last_low is not None and not low_broken and close < last_low.price:
+                breaks.append(StructureBreak(candle["t"], last_low.price, "CHOCH", "bearish"))
+                low_broken = True
+            elif last_high is not None and not high_broken and close > last_high.price:
+                breaks.append(StructureBreak(candle["t"], last_high.price, "BOS", "bullish"))
+                high_broken = True
+        elif trend == "down":
+            if last_high is not None and not high_broken and close > last_high.price:
+                breaks.append(StructureBreak(candle["t"], last_high.price, "CHOCH", "bullish"))
+                high_broken = True
+            elif last_low is not None and not low_broken and close < last_low.price:
+                breaks.append(StructureBreak(candle["t"], last_low.price, "BOS", "bearish"))
+                low_broken = True
+
+    return breaks
 
 
 def detect_swings(
@@ -130,4 +207,5 @@ def detect_swings(
         swing_strength=swing_strength,
         decimals=decimals,
         current_trend=_derive_trend(swings),
+        structure_breaks=_detect_breaks(candles, swings, swing_strength),
     )
