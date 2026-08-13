@@ -221,7 +221,7 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 | Stage | Name                       | Completion | One-line status                                                                                       |
 | ----- | -------------------------- | ---------- | ----------------------------------------------------------------------------------------------------- |
 | 1     | Foundation & Workspace     | **✅ Done**   | Workspace, chart, live data, all drawing tools (incl. Long/Short Position, Undo), overlay/loading polish complete; a few minor items deferred (see Stage 1 notes) |
-| 2     | Market Context & Structure | **~45%**   | Volume Profile core + SMC (OB/FVG) + Institutional Levels + Session VWAP + Session boxes + Market Structure (swings/trend/lines) done; BOS/CHOCH/MSS, Anchored VWAP, session H/L, dashboard not started |
+| 2     | Market Context & Structure | **~53%**   | Volume Profile core + SMC (OB/FVG/BOS/CHOCH/Liquidity Sweep) + Institutional Levels + Session VWAP + Session boxes + Market Structure (swings/trend/lines) done; MSS (possibly covered by CHOCH — flagged), Equal Highs/Lows, Anchored VWAP, session H/L, dashboard not started |
 | 3     | Order Flow & Execution     | **~50%**   | Footprint, Delta/CVD, Heatmap, Whale done; imbalance partial; stacked/absorption/DOM/tape not started |
 | 4     | Trade Confirmation         | **~3%**    | Nothing meaningfully built yet (Replay is 0%, not 50% as previously claimed)                          |
 | 5     | AI Intelligence & Polish   | **~8%**    | Theme + Docker Compose only; all AI modules not started                                               |
@@ -265,7 +265,7 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 
 ---
 
-## Stage 2 — Market Context & Structure (~45%, in progress)
+## Stage 2 — Market Context & Structure (~53%, in progress)
 
 **Objective:** help the trader understand the market _before_ considering a trade. Answers _"Where should I pay attention?"_ — trend, institutional levels, high-probability zones, session context.
 
@@ -280,10 +280,10 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 |                              | Composite (multi-day)                              | 🔵 Future                                                     |
 | **SMC**                      | Order Blocks                                       | ✅ Done                                                       |
 |                              | Fair Value Gaps                                    | ✅ Done                                                       |
-|                              | Break of Structure (BOS)                           | 🔴 Critical                                                   |
-|                              | Change of Character (CHOCH)                        | 🔴 Critical                                                   |
-|                              | Market Structure Shift (MSS)                       | 🔴                                                            |
-|                              | Liquidity Sweep                                    | 🔴                                                            |
+|                              | Break of Structure (BOS)                           | ✅ Done _(Session 19)_ — close-based continuation             |
+|                              | Change of Character (CHOCH)                        | ✅ Done _(Session 19)_ — close-based reversal warning         |
+|                              | Market Structure Shift (MSS)                       | 🟡 Flagged — MSS and CHOCH (Session 19) are the same signal in most SMC frameworks; not built as a separate feature pending a call on whether it needs to be distinct |
+|                              | Liquidity Sweep                                    | ✅ Done _(Session 19)_ — wick-based, mutually exclusive with BOS/CHOCH |
 |                              | Equal Highs / Equal Lows                           | 🔴                                                            |
 |                              | Premium / Discount zones                           | 🔵 Future                                                     |
 |                              | _SMC mitigation_ (fade zones once price re-enters) | 🔴 _(carried over from Session 4)_                            |
@@ -305,7 +305,7 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 |                              | Session High / Low                                 | 🔴                                                            |
 | **Market Context Dashboard** | Summary of all of the above                        | 🔴                                                            |
 
-**Development priority:** Phase 1 complete → POC/VAH/VAL + Daily Open/PDH/PDL + Session VWAP all done. Phase 2 (in progress) → Market Structure swings/trend/lines done (Session 18); BOS/CHOCH/MSS/Liquidity Sweep next, and they build directly on the Session 18 swing points. Phase 3 → Session boxes (done early, Session 17), Anchored VWAP, Context Dashboard.
+**Development priority:** Phase 1 complete → POC/VAH/VAL + Daily Open/PDH/PDL + Session VWAP all done. Phase 2 (in progress) → Market Structure swings/trend/lines done (Session 18); BOS/CHOCH/Liquidity Sweep done (Session 19); Equal Highs/Lows next, plus a decision on whether MSS needs to be built separately from CHOCH. Phase 3 → Session boxes (done early, Session 17), Anchored VWAP, Context Dashboard.
 
 ---
 
@@ -664,3 +664,17 @@ Both fixes verified live (BTC↔ETH, 1h→15m→1m, all five overlays active; dr
 **Verified:** every reported swing is provably the extreme of its own window (0 mismatches across BTC 1h/15m and PEPE 1h); all three trend outcomes exercised on hand-built zigzags plus the tie and unlabelled-first cases; live reads BTC 1h `range`, BTC 15m `up`, PEPE 1h `down`. Browser-verified on BTC — labels spot-checked against prices, trend matches price action. Typechecks clean both sides.
 
 **Stage 2 status:** Market Structure → trend detection, swing high, swing low, structure lines all done. BOS/CHOCH/MSS and Liquidity Sweep remain 🔴 and build directly on these swing points. Stage 2 ~35% → ~45%.
+
+### Session 19 — August 13, 2026
+
+**Stage 2 feature 5: SMC expansion (BOS, CHOCH, Liquidity Sweep).** Built in two verified steps on top of Session 18's confirmed-swing tracking, per that session's own note that the layered-verification pattern was "worth repeating for BOS/CHOCH."
+
+**Step 1 — BOS + CHOCH (`structure.py`).** Both are **close-based** and share one state machine: replay candles in order, tracking the most-recently-*confirmed* swing high, the most-recently-confirmed swing low, and the trend those two imply (same HH/HL-vs-LH/LL rule as `current_trend`). BOS = a close beyond the most recent same-direction swing level (continuation); CHOCH = a close beyond the *opposite*-direction level (the first break against the prevailing trend). A swing isn't eligible to be broken until its own confirmation candle (`i + swing_strength`) has printed — using it earlier would let a later candle decide a break in the past, the same lag `detect_swings` already documents for pivots. Each level fires at most one break; once broken it's inert until a new swing of that type replaces it. Exposed additively on the same `GET /indicators/structure/{symbol}/{interval}` as `structure_breaks`.
+
+**Step 2 — Liquidity Sweep, same file.** **Wick-based**, the deliberate opposite of BOS/CHOCH: a sweep is a wick past a swing level that *closes back* on the original side (failed break / stop hunt) rather than a close that gets through. Reuses the exact same confirmed-swing/trend loop from Step 1 — sweeps are checked only on candles where no break already fired, which is what guarantees a candle is classified as break **or** sweep, never both (the two conditions are mutually exclusive by definition anyway: a break requires the close beyond the level, a sweep requires it didn't get there). Unlike a break, a sweep doesn't consume the level — the same swing high/low can be swept repeatedly until it's genuinely broken. Sweeps also have **no trend gate**: the definition doesn't reference the prevailing trend at all, so unlike BOS/CHOCH they can fire even while `current_trend` reads `range`.
+
+**Verification.** Both steps were checked with hand-built candle sequences before any browser check: an uptrend with a real continuation close, a wick-and-reject candle at the same level (confirmed as a sweep, not a break), and then the real reversal close one candle later (confirmed as CHOCH) — all landed at the expected time/price/type/direction, and re-running the Step 1 sequence after Step 2 landed showed BOS/CHOCH untouched byte-for-byte. Confirmed live on chart afterward: breaks land on continuations/reversals correctly, sweeps land on wick-poke-and-reject spots, and the break/sweep separation holds.
+
+**Frontend.** `StructureOverlay.tsx` gained two more layers: `structure_breaks` draw as a short dashed horizontal tick at the broken level (blue = BOS, amber = CHOCH), and `liquidity_sweeps` as a small purple diamond at the swept wick level — a different *shape*, not just a different color, so break vs. sweep reads apart even without checking color. Both share the existing swing-label bar-spacing gate.
+
+**Stage 2 status:** SMC → Order Blocks, FVG, BOS, CHOCH, Liquidity Sweep all done. Equal Highs/Equal Lows remains 🔴. Market Structure Shift (MSS) is flagged rather than marked done or 🔴: in most SMC frameworks MSS and CHOCH describe the same event (the first structure break against the prevailing trend), so it may already be effectively covered by this session's CHOCH — treating it as a separate build item without confirming that would risk duplicating the same signal under a second name. Stage 2 ~45% → ~53%.
