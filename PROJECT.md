@@ -222,7 +222,7 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 | ----- | -------------------------- | ---------- | ----------------------------------------------------------------------------------------------------- |
 | 1     | Foundation & Workspace     | **✅ Done**   | Workspace, chart, live data, all drawing tools (incl. Long/Short Position, Undo), overlay/loading polish complete; a few minor items deferred (see Stage 1 notes) |
 | 2     | Market Context & Structure | **✅ Done**   | All 6 planned features shipped: Institutional Levels, Session VWAP, Session boxes, Market Structure (swings/trend/lines), SMC expansion (OB/FVG/BOS/CHOCH/Liquidity Sweep), Market Context Dashboard; several nice-to-have sub-items deliberately deferred (see Stage 2 notes) |
-| 3     | Order Flow & Execution     | **~60%**   | Footprint, Delta/CVD, Heatmap, Whale, DOM, Tape done; imbalance partial; stacked/absorption not started |
+| 3     | Order Flow & Execution     | **~62%**   | Footprint (incl. reliable backfill), Delta/CVD, Heatmap, Whale, DOM, Tape, adjustable Imbalance ratio done; stacked/absorption not started |
 | 4     | Trade Confirmation         | **~3%**    | Nothing meaningfully built yet (Replay is 0%, not 50% as previously claimed)                          |
 | 5     | AI Intelligence & Polish   | **~8%**    | Theme + Docker Compose only; all AI modules not started                                               |
 
@@ -326,14 +326,14 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 
 ---
 
-## Stage 3 — Order Flow & Execution (~60%)
+## Stage 3 — Order Flow & Execution (~62%)
 
 **Objective:** understand what is happening _right now_ — the live battle between buyers and sellers. Answers _"Is this the right time to enter?"_
 
 | Module                    | Feature                                         | Status                                                           |
 | ------------------------- | ----------------------------------------------- | ---------------------------------------------------------------- |
 | **Footprint**             | Bid × Ask footprint                             | ✅ Done                                                          |
-|                           | Historical backfill (cold-start ~50 candles)    | ✅ Done _(Session 24 — was only ever the single live candle)_    |
+|                           | Historical backfill (cold-start ~50 candles)    | ✅ Done, reliable _(Session 24 build; Session 25 fixed a silent one-shot-fetch bug that made it intermittent — see below)_ |
 |                           | Buy/Sell volume, Candle Delta                   | ✅ Done                                                          |
 |                           | Imbalance highlight (5× ratio box)              | ✅ Done _(Session 4 — was wrongly marked 🔴)_                    |
 |                           | Volume / Delta footprint modes                  | 🟡 Partial                                                       |
@@ -343,7 +343,7 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 |                           | Cumulative Delta (CVD)                          | ✅ Done                                                          |
 |                           | Delta Histogram                                 | ✅ **Done** (green/red bars — _was wrongly marked 🔴_)           |
 |                           | Session Delta, Delta Divergence                 | 🔴                                                               |
-| **Imbalance (dedicated)** | Buy/Sell imbalance, custom ratio (default 300%) | 🟡 Partial / needs verification _(Session 24 — control built, code path reviewed and looks correct, but the ratio input's live effect on highlights was not confirmed in the browser this session; still no standalone module)_ |
+| **Imbalance (dedicated)** | Buy/Sell imbalance, custom ratio (default 300%) | ✅ Verified working _(Session 25 — confirmed live: ratio input correctly changes flagged-level count, loose→many/strict→few; it was never actually broken, still no standalone module)_ |
 | **Stacked Imbalance**     | Consecutive imbalances + highlight              | 🔴                                                               |
 | **Absorption**            | Hidden institutional buying/selling             | 🔴                                                               |
 | **Liquidity Heatmap**     | Order book heatmap                              | ✅ Done                                                          |
@@ -766,3 +766,17 @@ Both fixes verified live (BTC↔ETH, 1h→15m→1m, all five overlays active; dr
 **Why recorded this way:** per explicit instruction this session — don't let a plausible-looking code review stand in for the browser verification this project's own pattern (every other Stage 2/3 feature above) requires before marking something ✅ Done.
 
 **Stage 3 status.** No status bump — this session's outcome is mixed on purpose: backfill genuinely fixed and recorded as ✅ Done, imbalance ratio control left at 🟡 Partial pending the verification above. Stage 3 stays ~60%.
+
+### Session 25 — August 15, 2026
+
+**Footprint: one root cause explained both open items from Session 24 — resolved with a single fix, verified live.**
+
+**The actual bug: a silent, unretried backfill fetch, not the reconnect/reseed logic.** The reported symptom was footprint rendering inconsistently — sometimes a full ~50-candle ladder, sometimes almost nothing near the live edge. The suspected cause going in was that reconnects/symbol-switches might be landing on a live-only accumulator that skipped re-seeding. Live diagnosis (connecting directly to the running `/ws/footprint/BTCUSDT/1m` and inspecting the actual `historical` payload) showed that theory was wrong: the per-`(symbol, interval)` accumulator and its reseed gate work exactly as designed, and a reconnect to an *existing* key correctly returns whatever history that accumulator already holds. The real fault was in `_create_accumulator` (`footprint_stream.py`): its one-shot kline backfill fetch was wrapped in a bare `except Exception: pass` — no retry, no log. Because that accumulator is created exactly once per process lifetime per key, and `uvicorn --reload` restarts the whole process (wiping all in-memory accumulators) on every backend file save — routine during active development — a single transient Binance blip landing on that one attempt permanently left the accumulator with zero history for the rest of the process's life. From then on the ladder could only ever show however many live minutes had accumulated since. **Fix:** the backfill fetch now retries up to 3 times (0.75s apart) and logs a `warning` if all three fail, instead of failing once and silently forever.
+
+**Imbalance ratio control — ✅ now verified working; it was never actually broken.** A temporary `console.log('[IMB]', ratio, flaggedCount)` was added to `FootprintCanvas.tsx`'s draw function and read back live in the browser: `ratio=1.1 flagged=9` (loose) and `ratio=8 flagged=0` (strict) — proving the full input→store→`isImbalance()`→highlight-count chain updates correctly and instantly as the toolbar value changes. The Session 24 code review was correct after all: **the entire "imbalance ratio does nothing" symptom was downstream of the footprint-history bug above** — with `get_historical()` returning `[]` (or only 2-3 live-accumulated bars), there were rarely enough flagged levels on screen for a ratio change to visibly move anything, which reads exactly like a broken control even though the detection logic was fine the whole time. The diagnostic log has been removed now that this is confirmed.
+
+**Readability (footprint number size) — still open, unconfirmed.** `MIN_ROW_PX` 8→5 and `_FOOTPRINT_TARGET_LEVELS` 15→10 (Session 24) remain in place, but nobody has yet visually confirmed on a running chart that the numbers read as comfortably sized rather than cramped. Minor, not blocking — flagged here so it isn't forgotten now that the higher-priority footprint bugs are closed.
+
+**Lesson worth keeping:** two features that looked unrelated (footprint reliability, imbalance responsiveness) were actually the same bug wearing two faces — a reminder that when a *detection* feature "does nothing," check whether it has any data to detect on before debugging the detection logic itself.
+
+**Stage 3 status.** Footprint's historical backfill sub-item upgrades to ✅ Done, reliable (was ✅ Done but intermittent). Imbalance (dedicated) upgrades from 🟡 Partial to ✅ Verified working. Stage 3 ~60% → ~62%.
