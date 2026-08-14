@@ -7,11 +7,13 @@ import { MarketInfo } from './components/Sidebar/MarketInfo';
 import { SidebarRail } from './components/Sidebar/SidebarRail';
 import { ChartContainer } from './components/Chart/ChartContainer';
 import { WhaleTicker } from './components/Overlay/WhaleTicker';
+import { DOMPanel } from './components/Overlay/DOMPanel';
 import { useChartStore } from './store/chartStore';
 
 export default function App() {
   const whaleActive = useChartStore((s) => s.visibleOverlays.has('whaleMarkers'));
   const [watchlistOpen, setWatchlistOpen] = useState(false);
+  const [domOpen, setDomOpen] = useState(false);
 
   // Lifted so the header's snapshot button can reach the live chart + its overlays.
   const sharedChartRef  = useRef<IChartApi | null>(null);
@@ -39,7 +41,17 @@ export default function App() {
             {whaleActive && <WhaleTicker />}
           </aside>
         )}
-        <SidebarRail open={watchlistOpen} onToggle={() => setWatchlistOpen((v) => !v)} />
+        {domOpen && (
+          <aside className="w-56 flex flex-col flex-shrink-0 border-l border-[var(--border-color)]">
+            <DOMPanel />
+          </aside>
+        )}
+        <SidebarRail
+          open={watchlistOpen}
+          onToggle={() => setWatchlistOpen((v) => !v)}
+          domOpen={domOpen}
+          onToggleDom={() => setDomOpen((v) => !v)}
+        />
       </div>
       <StatusBar />
     </div>

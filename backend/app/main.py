@@ -15,6 +15,7 @@ from app.websocket.footprint_stream import router as footprint_stream_router
 from app.websocket.volume_profile_stream import router as vprofile_stream_router
 from app.websocket.whale_stream import router as whale_stream_router
 from app.websocket.heatmap_stream import router as heatmap_stream_router
+from app.websocket.dom_stream import router as dom_stream_router
 from app.websocket.routes import router as ws_router
 
 logger = logging.getLogger(__name__)
@@ -66,6 +67,7 @@ app.include_router(footprint_stream_router)
 app.include_router(vprofile_stream_router)
 app.include_router(whale_stream_router)
 app.include_router(heatmap_stream_router)
+app.include_router(dom_stream_router)
 app.include_router(ws_router)
 
 
