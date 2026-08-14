@@ -222,7 +222,7 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 | ----- | -------------------------- | ---------- | ----------------------------------------------------------------------------------------------------- |
 | 1     | Foundation & Workspace     | **✅ Done**   | Workspace, chart, live data, all drawing tools (incl. Long/Short Position, Undo), overlay/loading polish complete; a few minor items deferred (see Stage 1 notes) |
 | 2     | Market Context & Structure | **✅ Done**   | All 6 planned features shipped: Institutional Levels, Session VWAP, Session boxes, Market Structure (swings/trend/lines), SMC expansion (OB/FVG/BOS/CHOCH/Liquidity Sweep), Market Context Dashboard; several nice-to-have sub-items deliberately deferred (see Stage 2 notes) |
-| 3     | Order Flow & Execution     | **~50%**   | Footprint, Delta/CVD, Heatmap, Whale done; imbalance partial; stacked/absorption/DOM/tape not started |
+| 3     | Order Flow & Execution     | **~55%**   | Footprint, Delta/CVD, Heatmap, Whale, DOM done; imbalance partial; stacked/absorption/tape not started |
 | 4     | Trade Confirmation         | **~3%**    | Nothing meaningfully built yet (Replay is 0%, not 50% as previously claimed)                          |
 | 5     | AI Intelligence & Polish   | **~8%**    | Theme + Docker Compose only; all AI modules not started                                               |
 
@@ -326,7 +326,7 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 
 ---
 
-## Stage 3 — Order Flow & Execution (~50%)
+## Stage 3 — Order Flow & Execution (~55%)
 
 **Objective:** understand what is happening _right now_ — the live battle between buyers and sellers. Answers _"Is this the right time to enter?"_
 
@@ -350,7 +350,10 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 | **Whale Detection**       | Detection + sidebar ticker                      | ✅ Done                                                          |
 |                           | History, alerts, statistics                     | 🔴                                                               |
 | **Time & Sales (Tape)**   | Live tape, filters, aggressive buyers/sellers   | 🔴 _(no dedicated stream yet, but `footprint_stream.py`/`delta_stream.py` already receive every unfiltered `aggTrade` in-process — see Stage 3 audit note below)_ |
-| **DOM (Depth of Market)** | Live order book, bid/ask size, liquidity        | 🔴 _(no dedicated stream yet, but `heatmap_stream.py` already receives raw `depth20` bids/asks in-process — see Stage 3 audit note below)_ |
+| **DOM (Depth of Market)** | Live order book                                 | ✅ Done _(Session 22)_ |
+|                           | Bid Size                                        | ✅ Done _(Session 22)_ |
+|                           | Ask Size                                        | ✅ Done _(Session 22)_ |
+|                           | Liquidity (per-level size bars highlight walls) | ✅ Done _(Session 22 — per-row bar length, not clustered zone detection; see Heatmap's separate "Liquidity zones" row above for that)_ |
 
 **Design direction (recommended):** rather than scattered indicators, build a single **Order Flow Workspace** — main chart on top; Footprint / DOM / Tape as a synchronised row; Delta / CVD / Heatmap / Whale / Execution along the bottom. This mirrors how ATAS users actually watch multiple order-flow signals at once.
 
@@ -720,3 +723,17 @@ Both fixes verified live (BTC↔ETH, 1h→15m→1m, all five overlays active; dr
 **Verified live** on BTCUSDT and PEPEUSDT with Levels/VWAP/Structure/Context all on simultaneously: all six rows matched what the chart itself showed (nearest-level distance matched the visible level lines exactly on both symbols; last event matched the rightmost BOS/CHOCH/sweep marker), collapse/expand worked both directions, no console errors, and a symbol switch showed a graceful brief "—" on the rows still fetching rather than stale or crashed data. Frontend-only — no backend restart needed.
 
 **Stage 2 status — complete.** All 6 planned features shipped: Institutional Levels (Session 15), Session VWAP (Session 16), Session boxes (Session 17), Market Structure (Session 18), SMC expansion — BOS/CHOCH/Liquidity Sweep (Session 19), Market Context Dashboard (Session 20). Remaining sub-items (HVN/LVN, developing POC, Anchored VWAP, Fixed Range VP, VWAP bands, session high/low, Equal Highs/Lows, MSS, Premium/Discount zones, SMC mitigation) are real but deliberately deferred — recorded in the new "Stage 2 — deferred / future" table rather than held against Stage 2's close, mirroring how Stage 1 closed with its own deferred list. Stage 2 ~53% → ✅ Done.
+
+### Session 22 — August 14, 2026
+
+**Stage 3 feature 1: DOM (Depth of Market) ladder.** A read-only audit the same session found that PROJECT.md's Stage 3 notes misattributed live heatmap/whale data to the orphaned `depth_collector.py`/`trade_collector.py` modules (dead code — defined, published to Redis channels nothing subscribes to, never imported). That audit was corrected first (see the Stage 3 audit note and "Stage 3 — deferred / tech debt" table above), and DOM was built on the *real* pattern it surfaced.
+
+**Backend — `dom_stream.py`, new `/ws/dom/{symbol}` endpoint.** Deliberately does **not** touch `depth_collector.py`. Instead it copies `heatmap_stream.py`'s proven approach exactly: its own direct Binance `depth20@100ms` WebSocket connection per symbol, shared across all connected browser clients via module-level dicts, torn down when the last client disconnects. The one structural difference from `HeatmapAccumulator`: bids and asks are kept **raw and separate** — sorted (bids descending, asks ascending), top 20 levels each side, real price/qty floats — instead of being merged into one side-less dict and normalized to 0–1 for chart-overlay rendering. Broadcast is throttled to ~5.5 updates/sec (every 0.18s) rather than forwarding the raw 100ms Binance cadence, since a UI ladder doesn't need 10 updates/sec to read as live.
+
+**Frontend — `DOMPanel.tsx`.** Vertical ladder: red asks on top, a bold mid-price divider, green bids on bottom, each row with a horizontal size bar scaled to the largest visible quantity on either side so resting walls are immediately visible. Same raw-`WebSocket`-plus-2s-reconnect pattern as the other analytics streams (Heatmap/Whale/Footprint/Delta) — not the generic `socketService`, which only handles the candle channel. Price decimals come from `decimalsForPrice()` (the same raw-magnitude utility `TradingChart.tsx` uses for its live price), applied to the live mid-price, so PEPE-scale symbols show full precision instead of `0.00`.
+
+**Placement.** New icon button on the existing right-side icon rail (`SidebarRail.tsx`), next to the watchlist toggle — opens a dedicated 224px-wide side panel, independent of and stackable with the watchlist panel.
+
+**Verified live** on BTCUSDT and PEPEUSDT: ladder renders, red asks / green bids correct, updates smooth (no flicker/jumping), size bars visibly longer on large resting orders, symbol switch reconnects cleanly with correct decimal precision on both.
+
+**Stage 3 status.** DOM's three sub-items (Live order book, Bid Size, Ask Size) plus a basic per-row Liquidity read (size-bar wall highlighting — not the separate, still-unbuilt clustered "Liquidity zones" heatmap feature) move to ✅ Done. Tape, Stacked Imbalance, and Absorption remain 🔴 — Tape is the natural next build, since `footprint_stream.py`/`delta_stream.py` already receive every unfiltered `aggTrade` in-process, same shape of gap DOM just closed. Stage 3 ~50% → ~55%.
