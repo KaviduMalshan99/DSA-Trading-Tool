@@ -9,10 +9,15 @@ interface ChartState {
   visibleRange: { from: number; to: number } | null;
   crosshairPrice: number | null;
   crosshairTime: number | null;
+  // Ratio (3.0 = 300%) used by FootprintCanvas's dedicated Imbalance highlight —
+  // a footprint-level setting, not a separate overlay, so it lives here rather
+  // than in visibleOverlays. Default 300% per the Stage 3 Imbalance spec.
+  imbalanceRatio: number;
 
   toggleOverlay: (overlay: OverlayType) => void;
   setVisibleRange: (from: number, to: number) => void;
   setCrosshair: (price: number | null, time: number | null) => void;
+  setImbalanceRatio: (ratio: number) => void;
 }
 
 export const useChartStore = create<ChartState>((set) => ({
@@ -22,6 +27,7 @@ export const useChartStore = create<ChartState>((set) => ({
   visibleRange: null,
   crosshairPrice: null,
   crosshairTime: null,
+  imbalanceRatio: 3.0,
 
   toggleOverlay: (overlay) =>
     set((state) => {
@@ -37,4 +43,5 @@ export const useChartStore = create<ChartState>((set) => ({
   setVisibleRange: (from, to) => set({ visibleRange: { from, to } }),
   setCrosshair: (crosshairPrice, crosshairTime) =>
     set({ crosshairPrice, crosshairTime }),
+  setImbalanceRatio: (ratio) => set({ imbalanceRatio: ratio }),
 }));

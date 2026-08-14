@@ -15,7 +15,8 @@ const OVERLAYS: { key: OverlayType; label: string }[] = [
 ];
 
 export function ChartToolbar() {
-  const { visibleOverlays, toggleOverlay } = useChartStore();
+  const { visibleOverlays, toggleOverlay, imbalanceRatio, setImbalanceRatio } = useChartStore();
+  const footprintActive = visibleOverlays.has('footprint');
 
   return (
     <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--bg-panel)] border-b border-[var(--border-color)]">
@@ -38,6 +39,28 @@ export function ChartToolbar() {
           </button>
         ))}
       </div>
+
+      {footprintActive && (
+        <>
+          <div className="w-px h-4 bg-[var(--border-color)] mx-1" />
+          <label className="flex items-center gap-1.5 text-xs text-[var(--text-muted)]" title="Imbalance ratio — a level is flagged when one side's volume is at least this many times the other">
+            Imbalance
+            <input
+              type="number"
+              min={110}
+              max={2000}
+              step={10}
+              value={Math.round(imbalanceRatio * 100)}
+              onChange={(e) => {
+                const pct = Number(e.target.value);
+                if (Number.isFinite(pct) && pct > 100) setImbalanceRatio(pct / 100);
+              }}
+              className="w-16 px-1 py-0.5 rounded bg-[var(--bg-app)] border border-[var(--border-color)] text-[var(--text-primary)] text-xs"
+            />
+            %
+          </label>
+        </>
+      )}
     </div>
   );
 }

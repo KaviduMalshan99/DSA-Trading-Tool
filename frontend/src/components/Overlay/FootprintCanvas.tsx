@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import type { IChartApi, ISeriesApi } from 'lightweight-charts';
 import { useMarketStore } from '../../store/marketStore';
+import { useChartStore } from '../../store/chartStore';
 import { intervalToSecs } from '../../utils/interval';
 import { toChartTimeSeconds } from '../../utils/chartTime';
 
@@ -22,11 +23,26 @@ const MIN_CANDLE_PX = 100; // don't render if candle narrower than this
 const MIN_ROW_PX    = 5;
 const MIN_FONT_PX   = 6;  // below this the digits stop being readable at all
 
+// Mirrors app/analytics/footprint.py's _IMBALANCE_MIN_SMALLER — keep in sync
+// if that constant ever changes. The ratio itself (default 3.0 = 300%) is
+// user-adjustable via the toolbar and applied entirely client-side, since
+// buy_vol/sell_vol already arrive raw per level — no backend round-trip
+// needed to re-tune sensitivity live. This supersedes the backend's own
+// hardcoded 5x `imbalance` flag for display purposes (still sent, now unused
+// here).
+const IMBALANCE_MIN_SMALLER = 0.5;
+
+function isImbalance(buy: number, sell: number, ratio: number): boolean {
+  const smaller = Math.min(buy, sell);
+  if (smaller < IMBALANCE_MIN_SMALLER) return false;
+  return buy >= ratio * sell || sell >= ratio * buy;
+}
+
 interface PriceLevel {
   price:    number;
   buy_vol:  number;
   sell_vol: number;
-  imbalance: boolean;
+  imbalance: boolean; // backend's hardcoded-5x flag — kept for payload compatibility, not used for rendering
 }
 
 interface FootprintBar {
@@ -49,6 +65,7 @@ export function FootprintCanvas({ sharedChartRef, sharedSeriesRef }: FootprintCa
   const barsRef      = useRef<Map<number, FootprintBar>>(new Map());
 
   const { activeSymbol, activeInterval } = useMarketStore();
+  const imbalanceRatio = useChartStore((s) => s.imbalanceRatio);
 
   // ── Draw ─────────────────────────────────────────────────────────────────
   const drawFnRef = useRef<() => void>(() => {});
@@ -148,20 +165,37 @@ export function FootprintCanvas({ sharedChartRef, sharedSeriesRef }: FootprintCa
 
         const buyStr  = lvl.buy_vol.toFixed(2);
         const sellStr = lvl.sell_vol.toFixed(2);
-        const buyIsDominant = lvl.imbalance && lvl.buy_vol > lvl.sell_vol;
-        const sellIsDominant = lvl.imbalance && lvl.sell_vol > lvl.buy_vol;
+        const levelImbalance = isImbalance(lvl.buy_vol, lvl.sell_vol, imbalanceRatio);
+        const buyIsDominant  = levelImbalance && lvl.buy_vol  > lvl.sell_vol;
+        const sellIsDominant = levelImbalance && lvl.sell_vol > lvl.buy_vol;
 
-        // Imbalance: tight highlight box behind the dominant side's number only
+        // Dedicated Imbalance highlight (adjustable ratio, default 300%) —
+        // full-row tint + an accent stripe on the aggressive side's edge, so
+        // it reads clearly even at a glance, plus the tight chip behind the
+        // dominant number itself for the close-up view.
         if (buyIsDominant || sellIsDominant) {
+          const accent = buyIsDominant ? '#00ff88' : '#ff4444';
+
+          ctx.fillStyle = buyIsDominant ? 'rgba(0,255,136,0.07)' : 'rgba(255,68,68,0.07)';
+          ctx.fillRect(leftX, rowTop, candleWidth, rowH);
+
+          const edgeW = 3;
+          ctx.fillStyle = accent;
+          if (buyIsDominant) {
+            ctx.fillRect(leftX, rowTop, edgeW, rowH);
+          } else {
+            ctx.fillRect(rightX - edgeW, rowTop, edgeW, rowH);
+          }
+
           ctx.font = boldFont;
           const text  = buyIsDominant ? buyStr : sellStr;
           const textW = ctx.measureText(text).width;
           const boxH  = Math.min(rowH - 2, fontSize + 6);
-          ctx.fillStyle = buyIsDominant ? 'rgba(0,255,136,0.14)' : 'rgba(255,68,68,0.14)';
+          ctx.fillStyle = buyIsDominant ? 'rgba(0,255,136,0.16)' : 'rgba(255,68,68,0.16)';
           if (buyIsDominant) {
-            ctx.fillRect(leftX + 1, y - boxH / 2, textW + pad * 2, boxH);
+            ctx.fillRect(leftX + 1 + edgeW, y - boxH / 2, textW + pad * 2, boxH);
           } else {
-            ctx.fillRect(rightX - 1 - textW - pad * 2, y - boxH / 2, textW + pad * 2, boxH);
+            ctx.fillRect(rightX - 1 - edgeW - textW - pad * 2, y - boxH / 2, textW + pad * 2, boxH);
           }
         }
 
@@ -212,6 +246,13 @@ export function FootprintCanvas({ sharedChartRef, sharedSeriesRef }: FootprintCa
       cancelAnimationFrame(rafRef.current);
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Redraw when the imbalance ratio changes — no chart/WS event fires this on
+  // its own, and imbalance is computed fresh at draw time (not baked into the
+  // stored bar objects), so a plain redraw is all that's needed.
+  useEffect(() => {
+    scheduleDraw();
+  }, [imbalanceRatio, scheduleDraw]);
 
   // ── Resize canvas ─────────────────────────────────────────────────────────
   useEffect(() => {
