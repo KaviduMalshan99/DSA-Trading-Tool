@@ -17,6 +17,7 @@ Messages sent to clients
 
 import asyncio
 import json
+import logging
 import time
 
 import aiohttp
@@ -25,6 +26,8 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.analytics.footprint import FootprintAccumulator, klines_to_footprint_bars
 from app.analytics.price_step import fetch_tick_size, fetch_typical_range, footprint_step_for
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -36,6 +39,8 @@ _BINANCE_REST = "https://api.binance.com"
 # path produces.
 _BACKFILL_INTERVAL = "1m"
 _BACKFILL_CANDLES  = 50  # matches FootprintAccumulator(max_candles=50)
+_BACKFILL_RETRIES  = 3
+_BACKFILL_RETRY_DELAY = 0.75  # seconds between attempts
 
 # ── Module-level shared state (one set per symbol) ──────────────────────────
 _accumulators: dict[str, FootprintAccumulator] = {}
@@ -112,13 +117,32 @@ async def _create_accumulator(symbol: str, k: str) -> None:
 
     # Backfill: without this, get_historical() returns [] on cold start and the
     # overlay can only ever draw the single candle currently forming.
-    try:
-        klines = await _fetch_klines(symbol, _BACKFILL_INTERVAL, _BACKFILL_CANDLES + 1)
-        # Drop the last row — it's the in-progress candle, which the live path
-        # owns and will emit as `partial`.
-        acc.seed_completed(klines_to_footprint_bars(klines[:-1], acc.step, acc.decimals))
-    except Exception:
-        pass
+    #
+    # Retried: this accumulator is created exactly once per (symbol, interval)
+    # key for the lifetime of the process (module-level dict — see top-level
+    # docstring), and `uvicorn --reload` restarts that process, and wipes this
+    # dict, on every backend file save. A single unretried failure here (a
+    # timeout, a transient Binance blip, a 429 from the several other
+    # endpoints in this app hitting Binance REST concurrently) used to leave
+    # that accumulator permanently seeded with zero history for the rest of
+    # the process's life — the footprint ladder would then only ever show
+    # however many live minutes had accumulated since, which is exactly the
+    # "sometimes 50 candles, sometimes 2-3 near-empty" symptom this fixes.
+    for attempt in range(1, _BACKFILL_RETRIES + 1):
+        try:
+            klines = await _fetch_klines(symbol, _BACKFILL_INTERVAL, _BACKFILL_CANDLES + 1)
+            # Drop the last row — it's the in-progress candle, which the live path
+            # owns and will emit as `partial`.
+            acc.seed_completed(klines_to_footprint_bars(klines[:-1], acc.step, acc.decimals))
+            break
+        except Exception as exc:
+            if attempt == _BACKFILL_RETRIES:
+                logger.warning(
+                    "Footprint backfill failed for %s after %d attempts — "
+                    "starting with no history: %s", k, _BACKFILL_RETRIES, exc,
+                )
+            else:
+                await asyncio.sleep(_BACKFILL_RETRY_DELAY)
 
     _accumulators[k] = acc
     _subscribers.setdefault(k, set())
