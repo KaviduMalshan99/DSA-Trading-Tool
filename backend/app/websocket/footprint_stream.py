@@ -19,24 +19,45 @@ import asyncio
 import json
 import time
 
+import aiohttp
 import websockets
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from app.analytics.footprint import FootprintAccumulator
+from app.analytics.footprint import FootprintAccumulator, klines_to_footprint_bars
 from app.analytics.price_step import fetch_tick_size, fetch_typical_range, footprint_step_for
 
 router = APIRouter()
 
-_BINANCE_WS = "wss://stream.binance.com:9443/ws"
+_BINANCE_WS   = "wss://stream.binance.com:9443/ws"
+_BINANCE_REST = "https://api.binance.com"
+
+# The accumulator buckets trades by wall-clock minute regardless of the
+# requested interval, so backfill must be 1m to line up with what the live
+# path produces.
+_BACKFILL_INTERVAL = "1m"
+_BACKFILL_CANDLES  = 50  # matches FootprintAccumulator(max_candles=50)
 
 # ── Module-level shared state (one set per symbol) ──────────────────────────
 _accumulators: dict[str, FootprintAccumulator] = {}
 _subscribers:  dict[str, set[asyncio.Queue]] = {}
 _bg_tasks:     dict[str, asyncio.Task] = {}
+_init_locks:   dict[str, asyncio.Lock] = {}
 
 
 def _key(symbol: str, interval: str) -> str:
     return f"{symbol.lower()}@{interval}"
+
+
+async def _fetch_klines(symbol: str, interval: str, limit: int) -> list[list]:
+    """Recent OHLCV rows used to approximate footprint history on cold start."""
+    url = f"{_BINANCE_REST}/api/v3/klines"
+    timeout = aiohttp.ClientTimeout(total=10)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        async with session.get(
+            url, params={"symbol": symbol.upper(), "interval": interval, "limit": limit}
+        ) as resp:
+            resp.raise_for_status()
+            return await resp.json()
 
 
 async def _agg_trade_loop(symbol: str, interval: str) -> None:
@@ -73,19 +94,47 @@ async def _agg_trade_loop(symbol: str, interval: str) -> None:
             await asyncio.sleep(2)
 
 
+async def _create_accumulator(symbol: str, k: str) -> None:
+    """
+    Build the accumulator for `k` and seed it with approximated history.
+
+    Both Binance lookups are best-effort: a failure degrades to the previous
+    behaviour (default step / empty history) rather than failing the connect.
+    """
+    try:
+        tick_size = await fetch_tick_size(symbol)
+        typical_range = await fetch_typical_range(symbol)
+        step = footprint_step_for(typical_range, tick_size)
+    except Exception:
+        step = 1.0
+
+    acc = FootprintAccumulator(max_candles=_BACKFILL_CANDLES, partial_interval=2.0, price_step=step)
+
+    # Backfill: without this, get_historical() returns [] on cold start and the
+    # overlay can only ever draw the single candle currently forming.
+    try:
+        klines = await _fetch_klines(symbol, _BACKFILL_INTERVAL, _BACKFILL_CANDLES + 1)
+        # Drop the last row — it's the in-progress candle, which the live path
+        # owns and will emit as `partial`.
+        acc.seed_completed(klines_to_footprint_bars(klines[:-1], acc.step, acc.decimals))
+    except Exception:
+        pass
+
+    _accumulators[k] = acc
+    _subscribers.setdefault(k, set())
+
+
 async def _ensure_running(symbol: str, interval: str) -> None:
     """Start the background accumulator task if not already running."""
     k = _key(symbol, interval)
 
     if k not in _accumulators:
-        try:
-            tick_size = await fetch_tick_size(symbol)
-            typical_range = await fetch_typical_range(symbol)
-            step = footprint_step_for(typical_range, tick_size)
-        except Exception:
-            step = 1.0
-        _accumulators[k] = FootprintAccumulator(max_candles=50, partial_interval=2.0, price_step=step)
-        _subscribers[k] = set()
+        # Two clients connecting at once would otherwise both run the Binance
+        # lookups and the second would discard the first's accumulator.
+        lock = _init_locks.setdefault(k, asyncio.Lock())
+        async with lock:
+            if k not in _accumulators:
+                await _create_accumulator(symbol, k)
 
     task = _bg_tasks.get(k)
     if task is None or task.done():

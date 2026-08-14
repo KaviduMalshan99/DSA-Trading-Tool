@@ -6,7 +6,21 @@ import { toChartTimeSeconds } from '../../utils/chartTime';
 
 const WS_BASE       = import.meta.env.VITE_WS_URL ?? 'ws://localhost:8000';
 const MIN_CANDLE_PX = 100; // don't render if candle narrower than this
-const MIN_ROW_PX    = 8;  // don't render if a price-level row is shorter than this
+
+// Minimum height of one price-level row before the ladder is skipped.
+//
+// Row height is essentially `chartHeight * bucketStep / visiblePriceRange` —
+// level count scales with the candle's range, so this is driven by the bucket
+// step and the price axis, not by any single candle. When BTC bucketed to $10
+// rows were ~60px and 8 was comfortable; since buckets became symbol-relative
+// ($1 on BTC) the same zoom yields ~5-7px rows, and 8 silently suppressed the
+// entire overlay. 5 restores drawing at a normal ~10-20 visible candles.
+//
+// Legibility is protected by sizing the font to the row (see fontSize below)
+// rather than by keeping this threshold high — a high threshold doesn't make
+// text readable, it just draws nothing.
+const MIN_ROW_PX    = 5;
+const MIN_FONT_PX   = 6;  // below this the digits stop being readable at all
 
 interface PriceLevel {
   price:    number;
@@ -93,8 +107,12 @@ export function FootprintCanvas({ sharedChartRef, sharedSeriesRef }: FootprintCa
       const rowH         = candleHeight / levels.length;
       if (rowH < MIN_ROW_PX) continue;
 
-      // ── Dynamic font size based on candle width ──────────────────────
-      const fontSize  = candleWidth > 200 ? 13 : candleWidth > 150 ? 11 : 9;
+      // ── Dynamic font size — constrained by BOTH axes ─────────────────
+      // Width alone isn't enough: rows can be far shorter than the
+      // width-implied font, which is what makes dense ladders overlap.
+      // Clamping to the row height keeps every number inside its own row.
+      const widthFont = candleWidth > 200 ? 13 : candleWidth > 150 ? 11 : 9;
+      const fontSize  = Math.max(MIN_FONT_PX, Math.min(widthFont, Math.floor(rowH - 1)));
       const showPrice = candleWidth > 120;
       const centerX   = leftX + candleWidth / 2;
       const pad       = fontSize * 0.4 + 2;
