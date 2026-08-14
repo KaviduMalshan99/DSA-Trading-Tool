@@ -349,10 +349,20 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 |                           | Liquidity zones, large-order highlight          | 🔴                                                               |
 | **Whale Detection**       | Detection + sidebar ticker                      | ✅ Done                                                          |
 |                           | History, alerts, statistics                     | 🔴                                                               |
-| **Time & Sales (Tape)**   | Live tape, filters, aggressive buyers/sellers   | 🔴 _(backend `trade_collector` already streams the source data)_ |
-| **DOM (Depth of Market)** | Live order book, bid/ask size, liquidity        | 🔴 _(backend `depth_collector` already streams the source data)_ |
+| **Time & Sales (Tape)**   | Live tape, filters, aggressive buyers/sellers   | 🔴 _(no dedicated stream yet, but `footprint_stream.py`/`delta_stream.py` already receive every unfiltered `aggTrade` in-process — see Stage 3 audit note below)_ |
+| **DOM (Depth of Market)** | Live order book, bid/ask size, liquidity        | 🔴 _(no dedicated stream yet, but `heatmap_stream.py` already receives raw `depth20` bids/asks in-process — see Stage 3 audit note below)_ |
 
 **Design direction (recommended):** rather than scattered indicators, build a single **Order Flow Workspace** — main chart on top; Footprint / DOM / Tape as a synchronised row; Delta / CVD / Heatmap / Whale / Execution along the bottom. This mirrors how ATAS users actually watch multiple order-flow signals at once.
+
+> **Session 21 audit note — data-source attribution corrected.** A read-only Stage 3 audit found the architecture table below (and the notes above) previously misattributed live data to `depth_collector.py` / `trade_collector.py`. Those two collector modules are **dead code**: they're defined, publish to Redis channels (`depth:{symbol}`, `trades:{symbol}`, `whales:{symbol}`), but nothing subscribes to those channels and neither module is ever imported anywhere else in the codebase. The real pattern actually in use — identical across Footprint, Delta, Heatmap, and Whale — is that **each `*_stream.py` file opens its own direct Binance WebSocket connection** (`aggTrade` or `depth20@100ms`), shared per-symbol across all connected browser clients via module-level dicts. `heatmap_stream.py` has its own direct `depth20` connection; `whale_stream.py` has its own direct `aggTrade` connection; neither goes through the collectors. Building DOM/Tape means writing a new stream file following this same proven pattern (not wiring onto the collectors) — see [Stage 3 — deferred / tech debt](#stage-3--deferred--tech-debt) below.
+
+### Stage 3 — deferred / tech debt
+
+| Item | Status | Notes |
+| --- | --- | --- |
+| Duplicate per-symbol Binance connections | 🟡 Tech debt | Currently 4 independent direct Binance WS connections per symbol (`footprint_stream.py` aggTrade, `delta_stream.py` aggTrade, `whale_stream.py` aggTrade, `heatmap_stream.py` depth20) — soon 6 once DOM and Tape each add their own. Could consolidate into one shared per-symbol connection with fan-out to accumulators someday; not blocking. |
+| `depth_collector.py` / `trade_collector.py` orphaned | 🟡 Tech debt | Dead code — defined, publish to Redis channels nothing subscribes to, never imported. Either delete, or repurpose as the actual shared-connection layer if/when the duplicate-connections item above gets tackled. |
+| Duplicate imbalance definitions | 🟡 Tech debt | The live footprint path (`_is_imbalance` in `analytics/footprint.py`) uses a 5× ratio with a 0.5 min-volume floor; the legacy REST-only `build_footprint()` in the same file uses a 70% one-side-dominance rule instead. Pick one definition when building the dedicated Imbalance module (item 5 in the Stage 3 table above). |
 
 ---
 
@@ -405,14 +415,15 @@ Where each area currently lives in the repo:
 | Delta / CVD                          | `analytics/delta.py`, `delta_stream.py`                           | `DeltaPanel.tsx`                                               |
 | Footprint                            | `analytics/footprint.py`, `footprint_stream.py`                   | `FootprintCanvas.tsx`                                          |
 | Volume Profile                       | `analytics/volume_profile.py`, `volume_profile_stream.py`         | `VolumeProfile.tsx`                                            |
-| Heatmap                              | `analytics/heatmap.py`, `heatmap_stream.py`, `depth_collector.py` | `HeatmapCanvas.tsx`                                            |
-| Whale                                | `trade_collector.py`, `whale_stream.py`                           | `WhaleMarkers.tsx`, `WhaleTicker.tsx`, `whaleStore.ts`         |
+| Heatmap                              | `analytics/heatmap.py`, `heatmap_stream.py` (own direct `depth20` Binance WS) | `HeatmapCanvas.tsx`                                            |
+| Whale                                | `whale_stream.py` (own direct `aggTrade` Binance WS)               | `WhaleMarkers.tsx`, `WhaleTicker.tsx`, `whaleStore.ts`         |
 | SMC                                  | `analytics/smc.py`, `api/indicators.py`                           | `SMCOverlay.tsx`                                               |
 | Drawing tools                        | —                                                                 | `DrawingCanvas.tsx`, `DrawingToolbar.tsx`, `drawingStore.ts`   |
 | Theme / workspace                    | —                                                                 | `themeStore.ts`, `index.css`, `Toolbar.tsx`, `SidebarRail.tsx` |
-| DOM _(Stage 3, not built)_           | `depth_collector.py` streams source                               | _needs new panel_                                              |
-| Tape _(Stage 3, not built)_          | `trade_collector.py` streams source                               | _needs new panel_                                              |
+| DOM _(Stage 3, not built)_           | no dedicated stream; raw `depth20` bids/asks already arrive in-process inside `heatmap_stream.py` | _needs new panel_                                              |
+| Tape _(Stage 3, not built)_          | no dedicated stream; unfiltered `aggTrade` already arrives in-process inside `footprint_stream.py`/`delta_stream.py` | _needs new panel_                                              |
 | Open Interest _(Stage 4, not built)_ | _needs Binance futures provider_                                  | _needs new panel_                                              |
+| _Orphaned — unused_                  | `market/collectors/depth_collector.py`, `market/collectors/trade_collector.py` — defined, publish to Redis, never imported/subscribed | — |
 
 ---
 
