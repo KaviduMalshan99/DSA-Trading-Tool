@@ -222,7 +222,7 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 | ----- | -------------------------- | ---------- | ----------------------------------------------------------------------------------------------------- |
 | 1     | Foundation & Workspace     | **✅ Done**   | Workspace, chart, live data, all drawing tools (incl. Long/Short Position, Undo), overlay/loading polish complete; a few minor items deferred (see Stage 1 notes) |
 | 2     | Market Context & Structure | **✅ Done**   | All 6 planned features shipped: Institutional Levels, Session VWAP, Session boxes, Market Structure (swings/trend/lines), SMC expansion (OB/FVG/BOS/CHOCH/Liquidity Sweep), Market Context Dashboard; several nice-to-have sub-items deliberately deferred (see Stage 2 notes) |
-| 3     | Order Flow & Execution     | **~55%**   | Footprint, Delta/CVD, Heatmap, Whale, DOM done; imbalance partial; stacked/absorption/tape not started |
+| 3     | Order Flow & Execution     | **~60%**   | Footprint, Delta/CVD, Heatmap, Whale, DOM, Tape done; imbalance partial; stacked/absorption not started |
 | 4     | Trade Confirmation         | **~3%**    | Nothing meaningfully built yet (Replay is 0%, not 50% as previously claimed)                          |
 | 5     | AI Intelligence & Polish   | **~8%**    | Theme + Docker Compose only; all AI modules not started                                               |
 
@@ -326,7 +326,7 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 
 ---
 
-## Stage 3 — Order Flow & Execution (~55%)
+## Stage 3 — Order Flow & Execution (~60%)
 
 **Objective:** understand what is happening _right now_ — the live battle between buyers and sellers. Answers _"Is this the right time to enter?"_
 
@@ -349,7 +349,9 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 |                           | Liquidity zones, large-order highlight          | 🔴                                                               |
 | **Whale Detection**       | Detection + sidebar ticker                      | ✅ Done                                                          |
 |                           | History, alerts, statistics                     | 🔴                                                               |
-| **Time & Sales (Tape)**   | Live tape, filters, aggressive buyers/sellers   | 🔴 _(no dedicated stream yet, but `footprint_stream.py`/`delta_stream.py` already receive every unfiltered `aggTrade` in-process — see Stage 3 audit note below)_ |
+| **Time & Sales (Tape)**   | Live tape                                       | ✅ Done _(Session 23)_ |
+|                           | Aggressive Buyers/Sellers (buy/sell coloring)   | ✅ Done _(Session 23)_ |
+|                           | Large Trade filter                              | 🟡 Partial _(Session 23 — highlights large prints inline; no filter to hide/isolate them)_ |
 | **DOM (Depth of Market)** | Live order book                                 | ✅ Done _(Session 22)_ |
 |                           | Bid Size                                        | ✅ Done _(Session 22)_ |
 |                           | Ask Size                                        | ✅ Done _(Session 22)_ |
@@ -363,7 +365,7 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 
 | Item | Status | Notes |
 | --- | --- | --- |
-| Duplicate per-symbol Binance connections | 🟡 Tech debt | Currently 4 independent direct Binance WS connections per symbol (`footprint_stream.py` aggTrade, `delta_stream.py` aggTrade, `whale_stream.py` aggTrade, `heatmap_stream.py` depth20) — soon 6 once DOM and Tape each add their own. Could consolidate into one shared per-symbol connection with fan-out to accumulators someday; not blocking. |
+| Duplicate per-symbol Binance connections | 🟡 Tech debt | Now 6 independent direct Binance WS connections per symbol: 4× aggTrade (`footprint_stream.py`, `delta_stream.py`, `whale_stream.py`, `tape_stream.py`) + 2× depth20 (`heatmap_stream.py`, `dom_stream.py`). Could consolidate into one shared per-symbol connection with fan-out to accumulators someday; not blocking. |
 | `depth_collector.py` / `trade_collector.py` orphaned | 🟡 Tech debt | Dead code — defined, publish to Redis channels nothing subscribes to, never imported. Either delete, or repurpose as the actual shared-connection layer if/when the duplicate-connections item above gets tackled. |
 | Duplicate imbalance definitions | 🟡 Tech debt | The live footprint path (`_is_imbalance` in `analytics/footprint.py`) uses a 5× ratio with a 0.5 min-volume floor; the legacy REST-only `build_footprint()` in the same file uses a 70% one-side-dominance rule instead. Pick one definition when building the dedicated Imbalance module (item 5 in the Stage 3 table above). |
 
@@ -737,3 +739,17 @@ Both fixes verified live (BTC↔ETH, 1h→15m→1m, all five overlays active; dr
 **Verified live** on BTCUSDT and PEPEUSDT: ladder renders, red asks / green bids correct, updates smooth (no flicker/jumping), size bars visibly longer on large resting orders, symbol switch reconnects cleanly with correct decimal precision on both.
 
 **Stage 3 status.** DOM's three sub-items (Live order book, Bid Size, Ask Size) plus a basic per-row Liquidity read (size-bar wall highlighting — not the separate, still-unbuilt clustered "Liquidity zones" heatmap feature) move to ✅ Done. Tape, Stacked Imbalance, and Absorption remain 🔴 — Tape is the natural next build, since `footprint_stream.py`/`delta_stream.py` already receive every unfiltered `aggTrade` in-process, same shape of gap DOM just closed. Stage 3 ~50% → ~55%.
+
+### Session 23 — August 14, 2026
+
+**Stage 3 feature 2: Tape (Time & Sales).** Same shape of gap as DOM, closed the same way: `trade_collector.py` (dead code — see Stage 3 audit note) was ignored in favor of copying the proven `aggTrade` connection pattern already live in `delta_stream.py`/`footprint_stream.py`, but forwarding every trade raw instead of aggregating it into bars.
+
+**Backend — `tape_stream.py`, new `/ws/tape/{symbol}` endpoint.** Own direct Binance `aggTrade` connection per symbol, shared across clients, torn down on last disconnect — the same per-symbol-shared-connection lifecycle as `heatmap_stream.py`/`dom_stream.py`. Every trade batched and flushed ~5.5×/sec (every 0.18s) instead of one WS message per trade, so a fast-moving symbol doesn't spam the browser with thousands of tiny messages. A 150-trade rolling backlog is kept per symbol and sent as `historical` on connect, so the panel isn't empty while waiting for the next live trade. **Side interpretation deliberately matches `delta_stream.py` exactly** (`m=True` → seller aggressor → sell, `m=False` → buyer aggressor → buy) so Tape's buy/sell coloring and Delta/CVD's bar direction can never disagree for the same trade — verified live side-by-side.
+
+**Frontend — `TapePanel.tsx`.** Newest-first scrolling list (backend sends chronological oldest→newest batches; the frontend reverses and prepends each batch so index 0 is always the newest trade), capped at 150 rows so it can't grow unbounded. Green buy / red sell per row. Trades at ≥5× the currently-visible median notional get a subtle bold+tint highlight — a lightweight, always-on visual cue rather than a togglable filter (see Stage 3 table: "Large Trade filter" marked 🟡 Partial for that reason — it highlights, it doesn't let you hide/isolate). Price decimals from `decimalsForPrice()` off the latest trade price, same approach as DOM.
+
+**Placement.** Third rail icon (dotted-list glyph) next to Watchlist and DOM on `SidebarRail.tsx` — opens its own 224px panel that can sit side by side with the DOM panel, matching how traders actually use the two together.
+
+**Verified live** on BTCUSDT and PEPEUSDT: trades scroll in newest-first, colors match Delta's buy/sell split for the same prints, feed stays smooth under load, large-trade highlight is visible but not overwhelming, symbol switch reconnects cleanly with correct decimals on both.
+
+**Stage 3 status.** Tape's Live Tape and Aggressive Buyers/Sellers sub-items move to ✅ Done; Large Trade filter to 🟡 Partial (highlight only, no filter). Remaining 🔴 items: Stacked Imbalance, Absorption, dedicated Imbalance module (still 🟡), plus the smaller Footprint/Delta/Heatmap/Whale sub-items already tracked as deferred. The duplicate-Binance-connections tech debt item is updated to reflect reality: 6 live per-symbol connections now, not a future "soon 6." Stage 3 ~55% → ~60%.
