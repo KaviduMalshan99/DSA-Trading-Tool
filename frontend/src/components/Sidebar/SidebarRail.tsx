@@ -3,6 +3,8 @@ interface Props {
   onToggle: () => void;
   domOpen: boolean;
   onToggleDom: () => void;
+  tapeOpen: boolean;
+  onToggleTape: () => void;
 }
 
 function WatchlistIcon() {
@@ -28,7 +30,20 @@ function DomIcon() {
   );
 }
 
-export function SidebarRail({ open, onToggle, domOpen, onToggleDom }: Props) {
+function TapeIcon() {
+  return (
+    <svg width="26" height="26" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.6" fill="none" strokeLinejoin="round" strokeLinecap="round">
+      <circle cx="6" cy="7" r="1.3" fill="currentColor" stroke="none" />
+      <line x1="10" y1="7" x2="20" y2="7" />
+      <circle cx="6" cy="12" r="1.3" fill="currentColor" stroke="none" />
+      <line x1="10" y1="12" x2="17" y2="12" />
+      <circle cx="6" cy="17" r="1.3" fill="currentColor" stroke="none" />
+      <line x1="10" y1="17" x2="19" y2="17" />
+    </svg>
+  );
+}
+
+export function SidebarRail({ open, onToggle, domOpen, onToggleDom, tapeOpen, onToggleTape }: Props) {
   return (
     <div className="w-12 flex flex-col items-center py-2 gap-1 bg-[var(--bg-app)] border-l border-[var(--border-color)] flex-shrink-0">
       <button
@@ -48,6 +63,15 @@ export function SidebarRail({ open, onToggle, domOpen, onToggleDom }: Props) {
         }`}
       >
         <DomIcon />
+      </button>
+      <button
+        onClick={onToggleTape}
+        title="Tape (Time & Sales)"
+        className={`w-9 h-9 flex items-center justify-center rounded transition-colors ${
+          tapeOpen ? 'bg-blue-600 text-white' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'
+        }`}
+      >
+        <TapeIcon />
       </button>
     </div>
   );

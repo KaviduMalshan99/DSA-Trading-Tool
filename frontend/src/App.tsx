@@ -8,12 +8,14 @@ import { SidebarRail } from './components/Sidebar/SidebarRail';
 import { ChartContainer } from './components/Chart/ChartContainer';
 import { WhaleTicker } from './components/Overlay/WhaleTicker';
 import { DOMPanel } from './components/Overlay/DOMPanel';
+import { TapePanel } from './components/Overlay/TapePanel';
 import { useChartStore } from './store/chartStore';
 
 export default function App() {
   const whaleActive = useChartStore((s) => s.visibleOverlays.has('whaleMarkers'));
   const [watchlistOpen, setWatchlistOpen] = useState(false);
   const [domOpen, setDomOpen] = useState(false);
+  const [tapeOpen, setTapeOpen] = useState(false);
 
   // Lifted so the header's snapshot button can reach the live chart + its overlays.
   const sharedChartRef  = useRef<IChartApi | null>(null);
@@ -46,11 +48,18 @@ export default function App() {
             <DOMPanel />
           </aside>
         )}
+        {tapeOpen && (
+          <aside className="w-56 flex flex-col flex-shrink-0 border-l border-[var(--border-color)]">
+            <TapePanel />
+          </aside>
+        )}
         <SidebarRail
           open={watchlistOpen}
           onToggle={() => setWatchlistOpen((v) => !v)}
           domOpen={domOpen}
           onToggleDom={() => setDomOpen((v) => !v)}
+          tapeOpen={tapeOpen}
+          onToggleTape={() => setTapeOpen((v) => !v)}
         />
       </div>
       <StatusBar />
