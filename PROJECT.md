@@ -333,6 +333,7 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 | Module                    | Feature                                         | Status                                                           |
 | ------------------------- | ----------------------------------------------- | ---------------------------------------------------------------- |
 | **Footprint**             | Bid × Ask footprint                             | ✅ Done                                                          |
+|                           | Historical backfill (cold-start ~50 candles)    | ✅ Done _(Session 24 — was only ever the single live candle)_    |
 |                           | Buy/Sell volume, Candle Delta                   | ✅ Done                                                          |
 |                           | Imbalance highlight (5× ratio box)              | ✅ Done _(Session 4 — was wrongly marked 🔴)_                    |
 |                           | Volume / Delta footprint modes                  | 🟡 Partial                                                       |
@@ -342,7 +343,7 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 |                           | Cumulative Delta (CVD)                          | ✅ Done                                                          |
 |                           | Delta Histogram                                 | ✅ **Done** (green/red bars — _was wrongly marked 🔴_)           |
 |                           | Session Delta, Delta Divergence                 | 🔴                                                               |
-| **Imbalance (dedicated)** | Buy/Sell imbalance, custom ratio (default 300%) | 🟡 Partial (footprint highlights; no standalone module)          |
+| **Imbalance (dedicated)** | Buy/Sell imbalance, custom ratio (default 300%) | 🟡 Partial / needs verification _(Session 24 — control built, code path reviewed and looks correct, but the ratio input's live effect on highlights was not confirmed in the browser this session; still no standalone module)_ |
 | **Stacked Imbalance**     | Consecutive imbalances + highlight              | 🔴                                                               |
 | **Absorption**            | Hidden institutional buying/selling             | 🔴                                                               |
 | **Liquidity Heatmap**     | Order book heatmap                              | ✅ Done                                                          |
@@ -753,3 +754,15 @@ Both fixes verified live (BTC↔ETH, 1h→15m→1m, all five overlays active; dr
 **Verified live** on BTCUSDT and PEPEUSDT: trades scroll in newest-first, colors match Delta's buy/sell split for the same prints, feed stays smooth under load, large-trade highlight is visible but not overwhelming, symbol switch reconnects cleanly with correct decimals on both.
 
 **Stage 3 status.** Tape's Live Tape and Aggressive Buyers/Sellers sub-items move to ✅ Done; Large Trade filter to 🟡 Partial (highlight only, no filter). Remaining 🔴 items: Stacked Imbalance, Absorption, dedicated Imbalance module (still 🟡), plus the smaller Footprint/Delta/Heatmap/Whale sub-items already tracked as deferred. The duplicate-Binance-connections tech debt item is updated to reflect reality: 6 live per-symbol connections now, not a future "soon 6." Stage 3 ~55% → ~60%.
+
+### Session 24 — August 14, 2026
+
+**Footprint: historical backfill + imbalance ratio control (mixed outcome — recorded honestly below).**
+
+**Historical backfill — ✅ Fixed.** Footprint used to show only the single candle currently forming on cold start (`get_historical()` returned `[]` until enough live trades accumulated). New `klines_to_footprint_bars()` (`app/analytics/footprint.py`) approximates ~50 completed bars from Binance klines and `FootprintAccumulator.seed_completed()` merges them in ahead of live accumulation, so a fresh connection now gets a full ladder history immediately, matching how Delta/CVD and Volume Profile already backfill. **Known limitation, accepted rather than hidden:** klines only carry the candle's *total* taker-buy/sell split (`kline[9]` / total volume), not a per-price aggressor breakdown, so every level within one approximated historical bar shares the same buy/sell ratio — imbalance on history is effectively per-candle, not per-level. The live-forming candle keeps true per-level resolution from real aggTrade data. An outlier candle is also guarded against exploding into thousands of levels (`_MAX_HISTORICAL_LEVELS = 200`, coarsening that bar's own step rather than truncating its range). Readability: `MIN_ROW_PX` 8→5 (was silently suppressing the whole overlay now that buckets are symbol-relative) and `_FOOTPRINT_TARGET_LEVELS` 15→10 (taller rows) were also applied — symbol-relative and floored at `tick_size`, so cheap-coin bucketing is unaffected — but **the readability improvement itself was not visually confirmed this session.**
+
+**Imbalance ratio control — 🟡 Partial / needs verification, NOT done.** A toolbar input (`ChartToolbar.tsx`) writes an adjustable ratio (default 300%) to `chartStore`, and `FootprintCanvas.tsx` reads it live and recomputes `isImbalance()` per level at draw time, replacing the backend's fixed 5× flag for display. Code review traced the full chain — store update → selector re-render → fresh closure on every draw → dedicated redraw effect keyed on the ratio — and found no stale-closure or wiring bug; percent-to-ratio conversion (300 in the box = 3.0 = buy≥3×sell) is also correct on inspection. **But this was reviewed, not watched work in the browser.** The user chose to stop debugging and move on rather than chase a possible stale-build/visual-verification gap live. Treat this as **open, not shipped**, until someone confirms in a running browser that changing the number visibly changes which levels are highlighted.
+
+**Why recorded this way:** per explicit instruction this session — don't let a plausible-looking code review stand in for the browser verification this project's own pattern (every other Stage 2/3 feature above) requires before marking something ✅ Done.
+
+**Stage 3 status.** No status bump — this session's outcome is mixed on purpose: backfill genuinely fixed and recorded as ✅ Done, imbalance ratio control left at 🟡 Partial pending the verification above. Stage 3 stays ~60%.
