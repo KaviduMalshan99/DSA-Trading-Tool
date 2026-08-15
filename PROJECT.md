@@ -222,7 +222,7 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 | ----- | -------------------------- | ---------- | ----------------------------------------------------------------------------------------------------- |
 | 1     | Foundation & Workspace     | **✅ Done**   | Workspace, chart, live data, all drawing tools (incl. Long/Short Position, Undo), overlay/loading polish complete; a few minor items deferred (see Stage 1 notes) |
 | 2     | Market Context & Structure | **✅ Done**   | All 6 planned features shipped: Institutional Levels, Session VWAP, Session boxes, Market Structure (swings/trend/lines), SMC expansion (OB/FVG/BOS/CHOCH/Liquidity Sweep), Market Context Dashboard; several nice-to-have sub-items deliberately deferred (see Stage 2 notes) |
-| 3     | Order Flow & Execution     | **~62%**   | Footprint (incl. reliable backfill), Delta/CVD, Heatmap, Whale, DOM, Tape, adjustable Imbalance ratio done; stacked/absorption not started |
+| 3     | Order Flow & Execution     | **~66%**   | Footprint (incl. reliable backfill), Delta/CVD, Heatmap, Whale, DOM, Tape, adjustable Imbalance ratio, Stacked Imbalance done; Absorption built but not yet verified |
 | 4     | Trade Confirmation         | **~3%**    | Nothing meaningfully built yet (Replay is 0%, not 50% as previously claimed)                          |
 | 5     | AI Intelligence & Polish   | **~8%**    | Theme + Docker Compose only; all AI modules not started                                               |
 
@@ -326,7 +326,7 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 
 ---
 
-## Stage 3 — Order Flow & Execution (~62%)
+## Stage 3 — Order Flow & Execution (~66%)
 
 **Objective:** understand what is happening _right now_ — the live battle between buyers and sellers. Answers _"Is this the right time to enter?"_
 
@@ -344,8 +344,8 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 |                           | Delta Histogram                                 | ✅ **Done** (green/red bars — _was wrongly marked 🔴_)           |
 |                           | Session Delta, Delta Divergence                 | 🔴                                                               |
 | **Imbalance (dedicated)** | Buy/Sell imbalance, custom ratio (default 300%) | ✅ Verified working _(Session 25 — confirmed live: ratio input correctly changes flagged-level count, loose→many/strict→few; it was never actually broken, still no standalone module)_ |
-| **Stacked Imbalance**     | Consecutive imbalances + highlight              | 🔴                                                               |
-| **Absorption**            | Hidden institutional buying/selling             | 🔴                                                               |
+| **Stacked Imbalance**     | Consecutive imbalances + highlight              | ✅ Verified working _(Session 26 — `findStackRuns()` built on the existing `isImbalance()`; confirmed live on BTC 1m, bracket correctly spanned an 8+ level sell-side stack)_ |
+| **Absorption**            | Hidden institutional buying/selling             | 🟡 Built, unverified _(Session 26 — code committed; was built earlier but left uncommitted, now in git; not yet visually confirmed on a live chart)_ |
 | **Liquidity Heatmap**     | Order book heatmap                              | ✅ Done                                                          |
 |                           | Liquidity zones, large-order highlight          | 🔴                                                               |
 | **Whale Detection**       | Detection + sidebar ticker                      | ✅ Done                                                          |
@@ -780,3 +780,11 @@ Both fixes verified live (BTC↔ETH, 1h→15m→1m, all five overlays active; dr
 **Lesson worth keeping:** two features that looked unrelated (footprint reliability, imbalance responsiveness) were actually the same bug wearing two faces — a reminder that when a *detection* feature "does nothing," check whether it has any data to detect on before debugging the detection logic itself.
 
 **Stage 3 status.** Footprint's historical backfill sub-item upgrades to ✅ Done, reliable (was ✅ Done but intermittent). Imbalance (dedicated) upgrades from 🟡 Partial to ✅ Verified working. Stage 3 ~60% → ~62%.
+
+### Session 26 — August 15, 2026
+
+**Stacked Imbalance built and verified live.** Built directly on the now-verified per-level `isImbalance()` in `FootprintCanvas.tsx` rather than a separate definition. `findStackRuns()` scans a bar's already-sorted (high→low) price levels for runs of >= `stack_size` consecutive same-side imbalanced levels (using the same `isImbalance()`/`imbalanceRatio` as the single-level highlight). A stacked run gets a bracket (full-run tint + 2px border) plus a vertical "STACK" tag along the aggressive edge, distinct from the single-level highlight — green for buy stacks, red for sell. `stack_size` (default 3) is adjustable via a new toolbar control next to Imbalance ratio, wired through `chartStore` the same way. Frontend-only, computed fresh at draw time from data already in the WebSocket payload — no backend change, no restart needed. **Confirmed live on BTC 1m:** a red bracket correctly spanned a run of 8+ consecutive sell-side imbalanced levels.
+
+**Absorption feature recovered and committed.** `backend/app/analytics/absorption.py` (buy/sell absorption candle detection: large volume + small price range, tunable `volume_multiplier`/`range_fraction`/`lookback`) and `frontend/src/components/Overlay/AbsorptionOverlay.tsx`, plus their wiring through `indicators.py`, `ChartContainer.tsx`, `api.ts`, `analytics.ts`, and `chartStore.ts`, had been built in an earlier session but left uncommitted. Found still sitting as uncommitted/untracked changes at the start of this session — committed now as its own commit so the work isn't lost. **Not yet visually verified on a live chart**, so it's recorded as 🟡 Built, unverified rather than ✅ Done, per this project's standing rule that a plausible-looking implementation doesn't count as done until someone watches it work in the browser (see Session 24/25 notes above).
+
+**Stage 3 status.** Stacked Imbalance upgrades from 🔴 to ✅ Verified working. Absorption upgrades from 🔴 (not started) to 🟡 Built, unverified (code exists and is now committed, but unconfirmed live). Stage 3 ~62% → ~66%.
