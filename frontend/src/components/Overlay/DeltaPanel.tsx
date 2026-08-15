@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createChart, type IChartApi, type ISeriesApi } from 'lightweight-charts';
 import { useMarketStore } from '../../store/marketStore';
 import { useThemeStore, type Theme } from '../../store/themeStore';
+import { useDeltaStore } from '../../store/deltaStore';
 import { toChartTime } from '../../utils/chartTime';
 
 const WS_BASE = import.meta.env.VITE_WS_URL ?? 'ws://localhost:8000';
@@ -177,6 +178,7 @@ export function DeltaPanel({ sharedChartRef }: DeltaPanelProps) {
     cvdRef.current?.setData([]);
     setCurrentDelta(null);
     setCurrentCvd(null);
+    useDeltaStore.getState().reset();
 
     let ws: WebSocket | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -224,6 +226,7 @@ export function DeltaPanel({ sharedChartRef }: DeltaPanelProps) {
               setCurrentDelta(last.delta);
               setCurrentCvd(last.cvd);
             }
+            useDeltaStore.getState().setFromBars(bars);
           } else if (msg.type === 'update' && msg.delta) {
             const b = msg.delta;
 
@@ -237,6 +240,7 @@ export function DeltaPanel({ sharedChartRef }: DeltaPanelProps) {
 
             setCurrentDelta(b.delta);
             setCurrentCvd(b.cvd);
+            useDeltaStore.getState().setDelta(b.delta, b.cvd);
           }
         } catch {
           // ignore malformed messages

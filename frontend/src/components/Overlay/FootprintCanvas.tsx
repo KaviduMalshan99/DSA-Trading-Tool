@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import type { IChartApi, ISeriesApi } from 'lightweight-charts';
 import { useMarketStore } from '../../store/marketStore';
 import { useChartStore } from '../../store/chartStore';
+import { useFootprintSignalStore } from '../../store/footprintSignalStore';
 import { intervalToSecs } from '../../utils/interval';
 import { toChartTimeSeconds } from '../../utils/chartTime';
 
@@ -74,6 +75,34 @@ interface PriceLevel {
   buy_vol:  number;
   sell_vol: number;
   imbalance: boolean; // backend's hardcoded-5x flag — kept for payload compatibility, not used for rendering
+}
+
+// Summarizes one bar's strongest signal for the Execution Dashboard's
+// Imbalance/Stacked row: prefer an active stack (longest run wins ties);
+// fall back to the single strongest per-level imbalance ("last strong
+// imbalance side") when no run reaches stack_size.
+function summarizeBarSignal(
+  levels: PriceLevel[],
+  ratio: number,
+  stackSize: number
+): { side: 'buy' | 'sell' | null; isStack: boolean } {
+  const runs = findStackRuns(levels, ratio, stackSize);
+  if (runs.length > 0) {
+    const longest = runs.reduce((best, r) => (r.end - r.start > best.end - best.start ? r : best));
+    return { side: longest.side, isStack: true };
+  }
+
+  let strongestSide: 'buy' | 'sell' | null = null;
+  let strongestRatio = -Infinity;
+  for (const lvl of levels) {
+    const side = imbalanceSide(lvl.buy_vol, lvl.sell_vol, ratio);
+    if (side === null) continue;
+    const levelRatio = side === 'buy'
+      ? (lvl.sell_vol > 0 ? lvl.buy_vol / lvl.sell_vol : Infinity)
+      : (lvl.buy_vol > 0 ? lvl.sell_vol / lvl.buy_vol : Infinity);
+    if (levelRatio > strongestRatio) { strongestRatio = levelRatio; strongestSide = side; }
+  }
+  return { side: strongestSide, isStack: false };
 }
 
 interface FootprintBar {
@@ -350,7 +379,26 @@ export function FootprintCanvas({ sharedChartRef, sharedSeriesRef }: FootprintCa
   // ── WebSocket ─────────────────────────────────────────────────────────────
   useEffect(() => {
     barsRef.current.clear();
+    useFootprintSignalStore.getState().setSignal(null, false, null);
     scheduleDraw(); // clear immediately — don't wait for the socket to reconnect
+
+    // Mirrors the most recent bar's imbalance/stack signal into
+    // footprintSignalStore for the Execution Dashboard — reads live
+    // imbalanceRatio/stackSize via getState() so it stays current even
+    // though this effect itself only re-runs on symbol/interval change.
+    function updateSignalStore() {
+      const bars = barsRef.current;
+      if (bars.size === 0) return;
+      const latestTime = Math.max(...bars.keys());
+      const latestBar  = bars.get(latestTime)!;
+      const { imbalanceRatio: ratio, stackSize: size } = useChartStore.getState();
+      const { side, isStack } = summarizeBarSignal(latestBar.levels, ratio, size);
+
+      const store = useFootprintSignalStore.getState();
+      if (store.side !== side || store.isStack !== isStack || store.barTime !== latestTime) {
+        store.setSignal(side, isStack, latestTime);
+      }
+    }
 
     let ws:     WebSocket | null = null;
     let stopped = false;
@@ -378,6 +426,7 @@ export function FootprintCanvas({ sharedChartRef, sharedSeriesRef }: FootprintCa
             }
           }
 
+          updateSignalStore();
           scheduleDraw();
         } catch { /* ignore malformed */ }
       };

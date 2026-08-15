@@ -15,6 +15,7 @@ import { SessionBoxes } from '../Overlay/SessionBoxes';
 import { StructureOverlay } from '../Overlay/StructureOverlay';
 import { AbsorptionOverlay } from '../Overlay/AbsorptionOverlay';
 import { ContextDashboard } from '../Overlay/ContextDashboard';
+import { ExecutionDashboard } from '../Overlay/ExecutionDashboard';
 import { DrawingToolbar } from '../Drawing/DrawingToolbar';
 import { DrawingCanvas } from '../Drawing/DrawingCanvas';
 import { DrawingStyleToolbar } from '../Drawing/DrawingStyleToolbar';
@@ -132,6 +133,7 @@ export function ChartContainer({ sharedChartRef, sharedSeriesRef, chartAreaRef }
             collapse button stays clickable regardless of the active drawing
             tool's pointer-events handling. */}
         {visibleOverlays.has('context') && <ContextDashboard />}
+        {visibleOverlays.has('execution') && <ExecutionDashboard />}
       </div>
 
       {/* Delta panel — 20% */}

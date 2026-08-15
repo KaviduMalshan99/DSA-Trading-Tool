@@ -13,6 +13,7 @@ const OVERLAYS: { key: OverlayType; label: string }[] = [
   { key: 'structure',     label: 'Structure'   },
   { key: 'context',       label: 'Context'     },
   { key: 'absorption',    label: 'Absorption'  },
+  { key: 'execution',     label: 'Execution'   },
 ];
 
 export function ChartToolbar() {
