@@ -13,11 +13,16 @@ interface ChartState {
   // a footprint-level setting, not a separate overlay, so it lives here rather
   // than in visibleOverlays. Default 300% per the Stage 3 Imbalance spec.
   imbalanceRatio: number;
+  // Minimum run length of consecutive same-side imbalanced levels (using the
+  // same isImbalance()/imbalanceRatio above) for FootprintCanvas to mark a
+  // "stacked imbalance". Default 3 per the Stage 3 Stacked Imbalance spec.
+  stackSize: number;
 
   toggleOverlay: (overlay: OverlayType) => void;
   setVisibleRange: (from: number, to: number) => void;
   setCrosshair: (price: number | null, time: number | null) => void;
   setImbalanceRatio: (ratio: number) => void;
+  setStackSize: (size: number) => void;
 }
 
 export const useChartStore = create<ChartState>((set) => ({
@@ -28,6 +33,7 @@ export const useChartStore = create<ChartState>((set) => ({
   crosshairPrice: null,
   crosshairTime: null,
   imbalanceRatio: 3.0,
+  stackSize: 3,
 
   toggleOverlay: (overlay) =>
     set((state) => {
@@ -44,4 +50,5 @@ export const useChartStore = create<ChartState>((set) => ({
   setCrosshair: (crosshairPrice, crosshairTime) =>
     set({ crosshairPrice, crosshairTime }),
   setImbalanceRatio: (ratio) => set({ imbalanceRatio: ratio }),
+  setStackSize: (size) => set({ stackSize: size }),
 }));

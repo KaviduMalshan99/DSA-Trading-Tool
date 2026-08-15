@@ -38,6 +38,37 @@ function isImbalance(buy: number, sell: number, ratio: number): boolean {
   return buy >= ratio * sell || sell >= ratio * buy;
 }
 
+// Side of a level's imbalance, or null if the level isn't imbalanced —
+// built directly on isImbalance() above so stacking always agrees with the
+// existing single-level highlight.
+function imbalanceSide(buy: number, sell: number, ratio: number): 'buy' | 'sell' | null {
+  if (!isImbalance(buy, sell, ratio)) return null;
+  return buy > sell ? 'buy' : 'sell';
+}
+
+interface StackRun {
+  start: number; // index into bar.levels (inclusive)
+  end:   number; // index into bar.levels (inclusive)
+  side:  'buy' | 'sell';
+}
+
+// Runs of >= stackSize consecutive same-side imbalanced levels. "Consecutive"
+// means adjacent entries in bar.levels (already sorted high→low, no gaps),
+// per the Stage 3 Stacked Imbalance spec.
+function findStackRuns(levels: PriceLevel[], ratio: number, stackSize: number): StackRun[] {
+  const runs: StackRun[] = [];
+  let i = 0;
+  while (i < levels.length) {
+    const side = imbalanceSide(levels[i].buy_vol, levels[i].sell_vol, ratio);
+    if (side === null) { i++; continue; }
+    let j = i + 1;
+    while (j < levels.length && imbalanceSide(levels[j].buy_vol, levels[j].sell_vol, ratio) === side) j++;
+    if (j - i >= stackSize) runs.push({ start: i, end: j - 1, side });
+    i = j;
+  }
+  return runs;
+}
+
 interface PriceLevel {
   price:    number;
   buy_vol:  number;
@@ -66,6 +97,7 @@ export function FootprintCanvas({ sharedChartRef, sharedSeriesRef }: FootprintCa
 
   const { activeSymbol, activeInterval } = useMarketStore();
   const imbalanceRatio = useChartStore((s) => s.imbalanceRatio);
+  const stackSize      = useChartStore((s) => s.stackSize);
 
   // ── Draw ─────────────────────────────────────────────────────────────────
   const drawFnRef = useRef<() => void>(() => {});
@@ -135,6 +167,7 @@ export function FootprintCanvas({ sharedChartRef, sharedSeriesRef }: FootprintCa
       const pad       = fontSize * 0.4 + 2;
       const normalFont = `${fontSize}px "Courier New", monospace`;
       const boldFont   = `bold ${fontSize}px "Courier New", monospace`;
+      const edgeW      = 3; // width of the per-level dominant-side accent stripe
 
       // ── Clip to candle boundaries — nothing can overflow ─────────────
       ctx.save();
@@ -179,7 +212,6 @@ export function FootprintCanvas({ sharedChartRef, sharedSeriesRef }: FootprintCa
           ctx.fillStyle = buyIsDominant ? 'rgba(0,255,136,0.07)' : 'rgba(255,68,68,0.07)';
           ctx.fillRect(leftX, rowTop, candleWidth, rowH);
 
-          const edgeW = 3;
           ctx.fillStyle = accent;
           if (buyIsDominant) {
             ctx.fillRect(leftX, rowTop, edgeW, rowH);
@@ -223,6 +255,51 @@ export function FootprintCanvas({ sharedChartRef, sharedSeriesRef }: FootprintCa
         ctx.fillText(sellStr, rightX - pad, y);
       }
 
+      // ── Stacked Imbalance — bracket around runs of >= stackSize consecutive ──
+      // same-side imbalanced levels (built on the same isImbalance() used above).
+      // Drawn after the per-level pass so the bracket sits on top of it.
+      const stackRuns = findStackRuns(levels, imbalanceRatio, stackSize);
+      for (const run of stackRuns) {
+        const runTopRaw    = series.priceToCoordinate(levels[run.start].price);
+        const runBottomRaw = series.priceToCoordinate(levels[run.end].price);
+        if (runTopRaw === null || runBottomRaw === null) continue;
+
+        const runTopY    = Math.max(topY,    (runTopRaw    as unknown as number) - rowH / 2);
+        const runBottomY = Math.min(bottomY, (runBottomRaw as unknown as number) + rowH / 2);
+        const runHeight  = runBottomY - runTopY;
+        if (runHeight <= 0) continue;
+
+        const accent = run.side === 'buy' ? '#00ff88' : '#ff4444';
+
+        // Group tint + bracket border — visually distinct from the single-level
+        // highlight (which only tints/strokes one row at a time).
+        ctx.fillStyle = run.side === 'buy' ? 'rgba(0,255,136,0.10)' : 'rgba(255,68,68,0.10)';
+        ctx.fillRect(leftX, runTopY, candleWidth, runHeight);
+
+        ctx.strokeStyle = accent;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(leftX + 1, runTopY + 1, candleWidth - 2, runHeight - 2);
+
+        // "STACK" tag, read vertically along the aggressive side's edge —
+        // only when the run is tall enough to hold it without crowding.
+        const tagFontSize = Math.max(MIN_FONT_PX, Math.min(fontSize, 10));
+        ctx.font = `bold ${tagFontSize}px "Courier New", monospace`;
+        const tagText  = 'STACK';
+        const tagWidth = ctx.measureText(tagText).width;
+        if (runHeight > tagWidth + 12) {
+          ctx.save();
+          const tagX = run.side === 'buy' ? leftX + edgeW + 6 : rightX - edgeW - 6;
+          const tagY = runTopY + runHeight / 2;
+          ctx.translate(tagX, tagY);
+          ctx.rotate(run.side === 'buy' ? -Math.PI / 2 : Math.PI / 2);
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillStyle = accent;
+          ctx.fillText(tagText, 0, 0);
+          ctx.restore();
+        }
+      }
+
       ctx.restore();
     }
   };
@@ -247,12 +324,12 @@ export function FootprintCanvas({ sharedChartRef, sharedSeriesRef }: FootprintCa
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Redraw when the imbalance ratio changes — no chart/WS event fires this on
-  // its own, and imbalance is computed fresh at draw time (not baked into the
-  // stored bar objects), so a plain redraw is all that's needed.
+  // Redraw when the imbalance ratio or stack size changes — no chart/WS event
+  // fires this on its own, and imbalance/stacking are computed fresh at draw
+  // time (not baked into the stored bar objects), so a plain redraw suffices.
   useEffect(() => {
     scheduleDraw();
-  }, [imbalanceRatio, scheduleDraw]);
+  }, [imbalanceRatio, stackSize, scheduleDraw]);
 
   // ── Resize canvas ─────────────────────────────────────────────────────────
   useEffect(() => {
