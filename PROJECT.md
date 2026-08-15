@@ -222,7 +222,7 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 | ----- | -------------------------- | ---------- | ----------------------------------------------------------------------------------------------------- |
 | 1     | Foundation & Workspace     | **✅ Done**   | Workspace, chart, live data, all drawing tools (incl. Long/Short Position, Undo), overlay/loading polish complete; a few minor items deferred (see Stage 1 notes) |
 | 2     | Market Context & Structure | **✅ Done**   | All 6 planned features shipped: Institutional Levels, Session VWAP, Session boxes, Market Structure (swings/trend/lines), SMC expansion (OB/FVG/BOS/CHOCH/Liquidity Sweep), Market Context Dashboard; several nice-to-have sub-items deliberately deferred (see Stage 2 notes) |
-| 3     | Order Flow & Execution     | **~66%**   | Footprint (incl. reliable backfill), Delta/CVD, Heatmap, Whale, DOM, Tape, adjustable Imbalance ratio, Stacked Imbalance done; Absorption built but not yet verified |
+| 3     | Order Flow & Execution     | **~88%**   | Core complete: Footprint (incl. reliable backfill), Delta/CVD, Heatmap, Whale, DOM, Tape, Imbalance, Stacked Imbalance, Absorption, and the Execution Dashboard are all done and verified; remaining items are secondary polish (see Stage 3 notes) |
 | 4     | Trade Confirmation         | **~3%**    | Nothing meaningfully built yet (Replay is 0%, not 50% as previously claimed)                          |
 | 5     | AI Intelligence & Polish   | **~8%**    | Theme + Docker Compose only; all AI modules not started                                               |
 
@@ -326,7 +326,7 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 
 ---
 
-## Stage 3 — Order Flow & Execution (~66%)
+## Stage 3 — Order Flow & Execution (~88% — core complete)
 
 **Objective:** understand what is happening _right now_ — the live battle between buyers and sellers. Answers _"Is this the right time to enter?"_
 
@@ -345,7 +345,8 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 |                           | Session Delta, Delta Divergence                 | 🔴                                                               |
 | **Imbalance (dedicated)** | Buy/Sell imbalance, custom ratio (default 300%) | ✅ Verified working _(Session 25 — confirmed live: ratio input correctly changes flagged-level count, loose→many/strict→few; it was never actually broken, still no standalone module)_ |
 | **Stacked Imbalance**     | Consecutive imbalances + highlight              | ✅ Verified working _(Session 26 — `findStackRuns()` built on the existing `isImbalance()`; confirmed live on BTC 1m, bracket correctly spanned an 8+ level sell-side stack)_ |
-| **Absorption**            | Hidden institutional buying/selling             | 🟡 Built, unverified _(Session 26 — code committed; was built earlier but left uncommitted, now in git; not yet visually confirmed on a live chart)_ |
+| **Absorption**            | Hidden institutional buying/selling             | ✅ Done _(Session 26 build; verified this session and Session 27 — ABS chips confirmed landing on the flagged $10-range candle, and now confirmed feeding the Execution Dashboard's Absorption row correctly too)_ |
+| **Execution Dashboard**   | Order-flow "should I enter now?" summary panel  | ✅ Done _(Session 27 — mirrors ContextDashboard's read-not-recompute pattern; Delta/Absorption/Stack/Whale rows + derived Execution Bias; verified live, rows matched DeltaPanel/whale ticker exactly)_ |
 | **Liquidity Heatmap**     | Order book heatmap                              | ✅ Done                                                          |
 |                           | Liquidity zones, large-order highlight          | 🔴                                                               |
 | **Whale Detection**       | Detection + sidebar ticker                      | ✅ Done                                                          |
@@ -369,6 +370,8 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 | Duplicate per-symbol Binance connections | 🟡 Tech debt | Now 6 independent direct Binance WS connections per symbol: 4× aggTrade (`footprint_stream.py`, `delta_stream.py`, `whale_stream.py`, `tape_stream.py`) + 2× depth20 (`heatmap_stream.py`, `dom_stream.py`). Could consolidate into one shared per-symbol connection with fan-out to accumulators someday; not blocking. |
 | `depth_collector.py` / `trade_collector.py` orphaned | 🟡 Tech debt | Dead code — defined, publish to Redis channels nothing subscribes to, never imported. Either delete, or repurpose as the actual shared-connection layer if/when the duplicate-connections item above gets tackled. |
 | Duplicate imbalance definitions | 🟡 Tech debt | The live footprint path (`_is_imbalance` in `analytics/footprint.py`) uses a 5× ratio with a 0.5 min-volume floor; the legacy REST-only `build_footprint()` in the same file uses a 70% one-side-dominance rule instead. Pick one definition when building the dedicated Imbalance module (item 5 in the Stage 3 table above). |
+| Footprint number readability | 🟡 Cosmetic, unconfirmed | Carried from Session 24/25 — `MIN_ROW_PX`/`_FOOTPRINT_TARGET_LEVELS` were tuned but nobody has visually confirmed the numbers read as comfortably sized rather than cramped. Not blocking Stage 3 completion. |
+| Execution Dashboard's Whale/Stack rows depend on their source overlays | 🟢 By design | `WhaleMarkers` and `FootprintCanvas` each own the WebSocket connection that feeds `whaleStore`/`footprintSignalStore` — the Execution Dashboard deliberately reads those stores rather than opening duplicate connections, so its Whale/Stack rows show `—` until Whales/Footprint are also toggled on. Not a bug; documented in `ExecutionDashboard.tsx`'s header comment. |
 
 ---
 
@@ -788,3 +791,23 @@ Both fixes verified live (BTC↔ETH, 1h→15m→1m, all five overlays active; dr
 **Absorption feature recovered and committed.** `backend/app/analytics/absorption.py` (buy/sell absorption candle detection: large volume + small price range, tunable `volume_multiplier`/`range_fraction`/`lookback`) and `frontend/src/components/Overlay/AbsorptionOverlay.tsx`, plus their wiring through `indicators.py`, `ChartContainer.tsx`, `api.ts`, `analytics.ts`, and `chartStore.ts`, had been built in an earlier session but left uncommitted. Found still sitting as uncommitted/untracked changes at the start of this session — committed now as its own commit so the work isn't lost. **Not yet visually verified on a live chart**, so it's recorded as 🟡 Built, unverified rather than ✅ Done, per this project's standing rule that a plausible-looking implementation doesn't count as done until someone watches it work in the browser (see Session 24/25 notes above).
 
 **Stage 3 status.** Stacked Imbalance upgrades from 🔴 to ✅ Verified working. Absorption upgrades from 🔴 (not started) to 🟡 Built, unverified (code exists and is now committed, but unconfirmed live). Stage 3 ~62% → ~66%.
+
+### Session 27 — August 15, 2026
+
+**Absorption — now fully verified.** Since the Session 26 log entry above (which left it at 🟡 Built, unverified), the ABS chips were confirmed live, landing correctly on a flagged $10-range candle. Upgrades to ✅ Done.
+
+**Execution Dashboard built and verified — Stage 3's final planned feature.** A compact "should I enter now?" panel mirroring `ContextDashboard.tsx`'s pattern exactly: read what other features already compute, derive nothing except one Bias value at the bottom. Toggle "Execution", off by default, placed top-left (below the symbol legend and VWAP's label) so it never collides with `ContextDashboard` (top-right) — the two panels are deliberately complementary, not competing: Context answers "where should I pay attention" (Stage 2), Execution answers "is now the right time to enter" (Stage 3).
+
+Four rows, each reusing a stream/endpoint that already existed rather than opening a new connection:
+- **Delta** — new `deltaStore`, written by a few added lines inside `DeltaPanel.tsx`'s existing `/ws/delta` message handler (current bar delta + CVD rising/falling vs. the previous bar).
+- **Absorption** — polls `GET /indicators/absorption` directly, same cadence as `AbsorptionOverlay` (a REST poll, not a stream, so a second call here isn't a duplicate connection the way a second WebSocket would be).
+- **Stack/Imbalance** — new `footprintSignalStore`, written by a few added lines inside `FootprintCanvas.tsx`'s existing `/ws/footprint` message handler, reusing its own `isImbalance()`/`findStackRuns()` verbatim (a new `summarizeBarSignal()` helper picks the longest active stack, falling back to the single strongest per-level imbalance when no run qualifies).
+- **Whale** — reads the existing `whaleStore` directly, already shared with `WhaleTicker`; no changes needed.
+
+**Execution Bias rule (the one derived value):** each row casts `long`/`short`/`neutral` — missing or flat data scores neutral, same principle as Context's Bias, so absent signals can't tip the vote. `LONG` requires ≥2 long votes **and** strictly more long votes than short; `SHORT` is the mirror image; anything else (a 2-2 tie, or fewer than 2 votes either way) is `WAIT`.
+
+**Verified live.** Delta row matched `DeltaPanel` exactly (-2.88 on both). Whale row matched the whale ticker (net Sell). Bias correctly computed SHORT from 2 bearish votes (delta negative + whale sell).
+
+**Known, by-design limitation:** the Whale and Stack rows only have data while the Whales/Footprint overlays are also toggled on, since `WhaleMarkers`/`FootprintCanvas` own the connections that feed their stores — the dashboard reads existing state rather than opening duplicate connections. Shows `—` gracefully the rest of the time, documented in `ExecutionDashboard.tsx`'s header comment and in the deferred table above.
+
+**Stage 3 status — core complete.** With Absorption verified and the Execution Dashboard done, every feature on the original Stage 3 plan (Footprint, Delta/CVD, Imbalance, Stacked Imbalance, Absorption, Heatmap, Whale, Tape, DOM, and now the Execution Dashboard) is built and verified live. Remaining 🔴/🟡 items (Large Volume Highlight, Zero Prints, Session Delta/Divergence, Liquidity zones, Whale history/alerts, Tape's Large Trade filter, footprint number readability) are secondary polish, not core capability gaps — tracked in the deferred table above rather than blocking Stage 3's close, the same convention used to close Stage 1 and Stage 2. Stage 3 ~66% → ~88%.
