@@ -1,13 +1,14 @@
 import aiohttp
 from fastapi import APIRouter, Query, HTTPException
 from app.core.redis import get_redis
-from app.analytics.delta import compute_delta
+from app.analytics.delta import compute_delta, klines_to_delta_bars
 from app.analytics.volume_profile import build_volume_profile
 from app.analytics.footprint import build_footprint
 from app.analytics.smc import detect_order_blocks, detect_fair_value_gaps
 from app.analytics.levels import compute_levels
 from app.analytics.vwap import compute_session_vwap, utc_day_start_ms
 from app.analytics.structure import detect_swings
+from app.analytics.absorption import detect_absorption
 from app.analytics.price_step import fetch_tick_size
 import json
 import time
@@ -47,6 +48,21 @@ async def _fetch_klines(
          "c": float(row[4]), "v": float(row[5])}
         for row in rows
     ]
+
+
+async def _fetch_klines_raw(symbol: str, interval: str, limit: int = 100) -> list[list]:
+    """
+    Untransformed Binance kline rows — needed by callers that want fields
+    `_fetch_klines` discards, e.g. taker-buy volume (row[9]) for
+    `delta.klines_to_delta_bars`. Same direct-REST approach as `_fetch_klines`.
+    """
+    url = f"{_BINANCE_REST}/api/v3/klines"
+    params = {"symbol": symbol.upper(), "interval": interval, "limit": limit}
+    timeout = aiohttp.ClientTimeout(total=10)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        async with session.get(url, params=params) as resp:
+            resp.raise_for_status()
+            return await resp.json()
 
 
 async def _fetch_klines_since(symbol: str, interval: str, start_ms: int) -> list[dict]:
@@ -211,4 +227,54 @@ async def get_market_structure(
             {"time": s.time, "price": s.price, "type": s.type, "direction": s.direction}
             for s in structure.liquidity_sweeps
         ],
+    }
+
+
+@router.get("/absorption/{symbol}/{interval}")
+async def get_absorption(
+    symbol: str,
+    interval: str,
+    volume_multiplier: float = Query(1.5, gt=1.0),
+    range_fraction: float = Query(0.85, gt=0.0, lt=1.0),
+    lookback: int = Query(20, ge=5, le=200),
+    limit: int = Query(200, le=1000),
+):
+    """
+    Absorption candles over the last `limit` candles at this timeframe: large
+    volume with a small price range, split into buy/sell absorption by which
+    side's volume dominated. See `analytics/absorption.py` for the full gate.
+
+    `volume_multiplier`, `range_fraction`, and `lookback` are exposed as query
+    params (not just constants) since these thresholds are expected to need
+    tuning once real flagged candles are visible on a chart.
+    """
+    try:
+        raw = await _fetch_klines_raw(symbol, interval, limit)
+        tick_size = await fetch_tick_size(symbol)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Could not fetch candles: {exc}")
+    if not raw:
+        raise HTTPException(status_code=404, detail="No candle data")
+
+    candles = [
+        {"t": int(r[0]), "o": float(r[1]), "h": float(r[2]), "l": float(r[3]),
+         "c": float(r[4]), "v": float(r[5])}
+        for r in raw
+    ]
+    delta_bars, _ = klines_to_delta_bars(raw)
+
+    result = detect_absorption(
+        candles, delta_bars, tick_size,
+        volume_multiplier=volume_multiplier, range_fraction=range_fraction, lookback=lookback,
+    )
+    return {
+        "events": [
+            {"time": e.time, "price": e.price, "high": e.high, "low": e.low,
+             "type": e.type, "strength": e.strength}
+            for e in result.events
+        ],
+        "decimals": result.decimals,
+        "volume_multiplier": result.volume_multiplier,
+        "range_fraction": result.range_fraction,
+        "lookback": result.lookback,
     }

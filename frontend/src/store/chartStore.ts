@@ -2,7 +2,8 @@ import { create } from 'zustand';
 
 export type OverlayType =
   | 'heatmap' | 'footprint' | 'volumeProfile' | 'whaleMarkers'
-  | 'smc' | 'levels' | 'vwap' | 'sessions' | 'structure' | 'context';
+  | 'smc' | 'levels' | 'vwap' | 'sessions' | 'structure' | 'context'
+  | 'absorption';
 
 interface ChartState {
   visibleOverlays: Set<OverlayType>;

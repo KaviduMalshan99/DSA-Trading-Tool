@@ -1,6 +1,7 @@
 import type { Candle, CandleInterval, MarketType } from '../types/market';
 import type {
   DeltaBar, FootprintBar, VolumeProfileNode, SMCData, LevelsData, VWAPData, StructureData,
+  AbsorptionData,
 } from '../types/analytics';
 
 const BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000/api/v1';
@@ -52,4 +53,21 @@ export const api = {
       `/indicators/structure/${symbol}/${interval}` +
         (swingStrength === undefined ? '' : `?swing_strength=${swingStrength}`)
     ),
+
+  // volume_multiplier/range_fraction/lookback are tunable server-side; the
+  // overlay uses the backend defaults (1.5 / 0.85 / 20) until thresholds are tuned
+  getAbsorption: (
+    symbol: string,
+    interval: CandleInterval,
+    params?: { volumeMultiplier?: number; rangeFraction?: number; lookback?: number }
+  ) => {
+    const qs = new URLSearchParams();
+    if (params?.volumeMultiplier !== undefined) qs.set('volume_multiplier', String(params.volumeMultiplier));
+    if (params?.rangeFraction !== undefined) qs.set('range_fraction', String(params.rangeFraction));
+    if (params?.lookback !== undefined) qs.set('lookback', String(params.lookback));
+    const query = qs.toString();
+    return request<AbsorptionData>(
+      `/indicators/absorption/${symbol}/${interval}${query ? `?${query}` : ''}`
+    );
+  },
 };

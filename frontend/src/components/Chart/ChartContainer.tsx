@@ -13,6 +13,7 @@ import { LevelsOverlay } from '../Overlay/LevelsOverlay';
 import { VWAPOverlay } from '../Overlay/VWAPOverlay';
 import { SessionBoxes } from '../Overlay/SessionBoxes';
 import { StructureOverlay } from '../Overlay/StructureOverlay';
+import { AbsorptionOverlay } from '../Overlay/AbsorptionOverlay';
 import { ContextDashboard } from '../Overlay/ContextDashboard';
 import { DrawingToolbar } from '../Drawing/DrawingToolbar';
 import { DrawingCanvas } from '../Drawing/DrawingCanvas';
@@ -100,6 +101,12 @@ export function ChartContainer({ sharedChartRef, sharedSeriesRef, chartAreaRef }
         )}
         {visibleOverlays.has('structure') && (
           <StructureOverlay
+            sharedChartRef={sharedChartRef}
+            sharedSeriesRef={sharedSeriesRef}
+          />
+        )}
+        {visibleOverlays.has('absorption') && (
+          <AbsorptionOverlay
             sharedChartRef={sharedChartRef}
             sharedSeriesRef={sharedSeriesRef}
           />

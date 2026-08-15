@@ -100,6 +100,25 @@ export interface StructureData {
   liquidity_sweeps: LiquiditySweep[];
 }
 
+export type AbsorptionType = 'buy_absorption' | 'sell_absorption';
+
+export interface AbsorptionEvent {
+  time: number;   // candle open time (ms) — shift via toChartTime before charting
+  price: number;  // candle close
+  high: number;
+  low: number;
+  type: AbsorptionType;
+  strength: number; // unbounded score — bigger means a cleaner/larger absorption signal
+}
+
+export interface AbsorptionData {
+  events: AbsorptionEvent[];
+  decimals: number;
+  volume_multiplier: number;
+  range_fraction: number;
+  lookback: number;
+}
+
 export interface HeatmapData {
   timestamps: number[];
   price_levels: number[];
