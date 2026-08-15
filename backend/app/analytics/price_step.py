@@ -14,7 +14,18 @@ import aiohttp
 
 _CLEAN_MULTIPLIERS = (1.0, 2.0, 5.0)
 _BINANCE_REST = "https://api.binance.com"
-_FOOTPRINT_TARGET_LEVELS = 10
+
+# 15 -> 10 (Session 24) still left BTC's rows too cramped to read at normal
+# zoom (~5-7px, near the MIN_ROW_PX floor in FootprintCanvas.tsx). Checked
+# live against Binance: at BTC's current typical_range (~$15), 10 through 5
+# all snap to the same $2 step (~7-8 levels/candle) — the 1/2/5 clean-value
+# snapping in _snap_to_clean absorbs that whole range with zero visible
+# change. 4 is the first value whose raw_step (typical_range/4) clears the
+# snap boundary into $5 (~3 levels/candle, meaningfully taller rows). Kept
+# symbol-relative and floored at tick_size same as always — verified live
+# that PEPE/XRP/DOGE are already floored at their own tick_size well before
+# target=4, so this has zero effect on them (see PROJECT.md Session 28).
+_FOOTPRINT_TARGET_LEVELS = 4
 _FOOTPRINT_RANGE_PERCENTILE = 0.8
 
 

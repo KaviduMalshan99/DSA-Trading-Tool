@@ -27,7 +27,13 @@ const BUY_COLOR = '#4fd1a5';
 // Bearish (sell absorption: heavy buying absorbed, price capped) — muted red.
 const SELL_COLOR = '#e8735f';
 
-const CHIP_GAP = 6;     // clear space between the candle's wick and the chip
+// Clear space between the candle's wick and the chip. Buy absorption anchors
+// just below the candle's low, which is also roughly where FootprintCanvas
+// draws its bottom-row buy/sell numbers when Footprint is on — those numbers
+// can now be up to 13px tall (readability fix made rows taller, letting font
+// size grow off its old MIN_FONT_PX floor), so this needs enough clearance
+// to sit below that text rather than the old cramped-row gap.
+const CHIP_GAP = 12;
 const CHIP_PAD_X = 3;
 const CHIP_H = 12;
 

@@ -309,23 +309,34 @@ export function FootprintCanvas({ sharedChartRef, sharedSeriesRef }: FootprintCa
         ctx.lineWidth = 2;
         ctx.strokeRect(leftX + 1, runTopY + 1, candleWidth - 2, runHeight - 2);
 
-        // "STACK" tag, read vertically along the aggressive side's edge —
-        // only when the run is tall enough to hold it without crowding.
+        // "STACK" tag — a small horizontal chip sitting exactly on the box's
+        // top border (a seam BETWEEN two rows, not any row's own vertically-
+        // centered number text), so it can't land on top of the buy/sell
+        // numbers regardless of candle width. Was previously a vertical tag
+        // inside the row content area next to the buy/sell column, which
+        // collided with the numbers once taller rows (readability fix) let
+        // fontSize grow — this replaces that placement rather than the box,
+        // which is unchanged. Skipped entirely (box-only) when the row is
+        // too short to hold the chip without touching the neighboring row's
+        // number — the box alone already communicates "this is a stack".
         const tagFontSize = Math.max(MIN_FONT_PX, Math.min(fontSize, 10));
-        ctx.font = `bold ${tagFontSize}px "Courier New", monospace`;
-        const tagText  = 'STACK';
-        const tagWidth = ctx.measureText(tagText).width;
-        if (runHeight > tagWidth + 12) {
-          ctx.save();
-          const tagX = run.side === 'buy' ? leftX + edgeW + 6 : rightX - edgeW - 6;
-          const tagY = runTopY + runHeight / 2;
-          ctx.translate(tagX, tagY);
-          ctx.rotate(run.side === 'buy' ? -Math.PI / 2 : Math.PI / 2);
+        const chipH = tagFontSize + 4;
+        if (chipH + fontSize + 4 <= rowH) {
+          ctx.font = `bold ${tagFontSize}px "Courier New", monospace`;
+          const tagText = 'STACK';
+          const chipW   = ctx.measureText(tagText).width + 8;
+          const chipY   = runTopY;
+
+          ctx.fillStyle = `${accent}33`;
+          ctx.fillRect(centerX - chipW / 2, chipY - chipH / 2, chipW, chipH);
+          ctx.strokeStyle = accent;
+          ctx.lineWidth = 1;
+          ctx.strokeRect(centerX - chipW / 2, chipY - chipH / 2, chipW, chipH);
+
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
           ctx.fillStyle = accent;
-          ctx.fillText(tagText, 0, 0);
-          ctx.restore();
+          ctx.fillText(tagText, centerX, chipY);
         }
       }
 
