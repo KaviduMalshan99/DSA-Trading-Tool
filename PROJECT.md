@@ -222,7 +222,7 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 | ----- | -------------------------- | ---------- | ----------------------------------------------------------------------------------------------------- |
 | 1     | Foundation & Workspace     | **✅ Done**   | Workspace, chart, live data, all drawing tools (incl. Long/Short Position, Undo), overlay/loading polish complete; a few minor items deferred (see Stage 1 notes) |
 | 2     | Market Context & Structure | **✅ Done**   | All 6 planned features shipped: Institutional Levels, Session VWAP, Session boxes, Market Structure (swings/trend/lines), SMC expansion (OB/FVG/BOS/CHOCH/Liquidity Sweep), Market Context Dashboard; several nice-to-have sub-items deliberately deferred (see Stage 2 notes) |
-| 3     | Order Flow & Execution     | **~88%**   | Core complete: Footprint (incl. reliable backfill), Delta/CVD, Heatmap, Whale, DOM, Tape, Imbalance, Stacked Imbalance, Absorption, and the Execution Dashboard are all done and verified; remaining items are secondary polish (see Stage 3 notes) |
+| 3     | Order Flow & Execution     | **~90%**   | **Closed** — Footprint (incl. reliable backfill + readability), Delta/CVD, Heatmap, Whale, DOM, Tape, Imbalance, Stacked Imbalance, Absorption, and the Execution Dashboard are all done and verified, including the last cosmetic loose end; remaining items are secondary polish (see Stage 3 notes) |
 | 4     | Trade Confirmation         | **~3%**    | Nothing meaningfully built yet (Replay is 0%, not 50% as previously claimed)                          |
 | 5     | AI Intelligence & Polish   | **~8%**    | Theme + Docker Compose only; all AI modules not started                                               |
 
@@ -326,7 +326,7 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 
 ---
 
-## Stage 3 — Order Flow & Execution (~88% — core complete)
+## Stage 3 — Order Flow & Execution (~90% — closed)
 
 **Objective:** understand what is happening _right now_ — the live battle between buyers and sellers. Answers _"Is this the right time to enter?"_
 
@@ -336,6 +336,7 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 |                           | Historical backfill (cold-start ~50 candles)    | ✅ Done, reliable _(Session 24 build; Session 25 fixed a silent one-shot-fetch bug that made it intermittent — see below)_ |
 |                           | Buy/Sell volume, Candle Delta                   | ✅ Done                                                          |
 |                           | Imbalance highlight (5× ratio box)              | ✅ Done _(Session 4 — was wrongly marked 🔴)_                    |
+|                           | Number readability (row/font sizing)            | ✅ Done _(Session 28 — `_FOOTPRINT_TARGET_LEVELS` 10→4 for taller rows, verified against live Binance data to confirm cheap coins stay floored at tick_size; also fixed the STACK/ABS label overlap the taller rows exposed)_ |
 |                           | Volume / Delta footprint modes                  | 🟡 Partial                                                       |
 |                           | Large Volume Highlight                          | 🔴                                                               |
 |                           | Zero Prints, Unfinished Auction                 | 🔴                                                               |
@@ -370,7 +371,6 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 | Duplicate per-symbol Binance connections | 🟡 Tech debt | Now 6 independent direct Binance WS connections per symbol: 4× aggTrade (`footprint_stream.py`, `delta_stream.py`, `whale_stream.py`, `tape_stream.py`) + 2× depth20 (`heatmap_stream.py`, `dom_stream.py`). Could consolidate into one shared per-symbol connection with fan-out to accumulators someday; not blocking. |
 | `depth_collector.py` / `trade_collector.py` orphaned | 🟡 Tech debt | Dead code — defined, publish to Redis channels nothing subscribes to, never imported. Either delete, or repurpose as the actual shared-connection layer if/when the duplicate-connections item above gets tackled. |
 | Duplicate imbalance definitions | 🟡 Tech debt | The live footprint path (`_is_imbalance` in `analytics/footprint.py`) uses a 5× ratio with a 0.5 min-volume floor; the legacy REST-only `build_footprint()` in the same file uses a 70% one-side-dominance rule instead. Pick one definition when building the dedicated Imbalance module (item 5 in the Stage 3 table above). |
-| Footprint number readability | 🟡 Cosmetic, unconfirmed | Carried from Session 24/25 — `MIN_ROW_PX`/`_FOOTPRINT_TARGET_LEVELS` were tuned but nobody has visually confirmed the numbers read as comfortably sized rather than cramped. Not blocking Stage 3 completion. |
 | Execution Dashboard's Whale/Stack rows depend on their source overlays | 🟢 By design | `WhaleMarkers` and `FootprintCanvas` each own the WebSocket connection that feeds `whaleStore`/`footprintSignalStore` — the Execution Dashboard deliberately reads those stores rather than opening duplicate connections, so its Whale/Stack rows show `—` until Whales/Footprint are also toggled on. Not a bug; documented in `ExecutionDashboard.tsx`'s header comment. |
 
 ---
@@ -811,3 +811,13 @@ Four rows, each reusing a stream/endpoint that already existed rather than openi
 **Known, by-design limitation:** the Whale and Stack rows only have data while the Whales/Footprint overlays are also toggled on, since `WhaleMarkers`/`FootprintCanvas` own the connections that feed their stores — the dashboard reads existing state rather than opening duplicate connections. Shows `—` gracefully the rest of the time, documented in `ExecutionDashboard.tsx`'s header comment and in the deferred table above.
 
 **Stage 3 status — core complete.** With Absorption verified and the Execution Dashboard done, every feature on the original Stage 3 plan (Footprint, Delta/CVD, Imbalance, Stacked Imbalance, Absorption, Heatmap, Whale, Tape, DOM, and now the Execution Dashboard) is built and verified live. Remaining 🔴/🟡 items (Large Volume Highlight, Zero Prints, Session Delta/Divergence, Liquidity zones, Whale history/alerts, Tape's Large Trade filter, footprint number readability) are secondary polish, not core capability gaps — tracked in the deferred table above rather than blocking Stage 3's close, the same convention used to close Stage 1 and Stage 2. Stage 3 ~66% → ~88%.
+
+### Session 28 — August 15, 2026
+
+**Footprint number readability — closed, the last cosmetic loose end from Stage 3.** `_FOOTPRINT_TARGET_LEVELS` (`price_step.py`) dropped 10 → 4. Checked live against Binance before picking the value: BTC's current typical_range (~$15) meant 10 through 5 all snapped to the exact same $2 step — the 1/2/5 clean-value snapping absorbed that whole range, so 7 or 8 (the originally suggested values) would have changed nothing. 4 is the first value whose raw step clears the snap boundary into $5 (~3 levels/candle vs. ~7-8), giving genuinely taller rows. Verified live that PEPE/XRP/DOGE are already floored at their own tick_size well before target=4 — cheap coins are provably unaffected, not just assumed safe.
+
+**Taller rows exposed a label-overlap bug, fixed in the same session.** Bigger rows let `FootprintCanvas.tsx`'s font size grow off its old cramped `MIN_FONT_PX` floor — which then made the vertical "STACK" tag (drawn inside the row, next to the buy/sell number column) collide with the numbers themselves, and shrank the margin `AbsorptionOverlay`'s "ABS" chip needed below a candle's low. Fixes: the STACK tag moved from inside the row content to a horizontal chip sitting on the stack box's top border — a seam between two rows' vertically-centered number text, so it can't land on either regardless of candle width, and is hidden entirely (box-only) when a row is too short to hold it. The ABS chip's clearance gap went 6px → 12px. Detection logic and number rendering untouched in both files — label placement only.
+
+**Verified live.** BTC 1m footprint numbers read comfortably at normal zoom; PEPE still shows proper fine-grained buckets (not collapsed); the STACK tag no longer overlaps the numbers; the ABS chip clears the taller bottom-row text; the single-imbalance highlight (which frames its own number directly, not a separate floating label) was unaffected.
+
+**Stage 3 status — closed.** Every planned feature (Footprint incl. reliable backfill and now readability, Delta/CVD, Imbalance, Stacked Imbalance, Absorption, Heatmap, Whale, Tape, DOM, Execution Dashboard) is built and verified live, and the one open cosmetic item is resolved. Remaining 🔴/🟡 sub-items are deliberately deferred nice-to-haves (Large Volume Highlight, Zero Prints, Session Delta/Divergence, Liquidity zones, Whale history/alerts, Tape's Large Trade filter), the same convention used to close Stage 1 and Stage 2 with a deferred table rather than 100%. Stage 3 ~88% → ~90%.
