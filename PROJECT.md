@@ -223,7 +223,7 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 | 1     | Foundation & Workspace     | **✅ Done**   | Workspace, chart, live data, all drawing tools (incl. Long/Short Position, Undo), overlay/loading polish complete; a few minor items deferred (see Stage 1 notes) |
 | 2     | Market Context & Structure | **✅ Done**   | All 6 planned features shipped: Institutional Levels, Session VWAP, Session boxes, Market Structure (swings/trend/lines), SMC expansion (OB/FVG/BOS/CHOCH/Liquidity Sweep), Market Context Dashboard; several nice-to-have sub-items deliberately deferred (see Stage 2 notes) |
 | 3     | Order Flow & Execution     | **~90%**   | **Closed** — Footprint (incl. reliable backfill + readability), Delta/CVD, Heatmap, Whale, DOM, Tape, Imbalance, Stacked Imbalance, Absorption, and the Execution Dashboard are all done and verified, including the last cosmetic loose end; remaining items are secondary polish (see Stage 3 notes) |
-| 4     | Trade Confirmation         | **~38%**   | Position Calculator _(Session 29)_, Trade Checklist _(Session 30)_, and Cluster Scanner _(Session 31)_ done and verified; everything else not started (Replay is 0%, not 50% as previously claimed) |
+| 4     | Trade Confirmation         | **~50%**   | Position Calculator _(Session 29)_, Trade Checklist _(Session 30)_, Cluster Scanner _(Session 31)_, and Alerts _(Session 32)_ done and verified; everything else not started (Replay is 0%, not 50% as previously claimed) |
 | 5     | AI Intelligence & Polish   | **~8%**    | Theme + Docker Compose only; all AI modules not started                                               |
 
 > **Correction note:** the earlier stage drafts overstated a few items. This document corrects them against the actual code: Volume Profile **POC/VAH/VAL are already built** (not 🔴), the **Delta panel already is a green/red histogram with CVD** (not 🔴), footprint **already highlights imbalances** (Session 4), and **Replay has no code at all** → 0%.
@@ -375,7 +375,7 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 
 ---
 
-## Stage 4 — Trade Confirmation & Decision Support (~38%)
+## Stage 4 — Trade Confirmation & Decision Support (~50%)
 
 **Objective:** confirm whether a setup is worth taking by combining multiple independent signals. Answers _"Is this trade worth taking?"_
 
@@ -388,7 +388,7 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 | Position Calculator (size, $ risk, RR)                             | ✅ Done _(Session 29)_ — risk-based position sizing, RR, verified by hand |
 | Replay & Practice                                                  | 🔴 **0%** _(no code — previously mis-stated as 50%)_               |
 | Trade Journal                                                      | 🔵 Future                                                          |
-| Alerts (price/volume/delta/whale/absorption/imbalance)             | 🔴                                                                 |
+| Alerts (price/volume/delta/whale/absorption/imbalance)             | ✅ Done _(Session 32)_ — 5 types, edge-triggered no-re-fire, one-shot/re-arm, per-symbol |
 
 **Differentiator (recommended):** a **Trade Decision Engine** that rolls Stages 2–3 into a single _Trade Score_ (e.g. Context 25 / Order Flow 35 / Liquidity 20 / Risk 20) with a confidence % and a LONG/SHORT/WAIT recommendation. It **summarises** analysis — it never auto-trades.
 
@@ -869,3 +869,17 @@ All four seed their dedupe state from whatever's already buffered at mount/symbo
 **Verified live.** Distinct whale/absorption/stack/large-delta events appeared as they happened, no duplicate spam, de-dupe held per type, and switching symbol cleanly wiped the feed.
 
 **Stage 4 status.** Cluster Scanner upgrades from 🔴 to ✅ Done. Stage 4 ~25% → ~38% (3 of 8 planned modules complete; Replay, Open Interest, Liquidations, Alerts, Trade Journal remain 🔴/🔵, unchanged by this session).
+
+### Session 32 — August 18, 2026
+
+**Alerts built and verified — Stage 4's fourth shipped feature.** Deliberately builds **no new detection**: reuses exactly the same sources ExecutionDashboard/ClusterScanner already read (`deltaStore`, `whaleStore`, the absorption REST poll, the levels REST poll) plus the shared `createDeltaSwingDetector()` (pulled out of `ClusterScanner.tsx` into `utils/deltaSwingDetector.ts` this session so both features agree on exactly what "large delta" means — Scanner refactored to use it, behavior unchanged). New: `AlertsEngine.tsx` (non-visual, always mounted in `App.tsx` — not gated behind the manager modal or any overlay toggle, so alerts keep firing regardless of what panels are open) + `AlertsManager.tsx` (modal, opened via a new bell icon in `Toolbar.tsx`) + `alertsStore.ts` (persisted, localStorage-backed) + `toastStore.ts` + `ToastStack.tsx` (in-app toast delivery, always mounted alongside the engine) + `utils/beep.ts` (optional sound, off by default).
+
+**5 alert types:** Price cross (above/below a target), Level touch (PDH/PDL/Daily Open, same 0.3% proximity threshold as Trade Checklist), Whale (min notional + buy/sell/any side filter), Absorption (buy/sell/any side filter), Large delta swing (buy/sell/any side filter, via the shared detector). Every condition is edge-triggered — fires only on the false→true transition, never every tick a condition holds — and every detector seeds its "current state" on first observation without firing, so creating a price-above alert while price is already above the target doesn't fire immediately, and mounting doesn't dump a backlog of already-true conditions as false fires.
+
+**One-shot vs re-arm, per alert, user's choice at creation (default one-shot):** one-shot fires once then auto-disables (`alertsStore.disableAfterFire`); re-arm stays enabled and the same edge-trigger that fired it naturally allows it to fire again once the condition resets and re-crosses.
+
+**Scope — active symbol only, same v1 boundary as Cluster Scanner.** Alerts are evaluated only while their symbol is the active one, since the underlying per-symbol streams (whale/footprint/delta) aren't connected for any other symbol. Alerts for other symbols stay in the list (AlertsManager flags them as dormant) rather than being deleted. Switching symbol/interval resets every detector's runtime edge-trigger state.
+
+**Verified live.** Created a price-above alert below the live price, confirmed it fired exactly once as price crossed, then stayed quiet on sustained price above the target (no re-fire) — the core edge-trigger correctness bar for this feature. Toast appeared, alert auto-disabled (one-shot default). Re-arm option confirmed re-firing after the price crossed back below and above again. Alerts persisted across a refresh. `tsc --noEmit` clean.
+
+**Stage 4 status.** Alerts upgrades from 🔴 to ✅ Done. Stage 4 ~38% → ~50% (4 of 8 planned modules complete; Replay, Open Interest, Liquidations, Trade Journal remain 🔴/🔵, unchanged by this session).
