@@ -223,7 +223,7 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 | 1     | Foundation & Workspace     | **✅ Done**   | Workspace, chart, live data, all drawing tools (incl. Long/Short Position, Undo), overlay/loading polish complete; a few minor items deferred (see Stage 1 notes) |
 | 2     | Market Context & Structure | **✅ Done**   | All 6 planned features shipped: Institutional Levels, Session VWAP, Session boxes, Market Structure (swings/trend/lines), SMC expansion (OB/FVG/BOS/CHOCH/Liquidity Sweep), Market Context Dashboard; several nice-to-have sub-items deliberately deferred (see Stage 2 notes) |
 | 3     | Order Flow & Execution     | **~90%**   | **Closed** — Footprint (incl. reliable backfill + readability), Delta/CVD, Heatmap, Whale, DOM, Tape, Imbalance, Stacked Imbalance, Absorption, and the Execution Dashboard are all done and verified, including the last cosmetic loose end; remaining items are secondary polish (see Stage 3 notes) |
-| 4     | Trade Confirmation         | **~12%**   | Position Calculator done and verified _(Session 29)_; everything else not started (Replay is 0%, not 50% as previously claimed) |
+| 4     | Trade Confirmation         | **~25%**   | Position Calculator _(Session 29)_ and Trade Checklist _(Session 30)_ done and verified; everything else not started (Replay is 0%, not 50% as previously claimed) |
 | 5     | AI Intelligence & Polish   | **~8%**    | Theme + Docker Compose only; all AI modules not started                                               |
 
 > **Correction note:** the earlier stage drafts overstated a few items. This document corrects them against the actual code: Volume Profile **POC/VAH/VAL are already built** (not 🔴), the **Delta panel already is a green/red histogram with CVD** (not 🔴), footprint **already highlights imbalances** (Session 4), and **Replay has no code at all** → 0%.
@@ -375,7 +375,7 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 
 ---
 
-## Stage 4 — Trade Confirmation & Decision Support (~12%)
+## Stage 4 — Trade Confirmation & Decision Support (~25%)
 
 **Objective:** confirm whether a setup is worth taking by combining multiple independent signals. Answers _"Is this trade worth taking?"_
 
@@ -384,7 +384,7 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 | Open Interest analysis (OI, OI change, funding)                    | 🔴 _(needs Binance **futures** API — currently only spot streams)_ |
 | Liquidation analysis / heatmap                                     | 🔴                                                                 |
 | Cluster Scanner (auto-detect large delta/volume/absorption/whales) | 🔴                                                                 |
-| Professional Trade Checklist                                       | 🔴                                                                 |
+| Professional Trade Checklist                                       | ✅ Done _(Session 30)_ — hybrid auto+manual, live verdict, cross-checked against Context/Execution |
 | Position Calculator (size, $ risk, RR)                             | ✅ Done _(Session 29)_ — risk-based position sizing, RR, verified by hand |
 | Replay & Practice                                                  | 🔴 **0%** _(no code — previously mis-stated as 50%)_               |
 | Trade Journal                                                      | 🔵 Future                                                          |
@@ -831,3 +831,19 @@ Four rows, each reusing a stream/endpoint that already existed rather than openi
 **Verified by hand** against a known example (balance $10,000, risk 1%, entry 100, stop 95, target 110): Dollar Risk $100, Position Size 20 units, Position Value $2,000, RR 1:2, Potential Profit $200 — all correct. `tsc --noEmit` clean.
 
 **Stage 4 status.** Position Calculator upgrades from 🔴 to ✅ Done. Stage 4 ~3% → ~12% (1 of 8 planned modules complete; everything else — Trade Checklist, Replay, Cluster Scanner, Open Interest, Liquidations, Alerts, Trade Journal — remains 🔴/🔵, unchanged by this session).
+
+### Session 30 — August 17, 2026
+
+**Trade Checklist built and verified — Stage 4's second shipped feature.** A hybrid discipline panel following ContextDashboard/ExecutionDashboard's exact "read, don't recompute, don't open new connections" pattern: `TradeChecklist.tsx` (new, toggled via a "Checklist" button in `ChartToolbar.tsx`, off by default, mounted bottom-right of the chart area — clear of Context's top-right and Execution's top-left) + `tradeChecklistStore.ts` (persists only the 4 manual ticks, localStorage-backed zustand, same pattern as `candleStyleStore`/`positionCalcStore`).
+
+**6 AUTO items**, each judged against a Long/Short direction toggle the panel owns itself (separate from Position Calculator's): Trend aligned (`structure.current_trend`), Price vs VWAP, Near a key level (within 0.3% of Daily Open/PDH/PDL — pass/unknown only, never fails, since proximity isn't inherently directional), Structure event (BOS/CHOCH from `structure_breaks` only, not liquidity sweeps, per spec), Delta supporting, and Order-flow signal (stack/imbalance + whale combined, reusing `footprintSignalStore`/`whaleStore` and ExecutionDashboard's exact whale-direction math — pass only if both non-neutral votes agree with the chosen direction, fail only if both oppose, unknown if empty or conflicting). Levels/VWAP/Structure are fetched via the panel's own REST poll at ContextDashboard's exact cadence (this app's established pattern for non-store analytics data, per ContextDashboard's own header comment); Delta/Stack/Whale are read directly from `deltaStore`/`footprintSignalStore`/`whaleStore` — no new WebSocket connections opened anywhere.
+
+**4 MANUAL items** (Checked higher timeframe / Key news-events clear / Following my trading plan / Risk-position size set) are plain persisted checkboxes — the platform has no data source for any of them.
+
+**Readiness rule (exact):** any manual item unticked → `NOT READY`. All manual ticked but auto items have ≥1 fail or fewer than 4-of-6 pass → `CHECK ITEMS`. All manual ticked, zero fails, ≥4-of-6 pass → `READY`. Verdict shown in both the collapsed header (glanceable without expanding) and an expanded footer row.
+
+**Manual-reset behavior:** the store tracks which symbol its ticks belong to; a `syncSymbol()` call on every render is a no-op unless the active symbol changed, in which case all 4 manual ticks wipe immediately — a fresh symbol is treated as a fresh trade idea rather than carrying over a stale checklist.
+
+**Verified live.** Auto items cross-checked correct against ContextDashboard/ExecutionDashboard side by side (trend, VWAP, structure event, delta, order-flow all agreed). Manual ticks work. Verdict logic confirmed both ways: `READY` with all auto items aligned and all manual boxes ticked, flipping live to `CHECK ITEMS` the moment delta/order-flow turned against the selected direction — no reload needed, store reads are reactive. `tsc --noEmit` clean.
+
+**Stage 4 status.** Trade Checklist upgrades from 🔴 to ✅ Done. Stage 4 ~12% → ~25% (2 of 8 planned modules complete; Replay, Cluster Scanner, Open Interest, Liquidations, Alerts, Trade Journal remain 🔴/🔵, unchanged by this session).
