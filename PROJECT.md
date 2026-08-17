@@ -223,7 +223,7 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 | 1     | Foundation & Workspace     | **✅ Done**   | Workspace, chart, live data, all drawing tools (incl. Long/Short Position, Undo), overlay/loading polish complete; a few minor items deferred (see Stage 1 notes) |
 | 2     | Market Context & Structure | **✅ Done**   | All 6 planned features shipped: Institutional Levels, Session VWAP, Session boxes, Market Structure (swings/trend/lines), SMC expansion (OB/FVG/BOS/CHOCH/Liquidity Sweep), Market Context Dashboard; several nice-to-have sub-items deliberately deferred (see Stage 2 notes) |
 | 3     | Order Flow & Execution     | **~90%**   | **Closed** — Footprint (incl. reliable backfill + readability), Delta/CVD, Heatmap, Whale, DOM, Tape, Imbalance, Stacked Imbalance, Absorption, and the Execution Dashboard are all done and verified, including the last cosmetic loose end; remaining items are secondary polish (see Stage 3 notes) |
-| 4     | Trade Confirmation         | **~3%**    | Nothing meaningfully built yet (Replay is 0%, not 50% as previously claimed)                          |
+| 4     | Trade Confirmation         | **~12%**   | Position Calculator done and verified _(Session 29)_; everything else not started (Replay is 0%, not 50% as previously claimed) |
 | 5     | AI Intelligence & Polish   | **~8%**    | Theme + Docker Compose only; all AI modules not started                                               |
 
 > **Correction note:** the earlier stage drafts overstated a few items. This document corrects them against the actual code: Volume Profile **POC/VAH/VAL are already built** (not 🔴), the **Delta panel already is a green/red histogram with CVD** (not 🔴), footprint **already highlights imbalances** (Session 4), and **Replay has no code at all** → 0%.
@@ -375,7 +375,7 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 
 ---
 
-## Stage 4 — Trade Confirmation & Decision Support (~3%)
+## Stage 4 — Trade Confirmation & Decision Support (~12%)
 
 **Objective:** confirm whether a setup is worth taking by combining multiple independent signals. Answers _"Is this trade worth taking?"_
 
@@ -385,7 +385,7 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 | Liquidation analysis / heatmap                                     | 🔴                                                                 |
 | Cluster Scanner (auto-detect large delta/volume/absorption/whales) | 🔴                                                                 |
 | Professional Trade Checklist                                       | 🔴                                                                 |
-| Position Calculator (size, $ risk, RR)                             | 🔴                                                                 |
+| Position Calculator (size, $ risk, RR)                             | ✅ Done _(Session 29)_ — risk-based position sizing, RR, verified by hand |
 | Replay & Practice                                                  | 🔴 **0%** _(no code — previously mis-stated as 50%)_               |
 | Trade Journal                                                      | 🔵 Future                                                          |
 | Alerts (price/volume/delta/whale/absorption/imbalance)             | 🔴                                                                 |
@@ -821,3 +821,13 @@ Four rows, each reusing a stream/endpoint that already existed rather than openi
 **Verified live.** BTC 1m footprint numbers read comfortably at normal zoom; PEPE still shows proper fine-grained buckets (not collapsed); the STACK tag no longer overlaps the numbers; the ABS chip clears the taller bottom-row text; the single-imbalance highlight (which frames its own number directly, not a separate floating label) was unaffected.
 
 **Stage 3 status — closed.** Every planned feature (Footprint incl. reliable backfill and now readability, Delta/CVD, Imbalance, Stacked Imbalance, Absorption, Heatmap, Whale, Tape, DOM, Execution Dashboard) is built and verified live, and the one open cosmetic item is resolved. Remaining 🔴/🟡 sub-items are deliberately deferred nice-to-haves (Large Volume Highlight, Zero Prints, Session Delta/Divergence, Liquidity zones, Whale history/alerts, Tape's Large Trade filter), the same convention used to close Stage 1 and Stage 2 with a deferred table rather than 100%. Stage 3 ~88% → ~90%.
+
+### Session 29 — August 17, 2026
+
+**Stage 4 opened. Read-only audit first.** Before building anything, audited every claimed-🔴 Stage 4 module (Trade Checklist, Position Calculator, Replay, Cluster Scanner, Open Interest, Liquidations, Alerts) against the actual codebase. Confirmed the doc's ~3% figure was accurate, not inflated — every module genuinely had zero supporting code, including Replay, whose 0% correction (from a previously mis-stated 50%) held up under a second look. One clarification: the RR readout inside `DrawingCanvas.tsx`'s Long/Short Position drawing tool (Stage 1) is cosmetically similar to a position calculator but computes RR from on-chart pixel geometry, not account balance/$ risk — confirmed unrelated to this module.
+
+**Position Calculator built and verified by hand — Stage 4's first shipped feature.** Pure client-side math, no backend/API/store dependency beyond local state: `PositionCalculator.tsx` (new modal, opened via a calculator icon in `Toolbar.tsx` between the snapshot and fullscreen buttons) + `positionCalcStore.ts` (persists only Account Balance and Risk % across sessions, via the same localStorage-backed zustand pattern as `candleStyleStore.ts` — entry/stop/target/direction are always per-trade and reset each open). Inputs: account balance, risk %, entry, stop, optional target, Long/Short direction. Outputs, live as you type: Dollar Risk, Risk/Unit, Position Size, Position Value, Risk/Reward, Potential Profit, Potential Loss. Entry pre-fills from the active symbol's latest candle close on modal open. Stop/target on the wrong side of entry for the selected direction shows a gentle inline warning (red/amber) rather than blocking the calculation — math still runs off `|entry − stop|` either way. Reused the app's existing `decimalsForPrice`/`formatPrice` (from `utils/priceFormat.ts`) for cheap-coin-safe price formatting; added a local `formatQty` for position-size decimals since quantity scales the opposite way from price (large for cheap coins, fractional for BTC).
+
+**Verified by hand** against a known example (balance $10,000, risk 1%, entry 100, stop 95, target 110): Dollar Risk $100, Position Size 20 units, Position Value $2,000, RR 1:2, Potential Profit $200 — all correct. `tsc --noEmit` clean.
+
+**Stage 4 status.** Position Calculator upgrades from 🔴 to ✅ Done. Stage 4 ~3% → ~12% (1 of 8 planned modules complete; everything else — Trade Checklist, Replay, Cluster Scanner, Open Interest, Liquidations, Alerts, Trade Journal — remains 🔴/🔵, unchanged by this session).
