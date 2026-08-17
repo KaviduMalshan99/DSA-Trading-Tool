@@ -4,6 +4,7 @@ import { useMarketStore } from '../../store/marketStore';
 import { captureChartSnapshot, canvasToBlob, downloadCanvas } from '../../utils/chartSnapshot';
 import { ChartSettingsModal } from './ChartSettingsModal';
 import { PositionCalculator } from './PositionCalculator';
+import { AlertsManager } from './AlertsManager';
 
 interface ToolbarProps {
   chartRef:     React.RefObject<IChartApi | null>;
@@ -49,6 +50,15 @@ function CalculatorIcon() {
       <line x1="8" y1="19" x2="8" y2="19.01" />
       <line x1="12" y1="19" x2="12" y2="19.01" />
       <line x1="16" y1="19" x2="16" y2="19.01" />
+    </svg>
+  );
+}
+
+function BellIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" fill="none">
+      <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
+      <path d="M13.73 21a2 2 0 0 1-3.46 0" />
     </svg>
   );
 }
@@ -170,6 +180,7 @@ function FullscreenButton() {
 export function Toolbar({ chartRef, chartAreaRef }: ToolbarProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [calcOpen, setCalcOpen] = useState(false);
+  const [alertsOpen, setAlertsOpen] = useState(false);
 
   return (
     <header className="flex items-center justify-between px-4 py-1 bg-[var(--bg-panel)] border-b border-[var(--border-color)] select-none">
@@ -186,6 +197,13 @@ export function Toolbar({ chartRef, chartAreaRef }: ToolbarProps) {
         >
           <CalculatorIcon />
         </button>
+        <button
+          onClick={() => setAlertsOpen(true)}
+          title="Alerts"
+          className="w-9 h-9 flex items-center justify-center rounded text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
+        >
+          <BellIcon />
+        </button>
         <FullscreenButton />
         <button
           onClick={() => setSettingsOpen(true)}
@@ -198,6 +216,7 @@ export function Toolbar({ chartRef, chartAreaRef }: ToolbarProps) {
       </div>
       {settingsOpen && <ChartSettingsModal onClose={() => setSettingsOpen(false)} />}
       {calcOpen && <PositionCalculator onClose={() => setCalcOpen(false)} />}
+      {alertsOpen && <AlertsManager onClose={() => setAlertsOpen(false)} />}
     </header>
   );
 }

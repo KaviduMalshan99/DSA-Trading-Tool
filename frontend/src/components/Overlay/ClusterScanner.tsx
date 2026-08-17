@@ -37,16 +37,17 @@
  *                 is still forming. Dedupes on barTime — only fires when a
  *                 stack appears on a barTime that hasn't already fired.
  *   - Delta:      deltaStore carries no timestamp, only the latest value, so
- *                 this is edge-triggered rather than time-keyed: a rolling
- *                 window of the last 20 observed |delta| magnitudes is kept
- *                 client-side, and a "large swing" fires only on the
- *                 false->true transition of (mag >= 3x the rolling average,
- *                 once at least 5 samples exist). No fixed absolute
- *                 threshold — delta's units scale wildly by coin (BTC deltas
- *                 are single digits, PEPE deltas are in the millions), so a
- *                 relative/adaptive threshold is the only coin-safe option.
- *                 Sustained large delta doesn't re-fire every tick because
- *                 of the edge trigger.
+ *                 this is edge-triggered rather than time-keyed via the
+ *                 shared createDeltaSwingDetector() (utils/deltaSwingDetector.ts)
+ *                 — a rolling window of the last 20 observed |delta|
+ *                 magnitudes, firing only on the false->true transition of
+ *                 (mag >= 3x the rolling average, once at least 5 samples
+ *                 exist). No fixed absolute threshold — delta's units scale
+ *                 wildly by coin (BTC deltas are single digits, PEPE deltas
+ *                 are in the millions), so a relative/adaptive threshold is
+ *                 the only coin-safe option. The same detector is reused
+ *                 as-is by the Alerts engine's "large delta" alert type, so
+ *                 both features agree on exactly what "large" means.
  */
 
 import { useEffect, useRef, useState } from 'react';
@@ -57,13 +58,10 @@ import { useWhaleStore } from '../../store/whaleStore';
 import { useClusterScannerStore, type ScannerEvent } from '../../store/clusterScannerStore';
 import { api } from '../../services/api';
 import { toChartTimeSeconds } from '../../utils/chartTime';
+import { createDeltaSwingDetector } from '../../utils/deltaSwingDetector';
 import type { AbsorptionData } from '../../types/analytics';
 
 const ABSORPTION_POLL_MS = 15_000; // matches ExecutionDashboard/AbsorptionOverlay
-
-const DELTA_WINDOW_SIZE = 20;   // how many recent |delta| samples the rolling average is over
-const DELTA_MIN_SAMPLES = 5;    // no swing detection until this many samples establish a baseline
-const DELTA_SWING_MULTIPLIER = 3; // |delta| must be >= 3x the rolling average to count as "large"
 
 const UP_COLOR = '#26a641';
 const DOWN_COLOR = '#f85149';
@@ -106,9 +104,7 @@ export function ClusterScanner() {
   const seededAbsorptionRef = useRef(false);
   const lastStackBarRef = useRef<number | null>(null);
   const seededStackRef = useRef(false);
-  const deltaWindowRef = useRef<number[]>([]);
-  const wasLargeDeltaRef = useRef(false);
-  const seededDeltaRef = useRef(false);
+  const deltaDetectorRef = useRef(createDeltaSwingDetector());
 
   // Symbol/interval change = new scan target: clear the feed and every
   // detector's dedupe state together so nothing straddles the switch.
@@ -119,9 +115,7 @@ export function ClusterScanner() {
     seededAbsorptionRef.current = false;
     lastStackBarRef.current = null;
     seededStackRef.current = false;
-    deltaWindowRef.current = [];
-    wasLargeDeltaRef.current = false;
-    seededDeltaRef.current = false;
+    deltaDetectorRef.current = createDeltaSwingDetector();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSymbol, activeInterval]);
 
@@ -207,19 +201,8 @@ export function ClusterScanner() {
   // ── Large delta swing detector ───────────────────────────────────────
   useEffect(() => {
     if (delta === null) return;
-    const mag = Math.abs(delta);
-
-    if (!seededDeltaRef.current) {
-      seededDeltaRef.current = true;
-      deltaWindowRef.current = [mag];
-      return;
-    }
-
-    const window = deltaWindowRef.current;
-    const avg = window.length > 0 ? window.reduce((a, b) => a + b, 0) / window.length : 0;
-    const isLarge = window.length >= DELTA_MIN_SAMPLES && avg > 0 && mag >= avg * DELTA_SWING_MULTIPLIER;
-
-    if (isLarge && !wasLargeDeltaRef.current) {
+    const fired = deltaDetectorRef.current.observe(delta);
+    if (fired) {
       addEvent({
         time: Date.now(), // deltaStore carries no bar timestamp — this is detection time, not bar time
         symbol: activeSymbol,
@@ -228,10 +211,6 @@ export function ClusterScanner() {
         label: `Large ${delta >= 0 ? '+' : ''}delta (${delta.toFixed(2)})`,
       });
     }
-    wasLargeDeltaRef.current = isLarge;
-
-    window.push(mag);
-    if (window.length > DELTA_WINDOW_SIZE) window.shift();
   }, [delta, activeSymbol, addEvent]);
 
   return (

@@ -9,6 +9,8 @@ import { ChartContainer } from './components/Chart/ChartContainer';
 import { WhaleTicker } from './components/Overlay/WhaleTicker';
 import { DOMPanel } from './components/Overlay/DOMPanel';
 import { TapePanel } from './components/Overlay/TapePanel';
+import { AlertsEngine } from './components/UI/AlertsEngine';
+import { ToastStack } from './components/UI/ToastStack';
 import { useChartStore } from './store/chartStore';
 
 export default function App() {
@@ -63,6 +65,10 @@ export default function App() {
         />
       </div>
       <StatusBar />
+      {/* Always mounted — alerts must keep firing regardless of which
+          panels/modals are open, so this isn't gated behind any toggle. */}
+      <AlertsEngine />
+      <ToastStack />
     </div>
   );
 }
