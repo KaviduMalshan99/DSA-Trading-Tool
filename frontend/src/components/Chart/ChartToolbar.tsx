@@ -15,6 +15,7 @@ const OVERLAYS: { key: OverlayType; label: string }[] = [
   { key: 'absorption',    label: 'Absorption'  },
   { key: 'execution',     label: 'Execution'   },
   { key: 'checklist',     label: 'Checklist'   },
+  { key: 'scanner',       label: 'Scanner'     },
 ];
 
 export function ChartToolbar() {
