@@ -16,6 +16,7 @@ import { StructureOverlay } from '../Overlay/StructureOverlay';
 import { AbsorptionOverlay } from '../Overlay/AbsorptionOverlay';
 import { ContextDashboard } from '../Overlay/ContextDashboard';
 import { ExecutionDashboard } from '../Overlay/ExecutionDashboard';
+import { TradeChecklist } from '../Overlay/TradeChecklist';
 import { DrawingToolbar } from '../Drawing/DrawingToolbar';
 import { DrawingCanvas } from '../Drawing/DrawingCanvas';
 import { DrawingStyleToolbar } from '../Drawing/DrawingStyleToolbar';
@@ -134,6 +135,7 @@ export function ChartContainer({ sharedChartRef, sharedSeriesRef, chartAreaRef }
             tool's pointer-events handling. */}
         {visibleOverlays.has('context') && <ContextDashboard />}
         {visibleOverlays.has('execution') && <ExecutionDashboard />}
+        {visibleOverlays.has('checklist') && <TradeChecklist />}
       </div>
 
       {/* Delta panel — 20% */}
