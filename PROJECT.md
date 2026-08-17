@@ -223,7 +223,7 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 | 1     | Foundation & Workspace     | **✅ Done**   | Workspace, chart, live data, all drawing tools (incl. Long/Short Position, Undo), overlay/loading polish complete; a few minor items deferred (see Stage 1 notes) |
 | 2     | Market Context & Structure | **✅ Done**   | All 6 planned features shipped: Institutional Levels, Session VWAP, Session boxes, Market Structure (swings/trend/lines), SMC expansion (OB/FVG/BOS/CHOCH/Liquidity Sweep), Market Context Dashboard; several nice-to-have sub-items deliberately deferred (see Stage 2 notes) |
 | 3     | Order Flow & Execution     | **~90%**   | **Closed** — Footprint (incl. reliable backfill + readability), Delta/CVD, Heatmap, Whale, DOM, Tape, Imbalance, Stacked Imbalance, Absorption, and the Execution Dashboard are all done and verified, including the last cosmetic loose end; remaining items are secondary polish (see Stage 3 notes) |
-| 4     | Trade Confirmation         | **~25%**   | Position Calculator _(Session 29)_ and Trade Checklist _(Session 30)_ done and verified; everything else not started (Replay is 0%, not 50% as previously claimed) |
+| 4     | Trade Confirmation         | **~38%**   | Position Calculator _(Session 29)_, Trade Checklist _(Session 30)_, and Cluster Scanner _(Session 31)_ done and verified; everything else not started (Replay is 0%, not 50% as previously claimed) |
 | 5     | AI Intelligence & Polish   | **~8%**    | Theme + Docker Compose only; all AI modules not started                                               |
 
 > **Correction note:** the earlier stage drafts overstated a few items. This document corrects them against the actual code: Volume Profile **POC/VAH/VAL are already built** (not 🔴), the **Delta panel already is a green/red histogram with CVD** (not 🔴), footprint **already highlights imbalances** (Session 4), and **Replay has no code at all** → 0%.
@@ -375,7 +375,7 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 
 ---
 
-## Stage 4 — Trade Confirmation & Decision Support (~25%)
+## Stage 4 — Trade Confirmation & Decision Support (~38%)
 
 **Objective:** confirm whether a setup is worth taking by combining multiple independent signals. Answers _"Is this trade worth taking?"_
 
@@ -383,7 +383,7 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 | ------------------------------------------------------------------ | ------------------------------------------------------------------ |
 | Open Interest analysis (OI, OI change, funding)                    | 🔴 _(needs Binance **futures** API — currently only spot streams)_ |
 | Liquidation analysis / heatmap                                     | 🔴                                                                 |
-| Cluster Scanner (auto-detect large delta/volume/absorption/whales) | 🔴                                                                 |
+| Cluster Scanner (auto-detect large delta/volume/absorption/whales) | ✅ Done _(Session 31)_ — live feed, per-type de-dupe, active-symbol-only (v1 scope) |
 | Professional Trade Checklist                                       | ✅ Done _(Session 30)_ — hybrid auto+manual, live verdict, cross-checked against Context/Execution |
 | Position Calculator (size, $ risk, RR)                             | ✅ Done _(Session 29)_ — risk-based position sizing, RR, verified by hand |
 | Replay & Practice                                                  | 🔴 **0%** _(no code — previously mis-stated as 50%)_               |
@@ -847,3 +847,25 @@ Four rows, each reusing a stream/endpoint that already existed rather than openi
 **Verified live.** Auto items cross-checked correct against ContextDashboard/ExecutionDashboard side by side (trend, VWAP, structure event, delta, order-flow all agreed). Manual ticks work. Verdict logic confirmed both ways: `READY` with all auto items aligned and all manual boxes ticked, flipping live to `CHECK ITEMS` the moment delta/order-flow turned against the selected direction — no reload needed, store reads are reactive. `tsc --noEmit` clean.
 
 **Stage 4 status.** Trade Checklist upgrades from 🔴 to ✅ Done. Stage 4 ~12% → ~25% (2 of 8 planned modules complete; Replay, Cluster Scanner, Open Interest, Liquidations, Alerts, Trade Journal remain 🔴/🔵, unchanged by this session).
+
+### Session 31 — August 18, 2026
+
+**Cluster Scanner built and verified — Stage 4's third shipped feature.** Deliberately builds **no new detection**: `ClusterScanner.tsx` (new, toggled via a "Scanner" button in `ChartToolbar.tsx`, off by default, mounted bottom-left of the chart area — the one corner still free after Context top-right/Execution top-left/Checklist bottom-right) + `clusterScannerStore.ts` (in-memory only, capped at 100 events, deliberately **not** persisted — a stale event log surviving a reload would misrepresent "what's happening right now"). Watches the exact same sources ExecutionDashboard already reads — `deltaStore`, `footprintSignalStore`, `whaleStore`, and a `GET /indicators/absorption` REST poll at the same 15s cadence — and opens no new streams/connections.
+
+**De-dupe approach, the main risk called out up front — one per event type, since each source shapes the problem differently:**
+- **Whale** — `whaleStore.trades` already contains only whale-flagged trades; tracks the newest `.time` already processed, only strictly-later trades count as new.
+- **Absorption** — the REST poll returns a full snapshot of the lookback window every time (not just new events), so a `Set<"type-time">` of already-seen keys filters it down.
+- **Stack** — `footprintSignalStore` reflects only the current bar's strongest signal, which would otherwise re-fire every render while that bar is still forming; dedupes on `barTime`, only fires once per bar.
+- **Delta** — `deltaStore` carries no timestamp at all, so this one is edge-triggered rather than time-keyed (see below).
+
+All four seed their dedupe state from whatever's already buffered at mount/symbol-switch **without** back-filling the feed, so toggling the panel on doesn't dump a burst of stale history.
+
+**Delta-swing threshold — coin-relative, not a fixed number.** Delta's units scale wildly by coin (BTC deltas are single digits, PEPE deltas are in the millions), so a hardcoded absolute threshold would either spam constantly on cheap coins or never fire on BTC. Instead: a rolling window of the last 20 observed `|delta|` magnitudes (minimum 5 samples before it can fire at all), flagged "large" at **≥3× the rolling average**, firing only on the false→true transition so a sustained large-delta stretch logs once rather than every tick.
+
+**Scope — active symbol only, noted as v1.** A true multi-symbol market-wide scanner would need live connections to many symbols' streams simultaneously (footprint/delta/whale are all per-symbol WebSocket connections today); that's a bigger future piece of work, not attempted here. Switching symbol or interval clears both the feed and every detector's dedupe state together, since a feed still showing the previous symbol's events under a "Scanner · SYMBOL" header would be actively misleading.
+
+**One spec deviation, called out rather than silently made:** each row doesn't repeat the symbol per entry — shown once in the header instead, since the clear-on-switch behavior guarantees every visible row already belongs to that symbol, making a per-row repeat pure redundancy. The `symbol` field is still stored on every event underneath.
+
+**Verified live.** Distinct whale/absorption/stack/large-delta events appeared as they happened, no duplicate spam, de-dupe held per type, and switching symbol cleanly wiped the feed.
+
+**Stage 4 status.** Cluster Scanner upgrades from 🔴 to ✅ Done. Stage 4 ~25% → ~38% (3 of 8 planned modules complete; Replay, Open Interest, Liquidations, Alerts, Trade Journal remain 🔴/🔵, unchanged by this session).
