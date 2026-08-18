@@ -21,11 +21,3 @@ async def get_candles(
             raise HTTPException(status_code=404, detail="No candles found")
         return [json.loads(latest)]
     return [json.loads(c) for c in raw]
-
-
-@router.get("/{symbol}/latest")
-async def get_latest_candle(symbol: str, interval: str = Query("1m")):
-    raw = await cache_get(f"latest_candle:{symbol}:{interval}")
-    if not raw:
-        raise HTTPException(status_code=404, detail="No candle data available")
-    return json.loads(raw)

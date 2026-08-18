@@ -12,14 +12,6 @@ _providers = {
 }
 
 
-@router.get("/")
-async def list_symbols(market: str = Query("crypto", enum=["crypto", "forex", "stocks"])):
-    """Return available trading symbols for the selected market."""
-    provider = _providers[market]
-    symbols = await provider.get_symbols()
-    return {"market": market, "symbols": symbols}
-
-
 @router.get("/search")
 async def search_symbols(q: str = Query(..., min_length=1), market: str = Query("crypto")):
     provider = _providers[market]
