@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import type { IChartApi, ISeriesApi } from 'lightweight-charts';
 import { useMarketStore } from '../../store/marketStore';
+import { useReplayStore } from '../../store/replayStore';
 import { shiftEpochSeconds } from '../../utils/chartTime';
 
 const WS_BASE     = import.meta.env.VITE_WS_URL ?? 'ws://localhost:8000';
@@ -62,6 +63,7 @@ export function HeatmapCanvas({ sharedChartRef, sharedSeriesRef }: HeatmapCanvas
   const snapshotsRef = useRef<Snapshot[]>([]);
 
   const { activeSymbol } = useMarketStore();
+  const replayActive = useReplayStore((s) => s.isActive);
 
   // ── Draw ─────────────────────────────────────────────────────────────────
   const drawFnRef = useRef<() => void>(() => {});
@@ -77,6 +79,13 @@ export function HeatmapCanvas({ sharedChartRef, sharedSeriesRef }: HeatmapCanvas
     const W = canvas.width;
     const H = canvas.height;
     ctx.clearRect(0, 0, W, H);
+
+    // Heatmap is sourced from the live order book, which has no historical
+    // equivalent — leave the canvas blank (rather than painting live bands
+    // over replayed candles) while replay is active. The WS below keeps
+    // filling snapshotsRef in the background so exiting replay redraws
+    // instantly with no gap.
+    if (replayActive) return;
 
     const raw = snapshotsRef.current;
     if (raw.length === 0) return;
@@ -254,9 +263,19 @@ export function HeatmapCanvas({ sharedChartRef, sharedSeriesRef }: HeatmapCanvas
     };
   }, [activeSymbol, scheduleDraw]);
 
+  // Redraw immediately on replay entry/exit — blank while active, restored on exit.
+  useEffect(() => {
+    scheduleDraw();
+  }, [replayActive, scheduleDraw]);
+
   return (
     <div ref={containerRef} className="absolute inset-0 pointer-events-none z-0">
       <canvas ref={canvasRef} className="absolute inset-0" />
+      {replayActive && (
+        <div className="absolute top-2 left-1/2 -translate-x-1/2 z-10 select-none text-[10px] text-[var(--text-muted)] bg-[var(--bg-panel)]/80 px-2 py-0.5 rounded">
+          Heatmap — not available in replay
+        </div>
+      )}
     </div>
   );
 }

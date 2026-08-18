@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { IChartApi, ISeriesApi } from 'lightweight-charts';
 import { useMarketStore } from '../../store/marketStore';
+import { useReplayStore } from '../../store/replayStore';
 import { useWhaleStore, type WhaleTrade } from '../../store/whaleStore';
 import { toChartTime } from '../../utils/chartTime';
 
@@ -35,6 +36,7 @@ export function WhaleMarkers({ sharedChartRef, sharedSeriesRef }: WhaleMarkersPr
 
   const { activeSymbol } = useMarketStore();
   const { addTrades, clearTrades } = useWhaleStore();
+  const replayActive = useReplayStore((s) => s.isActive);
 
   // ── Draw ─────────────────────────────────────────────────────────────────
   const drawFnRef = useRef<() => void>(() => {});
@@ -48,6 +50,12 @@ export function WhaleMarkers({ sharedChartRef, sharedSeriesRef }: WhaleMarkersPr
     if (!ctx) return;
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Whale trades are live tape data with no historical equivalent — leave
+    // the canvas blank while replay is active rather than plotting live
+    // bubbles over replayed candles. The WS below keeps feeding tradesRef
+    // and whaleStore in the background so exiting replay is instant.
+    if (replayActive) return;
 
     const now    = Date.now();
     const cutoff = now - RECENT_MS;
@@ -140,7 +148,7 @@ export function WhaleMarkers({ sharedChartRef, sharedSeriesRef }: WhaleMarkersPr
       const canvas = canvasRef.current;
       const chart  = sharedChartRef.current;
       const series = sharedSeriesRef.current;
-      if (!canvas || !chart || !series) { setTooltip(null); return; }
+      if (!canvas || !chart || !series || useReplayStore.getState().isActive) { setTooltip(null); return; }
 
       const rect   = canvas.getBoundingClientRect();
       const mouseX = e.clientX - rect.left;
@@ -217,10 +225,21 @@ export function WhaleMarkers({ sharedChartRef, sharedSeriesRef }: WhaleMarkersPr
     };
   }, [activeSymbol, addTrades, clearTrades, scheduleDraw]);
 
+  // Redraw immediately on replay entry/exit — blank while active, restored on exit.
+  useEffect(() => {
+    scheduleDraw();
+    if (replayActive) setTooltip(null);
+  }, [replayActive, scheduleDraw]);
+
   return (
     <>
       <div ref={containerRef} className="absolute inset-0 pointer-events-none z-20">
         <canvas ref={canvasRef} className="absolute inset-0" />
+        {replayActive && (
+          <div className="absolute top-8 left-1/2 -translate-x-1/2 z-10 select-none text-[10px] text-[var(--text-muted)] bg-[var(--bg-panel)]/80 px-2 py-0.5 rounded">
+            Whale markers — not available in replay
+          </div>
+        )}
       </div>
 
       {tooltip && (

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMarketStore } from '../../store/marketStore';
+import { useReplayStore } from '../../store/replayStore';
 import { decimalsForPrice } from '../../utils/priceFormat';
 
 const WS_BASE = import.meta.env.VITE_WS_URL ?? 'ws://localhost:8000';
@@ -39,6 +40,7 @@ function Row({ price, qty, maxQty, side, decimals }: {
 
 export function DOMPanel() {
   const { activeSymbol } = useMarketStore();
+  const replayActive = useReplayStore((s) => s.isActive);
   const [book, setBook] = useState<DomSnapshot | null>(null);
   const [connected, setConnected] = useState(false);
 
@@ -104,13 +106,15 @@ export function DOMPanel() {
         </span>
       </div>
 
-      {!connected && !book && (
+      {replayActive ? (
+        <div className="flex-1 flex items-center justify-center text-center px-3 text-[11px] text-[var(--text-muted)] italic">
+          Not available in replay — DOM is live-only.
+        </div>
+      ) : !connected && !book ? (
         <div className="flex-1 flex items-center justify-center text-[11px] text-[var(--text-muted)] italic">
           Connecting…
         </div>
-      )}
-
-      {(connected || book) && (
+      ) : (
         <>
           <div className="flex-1 overflow-y-auto min-h-0 flex flex-col justify-end">
             {asksDisplay.length === 0 ? (
