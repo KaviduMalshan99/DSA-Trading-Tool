@@ -24,12 +24,12 @@ export function ChartToolbar() {
   const footprintActive = visibleOverlays.has('footprint');
 
   return (
-    <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--bg-panel)] border-b border-[var(--border-color)]">
+    <div className="flex flex-wrap items-center gap-2 px-3 py-1.5 bg-[var(--bg-panel)] border-b border-[var(--border-color)]">
       <TimeframeDropdown />
 
       <div className="w-px h-4 bg-[var(--border-color)] mx-1" />
 
-      <div className="flex gap-1">
+      <div className="flex flex-wrap gap-1">
         {OVERLAYS.map(({ key, label }) => (
           <button
             key={key}
