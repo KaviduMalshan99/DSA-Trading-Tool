@@ -20,9 +20,16 @@
 import { useEffect, useRef, useState } from 'react';
 import type { IChartApi, ISeriesApi } from 'lightweight-charts';
 import { useMarketStore } from '../../store/marketStore';
+import { useReplayStore } from '../../store/replayStore';
 import { toChartTimeSeconds } from '../../utils/chartTime';
+import { decimalsForPrice } from '../../utils/priceFormat';
+import { detectSwingsFromCandles } from '../../utils/klineAnalytics';
 import { api } from '../../services/api';
 import type { MarketTrend, StructureData, SwingPoint } from '../../types/analytics';
+
+// Matches the backend's `swing_strength` default (see indicators.py) — the
+// live poll uses the backend default too, so replay and live agree.
+const REPLAY_SWING_STRENGTH = 3;
 
 const POLL_MS = 15_000;
 
@@ -67,6 +74,9 @@ export function StructureOverlay({ sharedChartRef, sharedSeriesRef }: StructureO
   const [trend, setTrend] = useState<MarketTrend | null>(null);
 
   const { activeSymbol, activeInterval } = useMarketStore();
+  const replayActive = useReplayStore((s) => s.isActive);
+  const replayCursorTime = useReplayStore((s) => s.cursorTime);
+  const wasReplayActiveRef = useRef(false);
 
   const drawFnRef = useRef<() => void>(() => {});
   drawFnRef.current = () => {
@@ -281,6 +291,9 @@ export function StructureOverlay({ sharedChartRef, sharedSeriesRef }: StructureO
     let stopped = false;
 
     async function fetchStructure() {
+      // Don't let the live poll clobber the replay-computed data while
+      // replay is active — the replay effect below owns dataRef until exit.
+      if (useReplayStore.getState().isActive) return;
       try {
         const data = await api.getStructure(activeSymbol, activeInterval);
         if (!stopped) {
@@ -298,6 +311,31 @@ export function StructureOverlay({ sharedChartRef, sharedSeriesRef }: StructureO
       clearInterval(timer);
     };
   }, [activeSymbol, activeInterval, scheduleDraw]);
+
+  // ── Replay: recompute locally from the truncated candle window ───────────
+  useEffect(() => {
+    if (replayActive && replayCursorTime != null) {
+      const candles = useMarketStore.getState().candles.filter((c) => c.t <= replayCursorTime);
+      const last = candles.at(-1);
+      if (!last) {
+        dataRef.current = null;
+        setTrend(null);
+      } else {
+        const decimals = decimalsForPrice(last.c);
+        const data = detectSwingsFromCandles(candles, decimals, REPLAY_SWING_STRENGTH);
+        dataRef.current = data;
+        setTrend(data.current_trend);
+      }
+      scheduleDraw();
+    } else if (wasReplayActiveRef.current) {
+      // Just exited — refresh from the live endpoint immediately instead of
+      // waiting up to POLL_MS for the background poll to catch up.
+      api.getStructure(activeSymbol, activeInterval)
+        .then((data) => { dataRef.current = data; setTrend(data.current_trend); scheduleDraw(); })
+        .catch(() => { /* keep last-known swings */ });
+    }
+    wasReplayActiveRef.current = replayActive;
+  }, [replayActive, replayCursorTime, activeSymbol, activeInterval, scheduleDraw]);
 
   return (
     <div ref={containerRef} className="absolute inset-0 pointer-events-none z-10">

@@ -11,8 +11,11 @@
 import { useEffect, useRef, useState } from 'react';
 import type { IChartApi, ISeriesApi } from 'lightweight-charts';
 import { useMarketStore } from '../../store/marketStore';
+import { useReplayStore } from '../../store/replayStore';
 import { api } from '../../services/api';
 import { toChartTime } from '../../utils/chartTime';
+import { decimalsForPrice } from '../../utils/priceFormat';
+import { computeSessionVWAPFromCandles } from '../../utils/klineAnalytics';
 
 const VWAP_COLOR = '#ab47bc'; // distinct from the levels palette (grey/orange/cyan)
 const POLL_MS = 30_000;       // keeps the still-forming candle's VWAP fresh between bars
@@ -32,6 +35,10 @@ export function VWAPOverlay({ sharedChartRef }: VWAPOverlayProps) {
   // in place while it's still forming, so ticks within a bar leave `t` alone
   // and don't re-trigger the fetch below.
   const lastCandleTime = useMarketStore((s) => s.candles.at(-1)?.t ?? null);
+
+  const replayActive = useReplayStore((s) => s.isActive);
+  const replayCursorTime = useReplayStore((s) => s.cursorTime);
+  const wasReplayActiveRef = useRef(false);
 
   // ── Line series lifecycle ─────────────────────────────────────────────────
   useEffect(() => {
@@ -59,10 +66,18 @@ export function VWAPOverlay({ sharedChartRef }: VWAPOverlayProps) {
   // ── Fetch the session series (refetch on new bar + poll intra-bar) ────────
   useEffect(() => {
     let stopped = false;
-    seriesRef.current?.setData([]); // drop the previous symbol/interval immediately
-    setCurrent(null);
+    // Skip the clear while replay is active: lastCandleTime still advances in
+    // the background (the live WS keeps flowing), which would otherwise blank
+    // the replay-computed line every time a live bar closes underneath it.
+    if (!useReplayStore.getState().isActive) {
+      seriesRef.current?.setData([]); // drop the previous symbol/interval immediately
+      setCurrent(null);
+    }
 
     async function fetchVWAP() {
+      // Don't let the live poll clobber the replay-computed line while
+      // replay is active — the replay effect below owns the series until exit.
+      if (useReplayStore.getState().isActive) return;
       try {
         const data = await api.getSessionVWAP(activeSymbol, activeInterval);
         if (stopped || !seriesRef.current) return;
@@ -92,6 +107,43 @@ export function VWAPOverlay({ sharedChartRef }: VWAPOverlayProps) {
       clearInterval(timer);
     };
   }, [activeSymbol, activeInterval, lastCandleTime]);
+
+  // ── Replay: recompute locally from the truncated candle window ───────────
+  useEffect(() => {
+    const series = seriesRef.current;
+    if (!series) return;
+
+    if (replayActive && replayCursorTime != null) {
+      const candles = useMarketStore.getState().candles.filter((c) => c.t <= replayCursorTime);
+      const last = candles.at(-1);
+      const data = last ? computeSessionVWAPFromCandles(candles, decimalsForPrice(last.c)) : null;
+      if (data) {
+        series.setData(data.points.map((p) => ({ time: toChartTime(p.time), value: p.vwap })));
+        series.applyOptions({
+          priceFormat: { type: 'price', precision: data.decimals, minMove: Math.pow(10, -data.decimals) },
+        });
+        setDecimals(data.decimals);
+        setCurrent(data.current);
+      } else {
+        series.setData([]);
+        setCurrent(null);
+      }
+    } else if (wasReplayActiveRef.current) {
+      // Just exited — refresh from the live endpoint immediately instead of
+      // waiting up to POLL_MS for the background poll to catch up.
+      api.getSessionVWAP(activeSymbol, activeInterval)
+        .then((data) => {
+          series.setData(data.points.map((p) => ({ time: toChartTime(p.time), value: p.vwap })));
+          series.applyOptions({
+            priceFormat: { type: 'price', precision: data.decimals, minMove: Math.pow(10, -data.decimals) },
+          });
+          setDecimals(data.decimals);
+          setCurrent(data.current);
+        })
+        .catch(() => setCurrent(null));
+    }
+    wasReplayActiveRef.current = replayActive;
+  }, [replayActive, replayCursorTime, activeSymbol, activeInterval]);
 
   if (current === null) return null;
 

@@ -13,6 +13,7 @@
 import { useEffect, useRef } from 'react';
 import type { IChartApi, Logical } from 'lightweight-charts';
 import { useMarketStore } from '../../store/marketStore';
+import { useReplayStore } from '../../store/replayStore';
 import { intervalToSecs } from '../../utils/interval';
 import type { Candle } from '../../types/market';
 
@@ -112,7 +113,11 @@ export function SessionBoxes({ sharedChartRef }: SessionBoxesProps) {
     // one bar and tell the trader nothing — same principle as session VWAP.
     if (intervalSecs >= 86_400) return;
 
-    const candles = useMarketStore.getState().candles;
+    const { isActive: replayActive, cursorTime: replayCursorTime } = useReplayStore.getState();
+    const allCandles = useMarketStore.getState().candles;
+    const candles = replayActive && replayCursorTime != null
+      ? allCandles.filter((c) => c.t <= replayCursorTime)
+      : allCandles;
     if (candles.length < 2) return;
 
     const intervalMs = intervalSecs * 1000;
@@ -164,7 +169,12 @@ export function SessionBoxes({ sharedChartRef }: SessionBoxesProps) {
         // on this path — applying it here would slide every band 5.5h off the
         // candles it describes.
         const startMs = dayStart + session.startHour * 3_600_000;
-        const endMs = dayStart + session.endHour * 3_600_000;
+        let endMs = dayStart + session.endHour * 3_600_000;
+        // Replay: a session in progress at the cursor should read as
+        // in-progress — clip its right edge so it doesn't shade hours that
+        // haven't been revealed yet, same principle as candles being hidden.
+        if (replayActive && replayCursorTime != null) endMs = Math.min(endMs, replayCursorTime);
+        if (endMs <= startMs) return; // session hasn't started yet as of the replay cursor
 
         const rawLeft = logicalToX(timeToLogical(startMs, candles, intervalMs));
         const rawRight = logicalToX(timeToLogical(endMs, candles, intervalMs));

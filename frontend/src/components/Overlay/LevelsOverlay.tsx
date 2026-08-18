@@ -6,7 +6,10 @@
 import { useEffect, useRef } from 'react';
 import type { IChartApi, ISeriesApi } from 'lightweight-charts';
 import { useMarketStore } from '../../store/marketStore';
+import { useReplayStore } from '../../store/replayStore';
 import { api } from '../../services/api';
+import { decimalsForPrice } from '../../utils/priceFormat';
+import { computeLevelsFromIntraday } from '../../utils/klineAnalytics';
 import type { LevelsData } from '../../types/analytics';
 
 const POLL_MS = 5 * 60_000; // levels move at most once a day — a slow refresh is plenty
@@ -47,6 +50,9 @@ export function LevelsOverlay({ sharedChartRef, sharedSeriesRef }: LevelsOverlay
   const dataRef      = useRef<LevelsData | null>(null);
 
   const { activeSymbol } = useMarketStore();
+  const replayActive = useReplayStore((s) => s.isActive);
+  const replayCursorTime = useReplayStore((s) => s.cursorTime);
+  const wasReplayActiveRef = useRef(false);
 
   const drawFnRef = useRef<() => void>(() => {});
   drawFnRef.current = () => {
@@ -173,6 +179,9 @@ export function LevelsOverlay({ sharedChartRef, sharedSeriesRef }: LevelsOverlay
     let stopped = false;
 
     async function fetchLevels() {
+      // Don't let the live poll clobber the replay-computed levels while
+      // replay is active — the replay effect below owns dataRef until exit.
+      if (useReplayStore.getState().isActive) return;
       try {
         const data = await api.getLevels(activeSymbol);
         if (!stopped) {
@@ -189,6 +198,29 @@ export function LevelsOverlay({ sharedChartRef, sharedSeriesRef }: LevelsOverlay
       clearInterval(timer);
     };
   }, [activeSymbol, scheduleDraw]);
+
+  // ── Replay: recompute locally from the truncated candle window ───────────
+  // Aggregates the loaded intraday candles by UTC day instead of the backend's
+  // real 1d klines — works for intervals that pack multiple bars into a day
+  // (1m through 12h/1d); a single 3d/1w/1M bar spans multiple days, so this
+  // degrades on those timeframes.
+  useEffect(() => {
+    if (replayActive && replayCursorTime != null) {
+      const candles = useMarketStore.getState().candles;
+      const last = [...candles].reverse().find((c) => c.t <= replayCursorTime);
+      dataRef.current = last
+        ? computeLevelsFromIntraday(candles, decimalsForPrice(last.c), replayCursorTime)
+        : null;
+      scheduleDraw();
+    } else if (wasReplayActiveRef.current) {
+      // Just exited — refresh from the live endpoint immediately instead of
+      // waiting up to POLL_MS for the background poll to catch up.
+      api.getLevels(activeSymbol)
+        .then((data) => { dataRef.current = data; scheduleDraw(); })
+        .catch(() => { /* keep last-known levels */ });
+    }
+    wasReplayActiveRef.current = replayActive;
+  }, [replayActive, replayCursorTime, activeSymbol, scheduleDraw]);
 
   return (
     <div ref={containerRef} className="absolute inset-0 pointer-events-none z-10">
