@@ -3,6 +3,7 @@ import { createChart, type IChartApi, type ISeriesApi } from 'lightweight-charts
 import { useMarketStore } from '../../store/marketStore';
 import { useThemeStore, type Theme } from '../../store/themeStore';
 import { useDeltaStore } from '../../store/deltaStore';
+import { useReplayStore } from '../../store/replayStore';
 import { toChartTime } from '../../utils/chartTime';
 
 const WS_BASE = import.meta.env.VITE_WS_URL ?? 'ws://localhost:8000';
@@ -56,12 +57,18 @@ export function DeltaPanel({ sharedChartRef }: DeltaPanelProps) {
   const chartRef     = useRef<IChartApi | null>(null);
   const histoRef     = useRef<ISeriesApi<'Histogram'> | null>(null);
   const cvdRef       = useRef<ISeriesApi<'Line'> | null>(null);
+  // All bars seen so far (historical + live), chronological — the live WS
+  // keeps this current in the background even while replay is active, same
+  // as FootprintCanvas's barsRef, so exiting replay never needs a refetch.
+  const barsRef       = useRef<DeltaBar[]>([]);
 
   const [currentDelta, setCurrentDelta] = useState<number | null>(null);
   const [currentCvd,   setCurrentCvd]   = useState<number | null>(null);
 
   const { activeSymbol, activeInterval } = useMarketStore();
   const theme = useThemeStore((s) => s.theme);
+  const replayActive     = useReplayStore((s) => s.isActive);
+  const replayCursorTime = useReplayStore((s) => s.cursorTime);
 
   // ── Chart initialisation + time-scale sync ────────────────────────────
   useEffect(() => {
@@ -174,6 +181,7 @@ export function DeltaPanel({ sharedChartRef }: DeltaPanelProps) {
   // ── WebSocket: historical + live delta updates ─────────────────────────
   useEffect(() => {
     // Clear stale series data immediately on symbol/interval change
+    barsRef.current = [];
     histoRef.current?.setData([]);
     cvdRef.current?.setData([]);
     setCurrentDelta(null);
@@ -198,6 +206,12 @@ export function DeltaPanel({ sharedChartRef }: DeltaPanelProps) {
 
           if (msg.type === 'historical' && msg.deltas) {
             const bars = msg.deltas;
+            barsRef.current = bars;
+
+            // Don't paint over the replay-truncated view — the dedicated
+            // replay effect below owns the series while replay is active;
+            // barsRef is already updated above so it'll pick this up.
+            if (useReplayStore.getState().isActive) return;
 
             // setData() on a fresh series auto-fits this chart's own visible
             // range to everything just loaded. Since the sync with the main
@@ -229,6 +243,22 @@ export function DeltaPanel({ sharedChartRef }: DeltaPanelProps) {
             useDeltaStore.getState().setFromBars(bars);
           } else if (msg.type === 'update' && msg.delta) {
             const b = msg.delta;
+
+            // Keep the background buffer current regardless of replay, same
+            // as marketStore.appendCandle during Layer 1 — exiting replay
+            // then needs no refetch, just a redraw from barsRef.
+            const lastBuffered = barsRef.current.at(-1);
+            if (lastBuffered && lastBuffered.time === b.time) {
+              barsRef.current = [...barsRef.current.slice(0, -1), b];
+            } else {
+              // Capped the same way marketStore caps candles — an unbounded
+              // live session would otherwise grow this forever.
+              barsRef.current = [...barsRef.current, b].slice(-2000);
+            }
+
+            // Don't paint this live tick onto the chart while replay is
+            // active — mirrors TradingChart's own live-update guard.
+            if (useReplayStore.getState().isActive) return;
 
             histoRef.current?.update({
               time:  toSec(b.time),
@@ -262,6 +292,30 @@ export function DeltaPanel({ sharedChartRef }: DeltaPanelProps) {
       ws?.close();
     };
   }, [activeSymbol, activeInterval, sharedChartRef]);
+
+  // ── Replay: draw from the truncated (or, on exit, full) buffer ───────────
+  // barsRef is always current — the live WS above keeps appending to it in
+  // the background regardless of replay — so this never needs a refetch,
+  // just a redraw: filtered while active, the full buffer once inactive.
+  useEffect(() => {
+    const bars = replayActive && replayCursorTime != null
+      ? barsRef.current.filter((b) => b.time <= replayCursorTime)
+      : barsRef.current;
+
+    histoRef.current?.setData(
+      bars.map((b) => ({
+        time:  toSec(b.time),
+        value: b.delta,
+        color: b.delta >= 0 ? '#26a64180' : '#f8514980',
+      }))
+    );
+    cvdRef.current?.setData(bars.map((b) => ({ time: toSec(b.time), value: b.cvd })));
+
+    const last = bars.at(-1);
+    setCurrentDelta(last?.delta ?? null);
+    setCurrentCvd(last?.cvd ?? null);
+    if (bars.length > 0) useDeltaStore.getState().setFromBars(bars);
+  }, [replayActive, replayCursorTime]);
 
   const fmtNum = (n: number) =>
     (n >= 0 ? '+' : '') + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });

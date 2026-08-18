@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import type { IChartApi, ISeriesApi } from 'lightweight-charts';
 import { useMarketStore } from '../../store/marketStore';
 import { useChartStore } from '../../store/chartStore';
+import { useReplayStore } from '../../store/replayStore';
 import { useFootprintSignalStore } from '../../store/footprintSignalStore';
 import { intervalToSecs } from '../../utils/interval';
 import { toChartTimeSeconds } from '../../utils/chartTime';
@@ -127,6 +128,8 @@ export function FootprintCanvas({ sharedChartRef, sharedSeriesRef }: FootprintCa
   const { activeSymbol, activeInterval } = useMarketStore();
   const imbalanceRatio = useChartStore((s) => s.imbalanceRatio);
   const stackSize      = useChartStore((s) => s.stackSize);
+  const replayActive     = useReplayStore((s) => s.isActive);
+  const replayCursorTime = useReplayStore((s) => s.cursorTime);
 
   // ── Draw ─────────────────────────────────────────────────────────────────
   const drawFnRef = useRef<() => void>(() => {});
@@ -155,6 +158,11 @@ export function FootprintCanvas({ sharedChartRef, sharedSeriesRef }: FootprintCa
     ctx.textBaseline = 'middle';
 
     for (const bar of barsRef.current.values()) {
+      // Replay: skip bars later than the replay cursor — the live WS keeps
+      // filling barsRef in the background the whole time (see the WS effect
+      // below), so this is purely a draw-time filter, not a data gate.
+      if (replayActive && (replayCursorTime == null || bar.time > replayCursorTime)) continue;
+
       const openSec  = toChartTimeSeconds(bar.time);
       const closeSec = openSec + intervalSecs;
 
@@ -370,6 +378,13 @@ export function FootprintCanvas({ sharedChartRef, sharedSeriesRef }: FootprintCa
   useEffect(() => {
     scheduleDraw();
   }, [imbalanceRatio, stackSize, scheduleDraw]);
+
+  // Redraw on every replay step/entry/exit — the chart's own range-change
+  // event usually covers this too (ReplayEngine moves the visible range on
+  // every step), but this makes the redraw explicit rather than incidental.
+  useEffect(() => {
+    scheduleDraw();
+  }, [replayActive, replayCursorTime, scheduleDraw]);
 
   // ── Resize canvas ─────────────────────────────────────────────────────────
   useEffect(() => {
