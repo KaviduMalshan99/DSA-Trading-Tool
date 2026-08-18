@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, memo } from 'react';
 import { useDrawingStore } from '../../store/drawingStore';
 import { ALL_TOOL_ICON, ALL_TOOL_LABEL } from './DrawingToolbar';
 
@@ -27,7 +27,7 @@ const DEFAULT_POS = { x: 280, y: 12 };
 // dropdown's options list shows up here as a one-click shortcut. It's a free
 // floating bar (not docked to the sidebar) so it can be dragged anywhere over
 // the chart, same as TradingView's; position persists in the drawing store.
-export function FavoritesToolbar() {
+export const FavoritesToolbar = memo(function FavoritesToolbar() {
   const {
     favoriteTools, favoritesBarOpen, favoritesBarPos, setFavoritesBarPos, toggleFavoritesBar,
     activeTool, setTool,
@@ -121,4 +121,4 @@ export function FavoritesToolbar() {
       </button>
     </div>
   );
-}
+});

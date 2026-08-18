@@ -20,7 +20,12 @@ const OVERLAYS: { key: OverlayType; label: string }[] = [
 ];
 
 export function ChartToolbar() {
-  const { visibleOverlays, toggleOverlay, imbalanceRatio, setImbalanceRatio, stackSize, setStackSize } = useChartStore();
+  const visibleOverlays  = useChartStore((s) => s.visibleOverlays);
+  const toggleOverlay    = useChartStore((s) => s.toggleOverlay);
+  const imbalanceRatio   = useChartStore((s) => s.imbalanceRatio);
+  const setImbalanceRatio = useChartStore((s) => s.setImbalanceRatio);
+  const stackSize        = useChartStore((s) => s.stackSize);
+  const setStackSize     = useChartStore((s) => s.setStackSize);
   const footprintActive = visibleOverlays.has('footprint');
 
   return (

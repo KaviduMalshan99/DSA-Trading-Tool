@@ -2,7 +2,8 @@ import { useCallback } from 'react';
 import { useChartStore } from '../store/chartStore';
 
 export function useChartSync() {
-  const { setVisibleRange, setCrosshair } = useChartStore();
+  const setVisibleRange = useChartStore((s) => s.setVisibleRange);
+  const setCrosshair    = useChartStore((s) => s.setCrosshair);
 
   const onRangeChange = useCallback(
     (from: number, to: number) => setVisibleRange(from, to),

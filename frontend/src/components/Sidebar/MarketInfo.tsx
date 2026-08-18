@@ -14,7 +14,7 @@ interface Ticker24hr {
 
 export function MarketInfo() {
   const { activeSymbol } = useMarketStore();
-  const { crosshairPrice } = useChartStore();
+  const crosshairPrice = useChartStore((s) => s.crosshairPrice);
   const [ticker, setTicker] = useState<Ticker24hr | null>(null);
   const [loading, setLoading] = useState(true);
 

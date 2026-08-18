@@ -32,7 +32,7 @@ export interface ChartContainerProps {
 }
 
 export function ChartContainer({ sharedChartRef, sharedSeriesRef, chartAreaRef }: ChartContainerProps) {
-  const { visibleOverlays } = useChartStore();
+  const visibleOverlays = useChartStore((s) => s.visibleOverlays);
 
   return (
     <div className="flex flex-col h-full">

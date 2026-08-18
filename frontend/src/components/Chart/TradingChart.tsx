@@ -66,7 +66,7 @@ export function TradingChart({ sharedChartRef, sharedSeriesRef }: TradingChartPr
 
   const { activeSymbol, activeInterval, setCandles, appendCandle, prependCandles } = useMarketStore();
   const { onRangeChange, onCrosshairMove } = useChartSync();
-  const { visibleOverlays } = useChartStore();
+  const visibleOverlays = useChartStore((s) => s.visibleOverlays);
   const candleStyle = useCandleStyleStore();
   const theme = useThemeStore((s) => s.theme);
   const replayActive = useReplayStore((s) => s.isActive);

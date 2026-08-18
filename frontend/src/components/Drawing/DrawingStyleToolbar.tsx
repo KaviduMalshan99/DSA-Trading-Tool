@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, memo } from 'react';
 import type { IChartApi, ISeriesApi } from 'lightweight-charts';
 import { useDrawingStore, type Drawing, type PositionDrawing } from '../../store/drawingStore';
 import { priceToY, timeToX, computeParallelOffset } from './DrawingCanvas';
@@ -23,7 +23,7 @@ interface Props {
   sharedSeriesRef: React.RefObject<ISeriesApi<'Candlestick'> | null>;
 }
 
-export function DrawingStyleToolbar({ sharedChartRef, sharedSeriesRef }: Props) {
+export const DrawingStyleToolbar = memo(function DrawingStyleToolbar({ sharedChartRef, sharedSeriesRef }: Props) {
   const { drawings, selectedId, updateDrawing, deleteDrawing, drawingsHidden, drawingsLocked } = useDrawingStore();
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
   const [openMenu, setOpenMenu] = useState<MenuKind>(null);
@@ -379,4 +379,4 @@ export function DrawingStyleToolbar({ sharedChartRef, sharedSeriesRef }: Props) 
       </button>
     </div>
   );
-}
+});

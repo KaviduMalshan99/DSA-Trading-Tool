@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, memo } from 'react';
 import {
   useDrawingStore,
   CURSOR_MODES,
@@ -515,7 +515,7 @@ function FavoritableMenuItem({
   );
 }
 
-export function DrawingToolbar() {
+export const DrawingToolbar = memo(function DrawingToolbar() {
   const {
     activeTool, lastCursorMode, lastTrendTool, lastShapeTool, lastAnnotationTool, lastPositionRangeTool,
     drawings, setTool, selectedId, deleteDrawing, clearAll,
@@ -982,4 +982,4 @@ export function DrawingToolbar() {
       </div>
     </div>
   );
-}
+});

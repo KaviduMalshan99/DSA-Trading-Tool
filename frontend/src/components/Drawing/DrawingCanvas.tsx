@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useState } from 'react';
+import { useEffect, useRef, useCallback, useState, memo } from 'react';
 import type { IChartApi, ISeriesApi } from 'lightweight-charts';
 import { useDrawingStore, type Drawing, type DrawingTool } from '../../store/drawingStore';
 import { useMarketStore } from '../../store/marketStore';
@@ -1532,7 +1532,7 @@ function getNearestCandleTime(
 
 // ── main component ────────────────────────────────────────────────────────────
 
-export function DrawingCanvas({ sharedChartRef, sharedSeriesRef }: Props) {
+export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, sharedSeriesRef }: Props) {
   const canvasRef    = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const rafRef       = useRef(0);
@@ -2993,4 +2993,4 @@ export function DrawingCanvas({ sharedChartRef, sharedSeriesRef }: Props) {
       )}
     </div>
   );
-}
+});
