@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createChart, type IChartApi, type ISeriesApi } from 'lightweight-charts';
 import { useMarketStore } from '../../store/marketStore';
 import { useChartStore } from '../../store/chartStore';
+import { useReplayStore } from '../../store/replayStore';
 import { useCandleStyleStore } from '../../store/candleStyleStore';
 import { useThemeStore, type Theme } from '../../store/themeStore';
 import { useChartSync } from '../../hooks/useChartSync';
@@ -68,6 +69,16 @@ export function TradingChart({ sharedChartRef, sharedSeriesRef }: TradingChartPr
   const { visibleOverlays } = useChartStore();
   const candleStyle = useCandleStyleStore();
   const theme = useThemeStore((s) => s.theme);
+  const replayActive = useReplayStore((s) => s.isActive);
+  const replayCursorTime = useReplayStore((s) => s.cursorTime);
+
+  // While in replay, pin the legend price to the cursor bar's close instead
+  // of whatever the live feed is doing in the background.
+  useEffect(() => {
+    if (!replayActive || replayCursorTime == null) return;
+    const bar = useMarketStore.getState().candles.find((c) => c.t === replayCursorTime);
+    if (bar) setCurrentPrice(bar.c);
+  }, [replayActive, replayCursorTime]);
 
   // Size the right-axis/crosshair price labels to this symbol's own price
   // (BTC ~2 decimals, PEPE ~8) instead of the charting library's fixed
@@ -134,6 +145,9 @@ export function TradingChart({ sharedChartRef, sharedSeriesRef }: TradingChartPr
       if (loadMoreDebounceTimer) clearTimeout(loadMoreDebounceTimer);
       if (!range || range.from > 50) return;
       loadMoreDebounceTimer = setTimeout(() => {
+        // Replay shows a slice of already-loaded candles ending at cursorTime —
+        // scrolling within that slice must not trigger a real backfill request.
+        if (useReplayStore.getState().isActive) return;
         if (loadingMoreRef.current || reachedStartRef.current) return;
         const oldest = oldestTimeRef.current;
         const socket = wsRef.current;
@@ -217,6 +231,11 @@ export function TradingChart({ sharedChartRef, sharedSeriesRef }: TradingChartPr
   ]);
 
   useEffect(() => {
+    // Switching symbol/interval invalidates any in-progress replay (it was
+    // paused over the old dataset) — drop back to live cleanly rather than
+    // leaving a stale replay session pointed at candles that no longer apply.
+    useReplayStore.getState().exitReplay();
+
     // Clear stale data immediately so the old symbol doesn't linger
     seriesRef.current?.setData([]);
     setCurrentPrice(null);
@@ -327,16 +346,22 @@ export function TradingChart({ sharedChartRef, sharedSeriesRef }: TradingChartPr
           } else if (msg.type === 'update' && msg.candle) {
             const c = msg.candle;
             appendCandle(c);
-            if (seriesRef.current) {
-              seriesRef.current.update({
-                time: toChartTime(c.t),
-                open: c.o,
-                high: c.h,
-                low: c.l,
-                close: c.c,
-              });
+            // Keep the store/WS flowing normally in the background even during
+            // replay (so exiting is instant, no gap/reload) — just don't paint
+            // this live tick onto the chart or legend while looking at the past.
+            const inReplay = useReplayStore.getState().isActive;
+            if (!inReplay) {
+              if (seriesRef.current) {
+                seriesRef.current.update({
+                  time: toChartTime(c.t),
+                  open: c.o,
+                  high: c.h,
+                  low: c.l,
+                  close: c.c,
+                });
+              }
+              setCurrentPrice(c.c);
             }
-            setCurrentPrice(c.c);
           }
         } catch {
           // ignore malformed messages

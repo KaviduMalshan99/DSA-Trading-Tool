@@ -1,5 +1,6 @@
 import { useChartStore, type OverlayType } from '../../store/chartStore';
 import { TimeframeDropdown } from '../UI/TimeframeDropdown';
+import { ReplayControls } from './ReplayControls';
 
 const OVERLAYS: { key: OverlayType; label: string }[] = [
   { key: 'heatmap',       label: 'Heatmap'     },
@@ -80,6 +81,8 @@ export function ChartToolbar() {
           </label>
         </>
       )}
+
+      <ReplayControls />
     </div>
   );
 }

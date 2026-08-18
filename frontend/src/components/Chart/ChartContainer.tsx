@@ -1,6 +1,7 @@
 import { type IChartApi, type ISeriesApi } from 'lightweight-charts';
 import { useChartStore } from '../../store/chartStore';
 import { TradingChart } from './TradingChart';
+import { ReplayEngine } from './ReplayEngine';
 import { ChartToolbar } from './ChartToolbar';
 import { ChartLoadingOverlay } from './ChartLoadingOverlay';
 import { DeltaPanel } from '../Overlay/DeltaPanel';
@@ -45,6 +46,15 @@ export function ChartContainer({ sharedChartRef, sharedSeriesRef, chartAreaRef }
       {/* Main candlestick area — 80% */}
       <div ref={chartAreaRef} className="relative bg-[var(--bg-app)]" style={{ flex: '4 4 0%', minHeight: 0 }}>
         <TradingChart
+          sharedChartRef={sharedChartRef}
+          sharedSeriesRef={sharedSeriesRef}
+        />
+
+        {/* Non-visual — mounted right after TradingChart so the shared refs
+            are already populated by the time its effects run. Always on
+            (not gated by visibleOverlays), so entering Replay works
+            regardless of which overlays are toggled. */}
+        <ReplayEngine
           sharedChartRef={sharedChartRef}
           sharedSeriesRef={sharedSeriesRef}
         />
