@@ -46,7 +46,7 @@ export const useMarketStore = create<MarketState>((set) => ({
       const firstT = state.candles[0]?.t;
       const filtered = firstT !== undefined ? older.filter((c) => c.t < firstT) : older;
       if (filtered.length === 0) return {};
-      return { candles: [...filtered, ...state.candles] };
+      return { candles: [...filtered, ...state.candles].slice(-2000) };
     }),
   setLoading: (isLoading) => set({ isLoading }),
 }));
