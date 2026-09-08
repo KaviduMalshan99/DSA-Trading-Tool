@@ -341,7 +341,7 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 |                           | Large Volume Highlight                          | 🔴                                                               |
 |                           | Zero Prints, Unfinished Auction                 | 🔴                                                               |
 | **Delta**                 | Delta, Bar Delta                                | ✅ Done                                                          |
-|                           | Cumulative Delta (CVD)                          | ✅ Done                                                          |
+|                           | Cumulative Delta (CVD)                          | ✅ Done _(Session 34 — rebuilt as a continuous candlestick series matching the price chart's range; see [Stage 5 progress log](#stage-5--progress-log-polish--bug-fixing-pass))_ |
 |                           | Delta Histogram                                 | ✅ **Done** (green/red bars — _was wrongly marked 🔴_)           |
 |                           | Session Delta, Delta Divergence                 | 🔴                                                               |
 | **Imbalance (dedicated)** | Buy/Sell imbalance, custom ratio (default 300%) | ✅ Verified working _(Session 25 — confirmed live: ratio input correctly changes flagged-level count, loose→many/strict→few; it was never actually broken, still no standalone module)_ |
@@ -414,6 +414,19 @@ Stage 5  AI Intelligence & Polish    →  explain, teach, summarise, ship
 | Deployment (CI/CD, NGINX prod, monitoring, auth, rate limiting) | 🟡 ~15% (Docker Compose only) |
 
 **One dashboard, not three:** the Execution Dashboard (Stage 3), Decision Dashboard (Stage 4), and AI Market Analyst (Stage 5) are the **same component growing over time** — build it once and extend it each stage, rather than three separate panels.
+
+### Stage 5 — Progress Log (Polish & Bug-Fixing Pass)
+
+Cross-cutting bug fixes and cleanup surfaced by live use, not part of the AI/product-polish module list above — tracked here so this work isn't lost between numbered Session Log entries (several of these predate this section and were previously only referenced inline from Stage 3's deferred/tech-debt table as "Stage 5 polish pass").
+
+**Phase 1:**
+
+- ✅ Chart toolbar wrap fix — controls no longer clip off-screen (`7cf40e5`)
+- ✅ Crosshair mousemove perf fix — stopped cascading through the whole chart tree on every move (`99f0a7e`)
+- ✅ Dead code cleanup — deleted confirmed-dead REST endpoints and an unused WS abstraction (`210ff79`)
+- ✅ `prependCandles` buffer cap fix — capped like `appendCandle` already was, preventing unbounded growth on long scroll-back sessions (`e4ff69a`)
+- ✅ Collector dead-code doc correction — fixed a prior audit's wrong claim about `trade_collector`/`depth_collector`, logged the deferred REST-polling dedup item (`a93af37`)
+- ✅ **CVD bug — FIXED (Session 34).** The Delta/CVD panel's candle series was anchored to UTC midnight, which starved 1h+ intervals down to only a handful of candles for the day so far (big blocks with gaps instead of a dense series). Rebuilt as a **continuous candlestick series** spanning the same ~1000-bar window `candle_stream.py` already loads for the price chart. Cumulative delta now runs continuously across that whole window instead of resetting at each UTC day boundary — a mid-chart reset would draw an ugly vertical cliff; a session-reset toggle is noted as a **future settings-panel item**, not built. Correct buy/sell split, no forming-candle double-count, and interval-aware live bucketing were already correct and carried forward unchanged. Verified live: CVD fell through the price decline from the 6th and rose during the subsequent buying phase, agreeing with the dashboards' bearish-bias read. See Session 34 in the Session Log for the full change.
 
 ---
 
@@ -918,3 +931,15 @@ All four seed their dedupe state from whatever's already buffered at mount/symbo
 **Verified live.** Entered replay and confirmed Heatmap, Whale markers, Whale ticker, DOM, and Tape all show their "not available in replay" notes instead of live data; exited replay and confirmed all five resumed live rendering immediately. `tsc --noEmit` clean across all changed files.
 
 **Stage 4 status — Replay & Practice is now ✅ Done.** All of Layer 2 has landed: Step 1 (Structure/VWAP/Levels/Sessions recompute from the truncated window), Step 2 (Footprint/Delta approximate from the same window), Step 3 (Heatmap/Whale/DOM/Tape hidden during replay, live streams kept warm for instant exit) — on top of Layer 1's candle playback engine. Replay upgrades from 🟡 in progress to ✅ Done, making it the fifth of Stage 4's five core modules to close out (alongside Position Calculator, Trade Checklist, Cluster Scanner, Alerts). Stage 4 moves ~50% → **~85%, substantially complete** — Open Interest and Liquidations remain deliberately deferred (need Binance futures data, out of v1's spot-only scope) and Trade Journal remains 🔵 Future; neither is incomplete work, both are scope decisions already made at the platform level for forex/stocks.
+
+### Session 34 — September 8, 2026
+
+**CVD bug fixed — Stage 5 polish pass, Phase 1.** The Delta/CVD panel's candle series (`delta_stream.py`'s historical fetch) was anchored to `utc_day_start_ms(now)` — the same UTC-midnight boundary `compute_session_vwap`/`levels.py` use for daily levels. That anchor made sense for 1m-scale delta but broke down on 1h+ intervals: only a handful of candles exist between UTC midnight and now at those timeframes, so the CVD panel rendered as a few oversized blocks with gaps instead of a dense series flowing left-to-right like the price chart above it.
+
+**Fix.** `_fetch_klines_raw_since` (paginated, session-start-anchored) replaced with `_fetch_klines_raw` — a single request for the last `_HISTORY_LIMIT = 1000` klines, no `startTime`, matching `candle_stream.py`'s own historical fetch exactly so the CVD panel always covers the same span as the price chart. `klines_to_delta_bars` (already carrying `cvd_open/high/low/close` from an earlier uncommitted change on `delta.py`, folded into this same commit) is called without a `session_start_ms` filter, so cumulative delta starts at 0 at the window's first bar and runs continuously across all ~1000 candles. The live aggTrade loop's `_start_bucket` no longer resets `cvd` to 0 at a UTC day boundary — it just seeds each new bucket from the running total, so a session-reset toggle is a future settings-panel item rather than always-on behavior that would draw a vertical cliff mid-chart on reconnect or at midnight. Buy/sell split, forming-candle exclusion from history (the live loop owns the still-forming bar), and interval-aware live bucketing were already correct and untouched.
+
+**`DeltaPanel.tsx`** needed no data-flow changes — it already just renders whatever bars the backend sends — only a stale comment (describing the old session-anchored history) was corrected to match the new fixed-window behavior.
+
+**Verified live by eye (backend-only change — restarted, not driven through Chrome).** Full continuous candlestick series across the price chart's range, direction correct: CVD fell through the price decline from the 6th and rose during the subsequent buying phase, agreeing with the dashboards' existing bearish-bias read.
+
+**Stage 5 status.** No stage-completion percentage change — this is bug-fixing/polish work cross-cutting into Stage 3's Delta/CVD module (now annotated in its table row), not a new Stage 5 module. Logged under the new [Stage 5 progress log](#stage-5--progress-log-polish--bug-fixing-pass) as Phase 1's headline fix.
