@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { createChart, type IChartApi, type ISeriesApi } from 'lightweight-charts';
+import { createChart, type IChartApi, type ISeriesApi, type Time } from 'lightweight-charts';
 import { useMarketStore } from '../../store/marketStore';
 import { useThemeStore, type Theme } from '../../store/themeStore';
 import { useDeltaStore } from '../../store/deltaStore';
@@ -42,7 +42,11 @@ interface DeltaBar {
   buy_volume: number;
   sell_volume: number;
   delta: number;
-  cvd: number;
+  cvd: number;        // == cvd_close, kept for deltaStore/ExecutionDashboard
+  cvd_open: number;
+  cvd_high: number;
+  cvd_low: number;
+  cvd_close: number;
 }
 
 interface DeltaPanelProps {
@@ -56,7 +60,7 @@ export function DeltaPanel({ sharedChartRef }: DeltaPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef     = useRef<IChartApi | null>(null);
   const histoRef     = useRef<ISeriesApi<'Histogram'> | null>(null);
-  const cvdRef       = useRef<ISeriesApi<'Line'> | null>(null);
+  const cvdRef       = useRef<ISeriesApi<'Candlestick'> | null>(null);
   // All bars seen so far (historical + live), chronological — the live WS
   // keeps this current in the background even while replay is active, same
   // as FootprintCanvas's barsRef, so exiting replay never needs a refetch.
@@ -80,9 +84,7 @@ export function DeltaPanel({ sharedChartRef }: DeltaPanelProps) {
       grid: themeOpts.grid,
       crosshair: themeOpts.crosshair,
       leftPriceScale: {
-        visible: true,
-        borderColor: themeOpts.leftPriceScale.borderColor,
-        scaleMargins: { top: 0.05, bottom: 0.05 },
+        visible: false,
       },
       rightPriceScale: {
         borderColor: themeOpts.rightPriceScale.borderColor,
@@ -97,27 +99,41 @@ export function DeltaPanel({ sharedChartRef }: DeltaPanelProps) {
       height: containerRef.current.clientHeight,
     });
 
-    // Delta histogram on the right price scale
-    const histo = chart.addHistogramSeries({
+    // CVD candles are the primary element (client wants TradingView-style
+    // CVD candlesticks so divergences vs. price are visible at a glance) —
+    // dominant on the right scale, most of the pane height.
+    const cvdCandles = chart.addCandlestickSeries({
       priceScaleId: 'right',
+      upColor: '#26a641',
+      downColor: '#f85149',
+      borderUpColor: '#26a641',
+      borderDownColor: '#f85149',
+      wickUpColor: '#26a641',
+      wickDownColor: '#f85149',
+      priceFormat: { type: 'volume', precision: 2 },
+      lastValueVisible: false,
+      priceLineVisible: false,
+    });
+    chart.priceScale('right').applyOptions({ scaleMargins: { top: 0.05, bottom: 0.22 } });
+
+    // Per-bar delta histogram stays available but demoted to a thin strip
+    // at the bottom of the same pane, on its own hidden scale so it can't
+    // fight the CVD candles' scale.
+    const histo = chart.addHistogramSeries({
+      priceScaleId: 'deltaVol',
       color: '#26a641',
       priceFormat: { type: 'volume', precision: 2 },
       lastValueVisible: false,
       priceLineVisible: false,
     });
-
-    // CVD line on the left price scale
-    const cvdLine = chart.addLineSeries({
-      priceScaleId: 'left',
-      color: '#f0b90b',
-      lineWidth: 1,
-      lastValueVisible: false,
-      priceLineVisible: false,
+    chart.priceScale('deltaVol').applyOptions({
+      scaleMargins: { top: 0.82, bottom: 0.02 },
+      visible: false,
     });
 
     chartRef.current = chart;
     histoRef.current = histo;
-    cvdRef.current   = cvdLine;
+    cvdRef.current   = cvdCandles;
 
     // One-directional time-scale sync: this panel always follows the main
     // chart, never the reverse. A bidirectional sync (each side writing the
@@ -131,15 +147,25 @@ export function DeltaPanel({ sharedChartRef }: DeltaPanelProps) {
     // window. Only listening one way removes the feedback loop by
     // construction, at the cost of dragging this panel no longer panning
     // the main chart (dragging the main chart still pans both).
+    //
+    // Synced by *time*, not logical (index) range: the main chart and this
+    // panel don't necessarily hold the same number of bars (this panel's
+    // historical fetch excludes the still-forming candle, and the two
+    // sockets can be a candle apart at the edges, even though both now pull
+    // the same ~1000-candle window — see the /ws/delta historical fetch).
+    // Index N on one chart isn't the same moment as index N on the other
+    // once their lengths diverge, so copying a logical range mis-syncs and
+    // looks like the panel "jumps to start." Time is the one axis both
+    // charts genuinely share.
     const mainChart = sharedChartRef.current;
 
-    const onMainRange = (range: { from: number; to: number } | null) => {
+    const onMainRange = (range: { from: Time; to: Time } | null) => {
       if (!range) return;
-      chart.timeScale().setVisibleLogicalRange(range);
+      chart.timeScale().setVisibleRange(range);
     };
 
     if (mainChart) {
-      mainChart.timeScale().subscribeVisibleLogicalRangeChange(onMainRange);
+      mainChart.timeScale().subscribeVisibleTimeRangeChange(onMainRange);
     }
 
     const observer = new ResizeObserver(() => {
@@ -154,7 +180,7 @@ export function DeltaPanel({ sharedChartRef }: DeltaPanelProps) {
     return () => {
       observer.disconnect();
       if (mainChart) {
-        mainChart.timeScale().unsubscribeVisibleLogicalRangeChange(onMainRange);
+        mainChart.timeScale().unsubscribeVisibleTimeRangeChange(onMainRange);
       }
       chart.remove();
       chartRef.current = null;
@@ -229,11 +255,17 @@ export function DeltaPanel({ sharedChartRef }: DeltaPanelProps) {
             );
 
             cvdRef.current?.setData(
-              bars.map((b) => ({ time: toSec(b.time), value: b.cvd }))
+              bars.map((b) => ({
+                time:  toSec(b.time),
+                open:  b.cvd_open,
+                high:  b.cvd_high,
+                low:   b.cvd_low,
+                close: b.cvd_close,
+              }))
             );
 
-            const mainRange = sharedChartRef.current?.timeScale().getVisibleLogicalRange();
-            if (mainRange) chartRef.current?.timeScale().setVisibleLogicalRange(mainRange);
+            const mainRange = sharedChartRef.current?.timeScale().getVisibleRange();
+            if (mainRange) chartRef.current?.timeScale().setVisibleRange(mainRange);
 
             const last = bars.at(-1);
             if (last) {
@@ -266,7 +298,13 @@ export function DeltaPanel({ sharedChartRef }: DeltaPanelProps) {
               color: b.delta >= 0 ? '#26a64180' : '#f8514980',
             });
 
-            cvdRef.current?.update({ time: toSec(b.time), value: b.cvd });
+            cvdRef.current?.update({
+              time:  toSec(b.time),
+              open:  b.cvd_open,
+              high:  b.cvd_high,
+              low:   b.cvd_low,
+              close: b.cvd_close,
+            });
 
             setCurrentDelta(b.delta);
             setCurrentCvd(b.cvd);
@@ -309,7 +347,15 @@ export function DeltaPanel({ sharedChartRef }: DeltaPanelProps) {
         color: b.delta >= 0 ? '#26a64180' : '#f8514980',
       }))
     );
-    cvdRef.current?.setData(bars.map((b) => ({ time: toSec(b.time), value: b.cvd })));
+    cvdRef.current?.setData(
+      bars.map((b) => ({
+        time:  toSec(b.time),
+        open:  b.cvd_open,
+        high:  b.cvd_high,
+        low:   b.cvd_low,
+        close: b.cvd_close,
+      }))
+    );
 
     const last = bars.at(-1);
     setCurrentDelta(last?.delta ?? null);
