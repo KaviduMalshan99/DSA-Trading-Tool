@@ -11,7 +11,7 @@
  * spec, subtle rather than a big blob competing with those.
  */
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { IChartApi, ISeriesApi } from 'lightweight-charts';
 import { useMarketStore } from '../../store/marketStore';
 import { toChartTimeSeconds } from '../../utils/chartTime';
@@ -55,6 +55,15 @@ export function AbsorptionOverlay({ sharedChartRef, sharedSeriesRef }: Absorptio
   const dataRef = useRef<AbsorptionData | null>(null);
 
   const { activeSymbol, activeInterval } = useMarketStore();
+
+  // "Watching, no events in view" indicator — makes an empty overlay read as
+  // working-but-quiet rather than silently broken (detection is deliberately
+  // selective, see absorption.py's gate comments). Driven by a ref+state pair
+  // so it only triggers a React re-render on an actual true/false flip, not
+  // on every visible-range-change tick while panning — same rationale as the
+  // crosshair/chartStore re-render fix elsewhere in this app.
+  const [noEventsInView, setNoEventsInView] = useState(true);
+  const noEventsRef = useRef(true);
 
   const drawFnRef = useRef<() => void>(() => {});
   drawFnRef.current = () => {
@@ -135,17 +144,52 @@ export function AbsorptionOverlay({ sharedChartRef, sharedSeriesRef }: Absorptio
     rafRef.current = requestAnimationFrame(() => drawFnRef.current());
   }).current;
 
+  // Checks whether any fetched event's time falls inside the chart's current
+  // visible range — independent of pixel projection (unlike drawFnRef) so it
+  // stays correct even before layout/axis widths settle. Time-range only, not
+  // crosshair position, since panning/zooming is what changes "in view," not
+  // hovering.
+  const updateEmptyState = useRef(() => {
+    const chart = sharedChartRef.current;
+    const data = dataRef.current;
+    const range = chart?.timeScale().getVisibleRange();
+
+    let anyInView = false;
+    if (range && data && data.events.length > 0) {
+      const fromSec = range.from as number;
+      const toSec = range.to as number;
+      for (const evt of data.events) {
+        const t = toChartTimeSeconds(evt.time);
+        if (t >= fromSec && t <= toSec) {
+          anyInView = true;
+          break;
+        }
+      }
+    }
+
+    const empty = !anyInView;
+    if (empty !== noEventsRef.current) {
+      noEventsRef.current = empty;
+      setNoEventsInView(empty);
+    }
+  }).current;
+
   // ── Chart event subscriptions ─────────────────────────────────────────────
   useEffect(() => {
     const chart = sharedChartRef.current;
     if (!chart) return;
-    const onUpdate = () => scheduleDraw();
+    const onUpdate = () => {
+      scheduleDraw();
+      updateEmptyState();
+    };
+    const onCrosshair = () => scheduleDraw();
     chart.timeScale().subscribeVisibleLogicalRangeChange(onUpdate);
-    chart.subscribeCrosshairMove(onUpdate);
+    chart.subscribeCrosshairMove(onCrosshair);
     scheduleDraw();
+    updateEmptyState();
     return () => {
       chart.timeScale().unsubscribeVisibleLogicalRangeChange(onUpdate);
-      chart.unsubscribeCrosshairMove(onUpdate);
+      chart.unsubscribeCrosshairMove(onCrosshair);
       cancelAnimationFrame(rafRef.current);
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -170,6 +214,8 @@ export function AbsorptionOverlay({ sharedChartRef, sharedSeriesRef }: Absorptio
   useEffect(() => {
     dataRef.current = null;
     scheduleDraw(); // clear immediately — don't wait for the fetch to resolve
+    noEventsRef.current = true;
+    setNoEventsInView(true); // "watching" from the moment the symbol/interval switches
     let stopped = false;
 
     async function fetchAbsorption() {
@@ -178,6 +224,7 @@ export function AbsorptionOverlay({ sharedChartRef, sharedSeriesRef }: Absorptio
         if (!stopped) {
           dataRef.current = data;
           scheduleDraw();
+          updateEmptyState();
         }
       } catch { /* no candle data yet — keep last-known events */ }
     }
@@ -188,11 +235,16 @@ export function AbsorptionOverlay({ sharedChartRef, sharedSeriesRef }: Absorptio
       stopped = true;
       clearInterval(timer);
     };
-  }, [activeSymbol, activeInterval, scheduleDraw]);
+  }, [activeSymbol, activeInterval, scheduleDraw, updateEmptyState]);
 
   return (
     <div ref={containerRef} className="absolute inset-0 pointer-events-none z-10">
       <canvas ref={canvasRef} className="absolute inset-0" style={{ background: 'transparent' }} />
+      {noEventsInView && (
+        <div className="absolute bottom-8 right-3 z-10 select-none text-[10px] text-[var(--text-muted)] bg-[var(--bg-panel)]/80 px-2 py-0.5 rounded">
+          Absorption: watching — no events in view
+        </div>
+      )}
     </div>
   );
 }

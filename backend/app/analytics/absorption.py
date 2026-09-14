@@ -27,8 +27,15 @@ Detection gate, all three required:
    Live-tested against real BTC data: the original 2.0x/0.7x defaults
    returned zero events on both 1h and 1m (too strict for how BTC actually
    trades); 1.3x/0.95x found real events but was untested for noise. 1.5x/
-   0.85x is the recorded middle ground — confirm it stays that way as more
-   data comes in, since these two numbers are expected to keep moving.
+   0.85x was the next recorded middle ground, but a broader live sweep
+   (BTC/ETH/SOL/BNB/DOGE x 1m/5m/15m/1h, Session 35) found it still too
+   strict — most symbol/interval combos returned 0-1 events across a
+   200-candle window, reading as "broken" to a client even though the
+   pipeline was working. 1.3x/0.9x/lookback=14 roughly doubled the hit rate
+   (most combos now show a handful of events, none spammy) without loosening
+   the close-in-half confirmation gate below, which is what keeps the
+   surviving events honest. Still expected to keep moving as more data comes
+   in.
 
 Direction then follows the dominant side directly: heavy sell volume (delta
 < 0) on a candle passing the gate is buy absorption, heavy buy volume is sell
@@ -50,9 +57,9 @@ from dataclasses import dataclass, field
 
 from app.analytics.price_step import price_decimals_for
 
-_ROLLING_N = 20            # baseline window, in candles
-_VOLUME_MULTIPLIER = 1.5   # candle volume >= this x the baseline average volume
-_RANGE_FRACTION = 0.85     # candle range <= this x the baseline average range
+_ROLLING_N = 14            # baseline window, in candles
+_VOLUME_MULTIPLIER = 1.3   # candle volume >= this x the baseline average volume
+_RANGE_FRACTION = 0.9      # candle range <= this x the baseline average range
 _MIN_DELTA_FRACTION = 0.15 # |delta| / total volume must clear this to count as a real aggressor
 
 

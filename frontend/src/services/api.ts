@@ -35,7 +35,7 @@ export const api = {
     ),
 
   // volume_multiplier/range_fraction/lookback are tunable server-side; the
-  // overlay uses the backend defaults (1.5 / 0.85 / 20) until thresholds are tuned
+  // overlay uses the backend defaults (1.3 / 0.9 / 14) until thresholds are tuned
   getAbsorption: (
     symbol: string,
     interval: CandleInterval,

@@ -179,9 +179,9 @@ async def get_market_structure(
 async def get_absorption(
     symbol: str,
     interval: str,
-    volume_multiplier: float = Query(1.5, gt=1.0),
-    range_fraction: float = Query(0.85, gt=0.0, lt=1.0),
-    lookback: int = Query(20, ge=5, le=200),
+    volume_multiplier: float = Query(1.3, gt=1.0),
+    range_fraction: float = Query(0.9, gt=0.0, lt=1.0),
+    lookback: int = Query(14, ge=5, le=200),
     limit: int = Query(200, le=1000),
 ):
     """
