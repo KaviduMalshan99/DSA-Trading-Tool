@@ -8,12 +8,26 @@ This module derives the step from the coin's own current price instead, so
 every overlay gets one shared, symbol-aware bucket size.
 """
 
+import asyncio
 import math
 
 import aiohttp
 
 _CLEAN_MULTIPLIERS = (1.0, 2.0, 5.0)
 _BINANCE_REST = "https://api.binance.com"
+
+# Retry a transient Binance blip (timeout, connection drop, 5xx) before giving
+# up — mirrors footprint_stream.py's _create_accumulator backfill retry. Never
+# retries a 4xx (e.g. an invalid symbol's 400) since that's not transient and
+# retrying it only delays the correct error by _FETCH_RETRIES x the delay.
+_FETCH_RETRIES = 3
+_FETCH_RETRY_DELAY = 0.75  # seconds between attempts
+
+
+def _is_retryable(exc: Exception) -> bool:
+    if isinstance(exc, aiohttp.ClientResponseError):
+        return exc.status >= 500
+    return isinstance(exc, (aiohttp.ClientError, asyncio.TimeoutError))
 
 # 15 -> 10 (Session 24) still left BTC's rows too cramped to read at normal
 # zoom (~5-7px, near the MIN_ROW_PX floor in FootprintCanvas.tsx). Checked
@@ -95,16 +109,24 @@ async def fetch_current_price(symbol: str) -> float:
 
 
 async def fetch_tick_size(symbol: str) -> float:
-    """One-shot lookup of a symbol's exchange-defined minimum price increment."""
+    """Lookup of a symbol's exchange-defined minimum price increment, retried
+    on a transient Binance blip (see _is_retryable)."""
     url = f"{_BINANCE_REST}/api/v3/exchangeInfo"
     timeout = aiohttp.ClientTimeout(total=10)
-    async with aiohttp.ClientSession(timeout=timeout) as session:
-        async with session.get(url, params={"symbol": symbol.upper()}) as resp:
-            resp.raise_for_status()
-            data = await resp.json()
-    filters = data["symbols"][0]["filters"]
-    price_filter = next(f for f in filters if f["filterType"] == "PRICE_FILTER")
-    return float(price_filter["tickSize"])
+
+    for attempt in range(1, _FETCH_RETRIES + 1):
+        try:
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(url, params={"symbol": symbol.upper()}) as resp:
+                    resp.raise_for_status()
+                    data = await resp.json()
+            filters = data["symbols"][0]["filters"]
+            price_filter = next(f for f in filters if f["filterType"] == "PRICE_FILTER")
+            return float(price_filter["tickSize"])
+        except Exception as exc:
+            if attempt == _FETCH_RETRIES or not _is_retryable(exc):
+                raise
+            await asyncio.sleep(_FETCH_RETRY_DELAY)
 
 
 async def fetch_typical_range(symbol: str, lookback: int = 30) -> float:

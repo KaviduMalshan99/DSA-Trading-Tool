@@ -1,3 +1,5 @@
+import asyncio
+
 import aiohttp
 from fastapi import APIRouter, Query, HTTPException
 from app.analytics.delta import klines_to_delta_bars
@@ -15,6 +17,19 @@ _BINANCE_REST = "https://api.binance.com"
 _KLINES_PER_PAGE = 1000   # Binance's per-response cap
 _MAX_KLINE_PAGES = 3      # 3000 candles — covers a full UTC day at 1m with room to spare
 
+# Retry a transient Binance blip (timeout, connection drop, 5xx) before giving
+# up — mirrors footprint_stream.py's _create_accumulator backfill retry. Never
+# retries a 4xx (e.g. an invalid symbol's 400) since that's not transient and
+# retrying it only delays the correct error by _FETCH_RETRIES x the delay.
+_FETCH_RETRIES = 3
+_FETCH_RETRY_DELAY = 0.75  # seconds between attempts
+
+
+def _is_retryable(exc: Exception) -> bool:
+    if isinstance(exc, aiohttp.ClientResponseError):
+        return exc.status >= 500
+    return isinstance(exc, (aiohttp.ClientError, asyncio.TimeoutError))
+
 
 async def _fetch_klines(
     symbol: str,
@@ -29,15 +44,22 @@ async def _fetch_klines(
     if start_time is not None:
         params["startTime"] = start_time
     timeout = aiohttp.ClientTimeout(total=10)
-    async with aiohttp.ClientSession(timeout=timeout) as session:
-        async with session.get(url, params=params) as resp:
-            resp.raise_for_status()
-            rows = await resp.json()
-    return [
-        {"t": row[0], "o": float(row[1]), "h": float(row[2]), "l": float(row[3]),
-         "c": float(row[4]), "v": float(row[5])}
-        for row in rows
-    ]
+
+    for attempt in range(1, _FETCH_RETRIES + 1):
+        try:
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(url, params=params) as resp:
+                    resp.raise_for_status()
+                    rows = await resp.json()
+            return [
+                {"t": row[0], "o": float(row[1]), "h": float(row[2]), "l": float(row[3]),
+                 "c": float(row[4]), "v": float(row[5])}
+                for row in rows
+            ]
+        except Exception as exc:
+            if attempt == _FETCH_RETRIES or not _is_retryable(exc):
+                raise
+            await asyncio.sleep(_FETCH_RETRY_DELAY)
 
 
 async def _fetch_klines_raw(symbol: str, interval: str, limit: int = 100) -> list[list]:

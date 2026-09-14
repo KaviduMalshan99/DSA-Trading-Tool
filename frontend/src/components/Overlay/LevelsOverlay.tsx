@@ -3,7 +3,7 @@
  * today's daily open (dashed) and the prior day's high/low, PDH/PDL (solid).
  */
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { IChartApi, ISeriesApi } from 'lightweight-charts';
 import { useMarketStore } from '../../store/marketStore';
 import { useReplayStore } from '../../store/replayStore';
@@ -53,6 +53,13 @@ export function LevelsOverlay({ sharedChartRef, sharedSeriesRef }: LevelsOverlay
   const replayActive = useReplayStore((s) => s.isActive);
   const replayCursorTime = useReplayStore((s) => s.cursorTime);
   const wasReplayActiveRef = useRef(false);
+
+  // "Levels unavailable" indicator — Absorption's "watching" badge pattern
+  // applied here: only true once we have NOTHING to show (no last-known data)
+  // and the most recent fetch attempt for the current symbol failed, so a
+  // genuine outage/404 (new listing with <2 daily candles) reads as visibly
+  // broken instead of silently blank.
+  const [unavailable, setUnavailable] = useState(false);
 
   const drawFnRef = useRef<() => void>(() => {});
   drawFnRef.current = () => {
@@ -142,16 +149,40 @@ export function LevelsOverlay({ sharedChartRef, sharedSeriesRef }: LevelsOverlay
   }).current;
 
   // ── Chart event subscriptions ─────────────────────────────────────────────
+  // Retries attaching if sharedChartRef isn't populated yet on this first
+  // run instead of permanently giving up — ChartContainer's mount order
+  // (LevelsOverlay mounts after TradingChart, see its comment) means the ref
+  // is normally already set by now, but a one-shot `if (!chart) return` with
+  // no retry would silently and permanently skip subscribing (no re-render,
+  // no line redraws on pan/zoom) if that ordering were ever violated. This
+  // costs nothing in the normal case — `attach()` succeeds on its first call.
   useEffect(() => {
-    const chart = sharedChartRef.current;
-    if (!chart) return;
-    const onUpdate = () => scheduleDraw();
-    chart.timeScale().subscribeVisibleLogicalRangeChange(onUpdate);
-    chart.subscribeCrosshairMove(onUpdate);
-    scheduleDraw();
+    let cancelled = false;
+    let pollTimer: ReturnType<typeof setTimeout> | null = null;
+    let detach: (() => void) | null = null;
+
+    function attach() {
+      if (cancelled) return;
+      const chart = sharedChartRef.current;
+      if (!chart) {
+        pollTimer = setTimeout(attach, 100);
+        return;
+      }
+      const onUpdate = () => scheduleDraw();
+      chart.timeScale().subscribeVisibleLogicalRangeChange(onUpdate);
+      chart.subscribeCrosshairMove(onUpdate);
+      scheduleDraw();
+      detach = () => {
+        chart.timeScale().unsubscribeVisibleLogicalRangeChange(onUpdate);
+        chart.unsubscribeCrosshairMove(onUpdate);
+      };
+    }
+
+    attach();
     return () => {
-      chart.timeScale().unsubscribeVisibleLogicalRangeChange(onUpdate);
-      chart.unsubscribeCrosshairMove(onUpdate);
+      cancelled = true;
+      if (pollTimer) clearTimeout(pollTimer);
+      detach?.();
       cancelAnimationFrame(rafRef.current);
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -173,22 +204,47 @@ export function LevelsOverlay({ sharedChartRef, sharedSeriesRef }: LevelsOverlay
   }, [scheduleDraw]);
 
   // ── Poll REST endpoint (levels are daily — no need for a live stream) ──────
+  // Deliberately does NOT null dataRef on symbol switch — the old symbol's
+  // lines stay visible (and, on an incompatible price scale, simply fail
+  // LevelsOverlay's own y-bounds check and stop drawing) until the NEW
+  // symbol's fetch actually succeeds, so a transient blip never blanks a
+  // working overlay. Only a genuinely empty dataRef (nothing fetched yet for
+  // this symbol, or every attempt so far has failed) shows nothing.
   useEffect(() => {
-    dataRef.current = null;
-    scheduleDraw(); // clear immediately — don't wait for the fetch to resolve
+    setUnavailable(false); // fresh symbol — not yet known to be broken
     let stopped = false;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let failureCount = 0;
 
     async function fetchLevels() {
       // Don't let the live poll clobber the replay-computed levels while
       // replay is active — the replay effect below owns dataRef until exit.
-      if (useReplayStore.getState().isActive) return;
+      if (useReplayStore.getState().isActive || stopped) return;
       try {
         const data = await api.getLevels(activeSymbol);
-        if (!stopped) {
-          dataRef.current = data;
-          scheduleDraw();
-        }
-      } catch { /* no candle data yet — keep last-known levels */ }
+        if (stopped) return;
+        failureCount = 0;
+        if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+        dataRef.current = data;
+        setUnavailable(false);
+        scheduleDraw();
+      } catch {
+        if (stopped) return;
+        failureCount++;
+        // Nothing to show at all (first-ever fetch for this symbol, or every
+        // attempt since has failed) — surface it instead of staying blank
+        // with no explanation. A failed *refresh* with stale-but-valid
+        // levels already on screen stays silent, per the "keep last-known
+        // levels visible" behavior above.
+        if (!dataRef.current) setUnavailable(true);
+        // Quick retry with backoff (3s/6s/12s/24s, capped at 30s) instead of
+        // waiting out the full 5-minute POLL_MS — self-heals a transient
+        // blip about as fast as SMC/Structure/VWAP's much shorter poll
+        // intervals already do, rather than leaving this overlay dark for
+        // minutes on end.
+        const delay = Math.min(3_000 * 2 ** (failureCount - 1), 30_000);
+        retryTimer = setTimeout(fetchLevels, delay);
+      }
     }
 
     fetchLevels();
@@ -196,6 +252,7 @@ export function LevelsOverlay({ sharedChartRef, sharedSeriesRef }: LevelsOverlay
     return () => {
       stopped = true;
       clearInterval(timer);
+      if (retryTimer) clearTimeout(retryTimer);
     };
   }, [activeSymbol, scheduleDraw]);
 
@@ -225,6 +282,11 @@ export function LevelsOverlay({ sharedChartRef, sharedSeriesRef }: LevelsOverlay
   return (
     <div ref={containerRef} className="absolute inset-0 pointer-events-none z-10">
       <canvas ref={canvasRef} className="absolute inset-0" style={{ background: 'transparent' }} />
+      {unavailable && (
+        <div className="absolute bottom-16 right-3 z-10 select-none text-[10px] text-[var(--text-muted)] bg-[var(--bg-panel)]/80 px-2 py-0.5 rounded">
+          Levels unavailable
+        </div>
+      )}
     </div>
   );
 }
