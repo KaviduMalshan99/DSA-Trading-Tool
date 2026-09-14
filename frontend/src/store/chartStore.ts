@@ -14,9 +14,10 @@ interface ChartState {
   // a footprint-level setting, not a separate overlay, so it lives here rather
   // than in visibleOverlays. Default 300% per the Stage 3 Imbalance spec.
   imbalanceRatio: number;
-  // Minimum run length of consecutive same-side imbalanced levels (using the
-  // same isImbalance()/imbalanceRatio above) for FootprintCanvas to mark a
-  // "stacked imbalance". Default 3 per the Stage 3 Stacked Imbalance spec.
+  // Minimum run length of consecutive same-side diagonally-imbalanced levels
+  // (using the same computeDiagonalFlags()/imbalanceRatio above) for
+  // FootprintCanvas to mark a "stacked imbalance". Default 3 per the Stage 3
+  // Stacked Imbalance spec.
   stackSize: number;
 
   toggleOverlay: (overlay: OverlayType) => void;

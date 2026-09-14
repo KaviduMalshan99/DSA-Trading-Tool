@@ -19,8 +19,8 @@
  *                        connection the way a second WebSocket would.
  *   - Imbalance/Stacked: footprintSignalStore, mirrored from FootprintCanvas's
  *                        own /ws/footprint connection using the same
- *                        isImbalance()/findStackRuns() it already draws with
- *                        (FootprintCanvas is the sole writer).
+ *                        computeDiagonalFlags()/findStackRuns() it already
+ *                        draws with (FootprintCanvas is the sole writer).
  *   - Whale:             whaleStore, shared with WhaleTicker — but only
  *                        populated while the Whales overlay is toggled on,
  *                        since WhaleMarkers owns the /ws/whales connection.

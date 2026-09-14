@@ -11,6 +11,16 @@ _IMBALANCE_MIN_SMALLER = 0.5  # smaller side must have at least this volume
 # thousands of levels in one payload.
 _MAX_HISTORICAL_LEVELS = 200
 
+# Same cap, applied to live bars' zero-fill (see _build_bar): a flash-move
+# minute could otherwise force thousands of zero-volume rows into one payload.
+# Unlike the historical path (which coarsens its step to stay under the cap),
+# a live bar's step is fixed for the accumulator's whole lifetime, so when the
+# cap would be exceeded _build_bar falls back to the old sparse (gaps-allowed)
+# output instead — diagonal-imbalance correctness for that one pathological
+# bar then relies on the frontend's inline price-adjacency check rather than
+# on every level being present.
+_MAX_LIVE_ZEROFILL_LEVELS = 200
+
 
 def _is_imbalance(buy: float, sell: float) -> bool:
     # Require BOTH: the smaller side must meet a minimum (avoids flagging levels
@@ -126,19 +136,56 @@ class FootprintAccumulator:
 
     def _build_bar(self, time_ms: int) -> dict:
         levels = []
-        for price in sorted(self._levels, reverse=True):
-            v = self._levels[price]
-            bv = round(v["buy_vol"], 4)
-            sv = round(v["sell_vol"], 4)
-            levels.append(
-                {
-                    "price": price,
-                    "buy_vol": bv,
-                    "sell_vol": sv,
-                    "imbalance": _is_imbalance(bv, sv),
-                }
-            )
-        return {"time": time_ms, "decimals": self._decimals, "levels": levels}
+        if self._levels:
+            hi = max(self._levels)
+            lo = min(self._levels)
+            span_rows = int(round((hi - lo) / self._step)) + 1
+
+            if span_rows <= _MAX_LIVE_ZEROFILL_LEVELS:
+                # Zero-fill every step-sized bucket between hi and lo so
+                # consecutive array entries are always true price neighbors
+                # (one _step apart) — required for diagonal imbalance, and
+                # also fixes Stacked Imbalance's pre-existing "no gaps"
+                # assumption. A bucket with no trades this minute has real
+                # zero volume, not missing data, so filling it in is correct,
+                # not invented.
+                for i in range(span_rows):
+                    price = round(hi - i * self._step, self._decimals)
+                    v = self._levels.get(price, {"buy_vol": 0.0, "sell_vol": 0.0})
+                    bv = round(v["buy_vol"], 4)
+                    sv = round(v["sell_vol"], 4)
+                    levels.append(
+                        {
+                            "price": price,
+                            "buy_vol": bv,
+                            "sell_vol": sv,
+                            "imbalance": _is_imbalance(bv, sv),
+                        }
+                    )
+            else:
+                # Pathological range for this bar's fixed step (flash move) —
+                # zero-filling would emit thousands of rows. Fall back to the
+                # old sparse output; the frontend's adjacency check treats any
+                # gap here as "not a true neighbor" and won't flag across it.
+                for price in sorted(self._levels, reverse=True):
+                    v = self._levels[price]
+                    bv = round(v["buy_vol"], 4)
+                    sv = round(v["sell_vol"], 4)
+                    levels.append(
+                        {
+                            "price": price,
+                            "buy_vol": bv,
+                            "sell_vol": sv,
+                            "imbalance": _is_imbalance(bv, sv),
+                        }
+                    )
+
+        return {
+            "time": time_ms,
+            "decimals": self._decimals,
+            "step": self._step,
+            "levels": levels,
+        }
 
 
 # ── Historical backfill from klines ───────────────────────────────────────────
@@ -209,6 +256,6 @@ def klines_to_footprint_bars(
             for i in range(n - 1, -1, -1)  # high → low, matching _build_bar
         ]
 
-        bars.append({"time": open_ms, "decimals": bar_decimals, "levels": levels})
+        bars.append({"time": open_ms, "decimals": bar_decimals, "step": bar_step, "levels": levels})
 
     return bars

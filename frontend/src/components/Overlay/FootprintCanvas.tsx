@@ -30,22 +30,73 @@ const MIN_FONT_PX   = 6;  // below this the digits stop being readable at all
 // user-adjustable via the toolbar and applied entirely client-side, since
 // buy_vol/sell_vol already arrive raw per level — no backend round-trip
 // needed to re-tune sensitivity live. This supersedes the backend's own
-// hardcoded 5x `imbalance` flag for display purposes (still sent, now unused
-// here).
+// hardcoded 5x same-level `imbalance` flag for display purposes (still sent,
+// now unused here — see PriceLevel.imbalance below).
 const IMBALANCE_MIN_SMALLER = 0.5;
 
-function isImbalance(buy: number, sell: number, ratio: number): boolean {
-  const smaller = Math.min(buy, sell);
-  if (smaller < IMBALANCE_MIN_SMALLER) return false;
-  return buy >= ratio * sell || sell >= ratio * buy;
+// Tolerance for treating two levels as "one step apart" — guards against
+// float rounding on the backend's `round(hi - i*step, decimals)` zero-fill,
+// while still rejecting a real gap (>= 1.5 steps away).
+const ADJACENCY_TOLERANCE_FRAC = 0.5;
+
+// True only when `higher` and `lower` are genuine adjacent price rows (one
+// `step` apart), not just adjacent *array* entries. The backend zero-fills
+// live bars so this normally always holds, but a pathological (flash-move)
+// bar falls back to sparse output on the backend — this is the frontend
+// backstop for that case: a real gap must never be treated as a diagonal
+// neighbor, since that would silently compare non-adjacent prices.
+function isTrueNeighbor(higher: PriceLevel, lower: PriceLevel, step: number): boolean {
+  if (step <= 0) return false;
+  const diff = higher.price - lower.price;
+  return Math.abs(diff - step) < step * ADJACENCY_TOLERANCE_FRAC;
 }
 
-// Side of a level's imbalance, or null if the level isn't imbalanced —
-// built directly on isImbalance() above so stacking always agrees with the
-// existing single-level highlight.
-function imbalanceSide(buy: number, sell: number, ratio: number): 'buy' | 'sell' | null {
-  if (!isImbalance(buy, sell, ratio)) return null;
-  return buy > sell ? 'buy' : 'sell';
+// Diagonal (ATAS-style) buy imbalance at row `i`: this row's buy/ask volume
+// vs. the SELL/bid volume of the row directly BELOW it (one tick lower) —
+// aggressive buyers lifting the ask against aggressive sellers hitting the
+// bid one level down. Undefined (false) for the bottom row, which has no
+// row below, and across any gap where the "row below" isn't a true price
+// neighbor.
+function buyDiagonalImbalance(levels: PriceLevel[], i: number, step: number, ratio: number): boolean {
+  if (i + 1 >= levels.length) return false;
+  const cur = levels[i];
+  const below = levels[i + 1];
+  if (!isTrueNeighbor(cur, below, step)) return false;
+  const buy = cur.buy_vol;
+  const sell = below.sell_vol;
+  if (Math.min(buy, sell) < IMBALANCE_MIN_SMALLER) return false;
+  return buy >= ratio * sell;
+}
+
+// Diagonal sell imbalance at row `i`: this row's sell/bid volume vs. the
+// BUY/ask volume of the row directly ABOVE it. Undefined for the top row.
+function sellDiagonalImbalance(levels: PriceLevel[], i: number, step: number, ratio: number): boolean {
+  if (i - 1 < 0) return false;
+  const cur = levels[i];
+  const above = levels[i - 1];
+  if (!isTrueNeighbor(above, cur, step)) return false;
+  const sell = cur.sell_vol;
+  const buy = above.buy_vol;
+  if (Math.min(sell, buy) < IMBALANCE_MIN_SMALLER) return false;
+  return sell >= ratio * buy;
+}
+
+// Per-row diagonal flags for a whole bar — buy[i]/sell[i] are independent,
+// unlike the old same-level model's single "dominant side" per row. Computed
+// once per bar so the draw loop, Stacked Imbalance, and the Execution
+// Dashboard signal all agree on the exact same result.
+function computeDiagonalFlags(
+  levels: PriceLevel[],
+  step: number,
+  ratio: number
+): { buy: boolean[]; sell: boolean[] } {
+  const buy: boolean[] = new Array(levels.length);
+  const sell: boolean[] = new Array(levels.length);
+  for (let i = 0; i < levels.length; i++) {
+    buy[i] = buyDiagonalImbalance(levels, i, step, ratio);
+    sell[i] = sellDiagonalImbalance(levels, i, step, ratio);
+  }
+  return { buy, sell };
 }
 
 interface StackRun {
@@ -54,19 +105,25 @@ interface StackRun {
   side:  'buy' | 'sell';
 }
 
-// Runs of >= stackSize consecutive same-side imbalanced levels. "Consecutive"
-// means adjacent entries in bar.levels (already sorted high→low, no gaps),
-// per the Stage 3 Stacked Imbalance spec.
-function findStackRuns(levels: PriceLevel[], ratio: number, stackSize: number): StackRun[] {
+// Runs of >= stackSize consecutive rows flagged on the SAME diagonal side.
+// Buy-side and sell-side runs are found independently (a row can carry both
+// flags, so the two run sets can overlap) — "consecutive" means adjacent
+// array entries, which computeDiagonalFlags already only marks true between
+// genuine price neighbors (see isTrueNeighbor), so a gap in the underlying
+// data can never bridge a stack run either. Takes precomputed flags (rather
+// than levels/step/ratio) so callers that already ran computeDiagonalFlags
+// for the per-row highlight pass don't redo the same work.
+function findStackRuns(buy: boolean[], sell: boolean[], stackSize: number): StackRun[] {
   const runs: StackRun[] = [];
-  let i = 0;
-  while (i < levels.length) {
-    const side = imbalanceSide(levels[i].buy_vol, levels[i].sell_vol, ratio);
-    if (side === null) { i++; continue; }
-    let j = i + 1;
-    while (j < levels.length && imbalanceSide(levels[j].buy_vol, levels[j].sell_vol, ratio) === side) j++;
-    if (j - i >= stackSize) runs.push({ start: i, end: j - 1, side });
-    i = j;
+  for (const [flags, side] of [[buy, 'buy'], [sell, 'sell']] as const) {
+    let i = 0;
+    while (i < flags.length) {
+      if (!flags[i]) { i++; continue; }
+      let j = i + 1;
+      while (j < flags.length && flags[j]) j++;
+      if (j - i >= stackSize) runs.push({ start: i, end: j - 1, side });
+      i = j;
+    }
   }
   return runs;
 }
@@ -80,14 +137,18 @@ interface PriceLevel {
 
 // Summarizes one bar's strongest signal for the Execution Dashboard's
 // Imbalance/Stacked row: prefer an active stack (longest run wins ties);
-// fall back to the single strongest per-level imbalance ("last strong
-// imbalance side") when no run reaches stack_size.
+// fall back to the single strongest per-row diagonal imbalance when no run
+// reaches stack_size. Buy and sell diagonal flags are independent per row
+// (see computeDiagonalFlags), so both are scanned rather than picking one
+// "side" per row.
 function summarizeBarSignal(
   levels: PriceLevel[],
+  step: number,
   ratio: number,
   stackSize: number
 ): { side: 'buy' | 'sell' | null; isStack: boolean } {
-  const runs = findStackRuns(levels, ratio, stackSize);
+  const { buy, sell } = computeDiagonalFlags(levels, step, ratio);
+  const runs = findStackRuns(buy, sell, stackSize);
   if (runs.length > 0) {
     const longest = runs.reduce((best, r) => (r.end - r.start > best.end - best.start ? r : best));
     return { side: longest.side, isStack: true };
@@ -95,13 +156,17 @@ function summarizeBarSignal(
 
   let strongestSide: 'buy' | 'sell' | null = null;
   let strongestRatio = -Infinity;
-  for (const lvl of levels) {
-    const side = imbalanceSide(lvl.buy_vol, lvl.sell_vol, ratio);
-    if (side === null) continue;
-    const levelRatio = side === 'buy'
-      ? (lvl.sell_vol > 0 ? lvl.buy_vol / lvl.sell_vol : Infinity)
-      : (lvl.buy_vol > 0 ? lvl.sell_vol / lvl.buy_vol : Infinity);
-    if (levelRatio > strongestRatio) { strongestRatio = levelRatio; strongestSide = side; }
+  for (let i = 0; i < levels.length; i++) {
+    if (buy[i]) {
+      const belowSell = levels[i + 1].sell_vol;
+      const r = belowSell > 0 ? levels[i].buy_vol / belowSell : Infinity;
+      if (r > strongestRatio) { strongestRatio = r; strongestSide = 'buy'; }
+    }
+    if (sell[i]) {
+      const aboveBuy = levels[i - 1].buy_vol;
+      const r = aboveBuy > 0 ? levels[i].sell_vol / aboveBuy : Infinity;
+      if (r > strongestRatio) { strongestRatio = r; strongestSide = 'sell'; }
+    }
   }
   return { side: strongestSide, isStack: false };
 }
@@ -109,6 +174,7 @@ function summarizeBarSignal(
 interface FootprintBar {
   time:     number;        // candle open-time in ms
   decimals?: number;      // decimal places for level price labels (backend-derived from its bucket step)
+  step:     number;       // price gap between adjacent levels — backend zero-fills live bars to this step (see isTrueNeighbor)
   levels:   PriceLevel[]; // sorted high→low by backend
 }
 
@@ -204,7 +270,7 @@ export function FootprintCanvas({ sharedChartRef, sharedSeriesRef }: FootprintCa
       const pad       = fontSize * 0.4 + 2;
       const normalFont = `${fontSize}px "Courier New", monospace`;
       const boldFont   = `bold ${fontSize}px "Courier New", monospace`;
-      const edgeW      = 3; // width of the per-level dominant-side accent stripe
+      const edgeW      = 3; // width of the per-side diagonal-imbalance accent stripe
 
       // ── Clip to candle boundaries — nothing can overflow ─────────────
       ctx.save();
@@ -214,7 +280,12 @@ export function FootprintCanvas({ sharedChartRef, sharedSeriesRef }: FootprintCa
 
       let prevRowTop: number | null = null;
 
-      for (const lvl of levels) {
+      // Diagonal flags for every row, computed once per bar so the per-row
+      // highlight loop and the Stacked Imbalance pass below agree exactly.
+      const { buy: buyDiag, sell: sellDiag } = computeDiagonalFlags(levels, bar.step, imbalanceRatio);
+
+      for (let i = 0; i < levels.length; i++) {
+        const lvl = levels[i];
         const yRaw = series.priceToCoordinate(lvl.price);
         if (yRaw === null) continue;
         const y = yRaw as unknown as number;
@@ -235,41 +306,45 @@ export function FootprintCanvas({ sharedChartRef, sharedSeriesRef }: FootprintCa
 
         const buyStr  = lvl.buy_vol.toFixed(2);
         const sellStr = lvl.sell_vol.toFixed(2);
-        const levelImbalance = isImbalance(lvl.buy_vol, lvl.sell_vol, imbalanceRatio);
-        const buyIsDominant  = levelImbalance && lvl.buy_vol  > lvl.sell_vol;
-        const sellIsDominant = levelImbalance && lvl.sell_vol > lvl.buy_vol;
 
-        // Dedicated Imbalance highlight (adjustable ratio, default 300%) —
-        // full-row tint + an accent stripe on the aggressive side's edge, so
-        // it reads clearly even at a glance, plus the tight chip behind the
-        // dominant number itself for the close-up view.
-        if (buyIsDominant || sellIsDominant) {
-          const accent = buyIsDominant ? '#00ff88' : '#ff4444';
+        // Diagonal (ATAS-style) Imbalance highlight — buy-diagonal (this
+        // row's ask vs. the row BELOW's bid) and sell-diagonal (this row's
+        // bid vs. the row ABOVE's ask) are independent, so a row can show
+        // either, both, or neither, unlike the old same-level model which
+        // treated them as mutually exclusive. Each side draws its own tint/
+        // edge-stripe/chip on its own half of the row, so both can render
+        // together without colliding.
+        const buyIsDiagonal  = buyDiag[i];
+        const sellIsDiagonal = sellDiag[i];
 
-          ctx.fillStyle = buyIsDominant ? 'rgba(0,255,136,0.07)' : 'rgba(255,68,68,0.07)';
+        if (buyIsDiagonal) {
+          ctx.fillStyle = 'rgba(0,255,136,0.07)';
           ctx.fillRect(leftX, rowTop, candleWidth, rowH);
-
-          ctx.fillStyle = accent;
-          if (buyIsDominant) {
-            ctx.fillRect(leftX, rowTop, edgeW, rowH);
-          } else {
-            ctx.fillRect(rightX - edgeW, rowTop, edgeW, rowH);
-          }
+          ctx.fillStyle = '#00ff88';
+          ctx.fillRect(leftX, rowTop, edgeW, rowH);
 
           ctx.font = boldFont;
-          const text  = buyIsDominant ? buyStr : sellStr;
-          const textW = ctx.measureText(text).width;
+          const textW = ctx.measureText(buyStr).width;
           const boxH  = Math.min(rowH - 2, fontSize + 6);
-          ctx.fillStyle = buyIsDominant ? 'rgba(0,255,136,0.16)' : 'rgba(255,68,68,0.16)';
-          if (buyIsDominant) {
-            ctx.fillRect(leftX + 1 + edgeW, y - boxH / 2, textW + pad * 2, boxH);
-          } else {
-            ctx.fillRect(rightX - 1 - edgeW - textW - pad * 2, y - boxH / 2, textW + pad * 2, boxH);
-          }
+          ctx.fillStyle = 'rgba(0,255,136,0.16)';
+          ctx.fillRect(leftX + 1 + edgeW, y - boxH / 2, textW + pad * 2, boxH);
+        }
+
+        if (sellIsDiagonal) {
+          ctx.fillStyle = 'rgba(255,68,68,0.07)';
+          ctx.fillRect(leftX, rowTop, candleWidth, rowH);
+          ctx.fillStyle = '#ff4444';
+          ctx.fillRect(rightX - edgeW, rowTop, edgeW, rowH);
+
+          ctx.font = boldFont;
+          const textW = ctx.measureText(sellStr).width;
+          const boxH  = Math.min(rowH - 2, fontSize + 6);
+          ctx.fillStyle = 'rgba(255,68,68,0.16)';
+          ctx.fillRect(rightX - 1 - edgeW - textW - pad * 2, y - boxH / 2, textW + pad * 2, boxH);
         }
 
         // Buy volume — LEFT, green
-        ctx.font = buyIsDominant ? boldFont : normalFont;
+        ctx.font = buyIsDiagonal ? boldFont : normalFont;
         ctx.fillStyle = '#00ff88';
         ctx.textAlign = 'left';
         ctx.fillText(buyStr, leftX + pad, y);
@@ -286,16 +361,17 @@ export function FootprintCanvas({ sharedChartRef, sharedSeriesRef }: FootprintCa
         }
 
         // Sell volume — RIGHT, red
-        ctx.font = sellIsDominant ? boldFont : normalFont;
+        ctx.font = sellIsDiagonal ? boldFont : normalFont;
         ctx.fillStyle = '#ff4444';
         ctx.textAlign = 'right';
         ctx.fillText(sellStr, rightX - pad, y);
       }
 
       // ── Stacked Imbalance — bracket around runs of >= stackSize consecutive ──
-      // same-side imbalanced levels (built on the same isImbalance() used above).
-      // Drawn after the per-level pass so the bracket sits on top of it.
-      const stackRuns = findStackRuns(levels, imbalanceRatio, stackSize);
+      // same-side diagonally-imbalanced levels (built on the same diagonal
+      // flags used above). Drawn after the per-level pass so the bracket
+      // sits on top of it.
+      const stackRuns = findStackRuns(buyDiag, sellDiag, stackSize);
       for (const run of stackRuns) {
         const runTopRaw    = series.priceToCoordinate(levels[run.start].price);
         const runBottomRaw = series.priceToCoordinate(levels[run.end].price);
@@ -418,7 +494,7 @@ export function FootprintCanvas({ sharedChartRef, sharedSeriesRef }: FootprintCa
       const latestTime = Math.max(...bars.keys());
       const latestBar  = bars.get(latestTime)!;
       const { imbalanceRatio: ratio, stackSize: size } = useChartStore.getState();
-      const { side, isStack } = summarizeBarSignal(latestBar.levels, ratio, size);
+      const { side, isStack } = summarizeBarSignal(latestBar.levels, latestBar.step, ratio, size);
 
       const store = useFootprintSignalStore.getState();
       if (store.side !== side || store.isStack !== isStack || store.barTime !== latestTime) {
