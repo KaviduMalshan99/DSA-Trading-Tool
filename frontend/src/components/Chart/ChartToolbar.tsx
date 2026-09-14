@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { useChartStore, type OverlayType } from '../../store/chartStore';
 import { TimeframeDropdown } from '../UI/TimeframeDropdown';
 import { ReplayControls } from './ReplayControls';
@@ -27,6 +28,28 @@ export function ChartToolbar() {
   const stackSize        = useChartStore((s) => s.stackSize);
   const setStackSize     = useChartStore((s) => s.setStackSize);
   const footprintActive = visibleOverlays.has('footprint');
+
+  // Local text mirrors of the two number inputs below. A plain
+  // value={Math.round(imbalanceRatio * 100)} controlled input snaps back to
+  // the last committed store value on every keystroke that doesn't yet pass
+  // the store setter's guard (e.g. the "1" in typing "150") — React re-render
+  // then shows the OLD value again with the cursor position lost, so the next
+  // keystroke lands wherever the browser puts the cursor on that reverted
+  // text instead of where the user was typing, and digits concatenate onto
+  // stale leftovers (e.g. "150" over "300" → "30050150"). Keeping the
+  // displayed text in its own state — always reflecting exactly what was
+  // typed — and only pushing to the store when the parsed value is valid
+  // fixes that, while still updating live once a keystroke lands on a valid
+  // value, same as before.
+  const [imbalanceInput, setImbalanceInput] = useState(String(Math.round(imbalanceRatio * 100)));
+  useEffect(() => {
+    setImbalanceInput(String(Math.round(imbalanceRatio * 100)));
+  }, [imbalanceRatio]);
+
+  const [stackInput, setStackInput] = useState(String(stackSize));
+  useEffect(() => {
+    setStackInput(String(stackSize));
+  }, [stackSize]);
 
   return (
     <div className="flex flex-wrap items-center gap-2 px-3 py-1.5 bg-[var(--bg-panel)] border-b border-[var(--border-color)]">
@@ -60,11 +83,15 @@ export function ChartToolbar() {
               min={110}
               max={2000}
               step={10}
-              value={Math.round(imbalanceRatio * 100)}
+              value={imbalanceInput}
               onChange={(e) => {
-                const pct = Number(e.target.value);
+                const text = e.target.value;
+                setImbalanceInput(text);
+                const pct = Number(text);
                 if (Number.isFinite(pct) && pct > 100) setImbalanceRatio(pct / 100);
               }}
+              onFocus={(e) => e.target.select()}
+              onBlur={() => setImbalanceInput(String(Math.round(imbalanceRatio * 100)))}
               className="w-16 px-1 py-0.5 rounded bg-[var(--bg-app)] border border-[var(--border-color)] text-[var(--text-primary)] text-xs"
             />
             %
@@ -76,11 +103,15 @@ export function ChartToolbar() {
               min={2}
               max={10}
               step={1}
-              value={stackSize}
+              value={stackInput}
               onChange={(e) => {
-                const n = Number(e.target.value);
+                const text = e.target.value;
+                setStackInput(text);
+                const n = Number(text);
                 if (Number.isInteger(n) && n >= 2) setStackSize(n);
               }}
+              onFocus={(e) => e.target.select()}
+              onBlur={() => setStackInput(String(stackSize))}
               className="w-12 px-1 py-0.5 rounded bg-[var(--bg-app)] border border-[var(--border-color)] text-[var(--text-primary)] text-xs"
             />
           </label>
