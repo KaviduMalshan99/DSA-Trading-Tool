@@ -209,10 +209,34 @@ function CircleIcon() {
   );
 }
 
+// Ellipse is functionally identical to Circle (both inscribe an ellipse in a
+// bounding box) — a tilted oval keeps its toolbar icon visually distinct.
+function EllipseIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" fill="none">
+      <ellipse cx="12" cy="12" rx="9" ry="6" transform="rotate(-25 12 12)" />
+    </svg>
+  );
+}
+
 function PathIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" fill="none" strokeLinejoin="round">
       <polyline points="3,18 9,7 14,15 21,5" />
+    </svg>
+  );
+}
+
+// Polyline is Path's connected-segments geometry minus the trailing
+// arrowhead — vertex dots make that distinction visible in the icon itself.
+function PolylineIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" fill="none" strokeLinejoin="round">
+      <polyline points="3,18 9,7 14,15 21,5" />
+      <circle cx="3" cy="18" r="1.6" fill="currentColor" stroke="none" />
+      <circle cx="9" cy="7" r="1.6" fill="currentColor" stroke="none" />
+      <circle cx="14" cy="15" r="1.6" fill="currentColor" stroke="none" />
+      <circle cx="21" cy="5" r="1.6" fill="currentColor" stroke="none" />
     </svg>
   );
 }
@@ -258,6 +282,17 @@ function BrushIcon() {
     <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
       <path d="M4 20c0-3 2-4 4-4s3 2 5 2 3-2 3-4-1-3-1-5c0-2 1-3 2-4" />
       <path d="M16 5c1-1 2-1 3 0s1 2 0 3l-6 6-3-3z" />
+    </svg>
+  );
+}
+
+// Highlighter: same freehand geometry as Brush, drawn as a chisel-tip marker
+// pen to read visually distinct from Brush's paintbrush icon.
+function HighlighterIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M17 3l4 4-9 9-5 1 1-5z" />
+      <line x1="3" y1="21" x2="9" y2="21" strokeWidth="3" />
     </svg>
   );
 }
@@ -498,24 +533,46 @@ const SHAPE_ICON: Record<ShapeTool, React.ReactNode> = {
   rectangle: <RectIcon />,
   rotatedRectangle: <RotatedRectIcon />,
   circle: <CircleIcon />,
+  ellipse: <EllipseIcon />,
   path: <PathIcon />,
+  polyline: <PolylineIcon />,
   arrowMarker: <ArrowMarkerIcon />,
   arrowTool: <ArrowToolIcon />,
   arrowMarkUp: <ArrowMarkUpIcon />,
   arrowMarkDown: <ArrowMarkDownIcon />,
   brush: <BrushIcon />,
+  highlighter: <HighlighterIcon />,
 };
 
-const SHAPE_ITEMS: { tool: ShapeTool; label: string }[] = [
+// The flyout's three labeled sections — "Shapes" (closed/geometric shapes +
+// freehand line tools), "Brushes" (freehand strokes), "Arrows" (2-point +
+// single-click arrow variants). SHAPE_ITEMS below is the flat concatenation,
+// kept for ALL_TOOL_ICON/ALL_TOOL_LABEL/Favorites (same pattern as
+// TREND_ITEMS = [...TREND_LINE_ITEMS, ...TREND_CHANNEL_ITEMS]).
+// Triangle/Arc/Curve/Double Curve are spec'd but not yet built — omitted here.
+const SHAPE_SHAPES_ITEMS: { tool: ShapeTool; label: string }[] = [
   { tool: 'rectangle',        label: 'Rectangle' },
   { tool: 'rotatedRectangle', label: 'Rotated Rectangle' },
-  { tool: 'circle',           label: 'Circle' },
   { tool: 'path',             label: 'Path' },
-  { tool: 'arrowMarker',      label: 'Arrow Marker' },
-  { tool: 'arrowTool',        label: 'Arrow' },
-  { tool: 'arrowMarkUp',      label: 'Arrow Mark Up' },
-  { tool: 'arrowMarkDown',    label: 'Arrow Mark Down' },
-  { tool: 'brush',            label: 'Brush' },
+  { tool: 'circle',           label: 'Circle' },
+  { tool: 'ellipse',          label: 'Ellipse' },
+  { tool: 'polyline',         label: 'Polyline' },
+];
+
+const SHAPE_BRUSH_ITEMS: { tool: ShapeTool; label: string }[] = [
+  { tool: 'brush',       label: 'Brush' },
+  { tool: 'highlighter', label: 'Highlighter' },
+];
+
+const SHAPE_ARROW_ITEMS: { tool: ShapeTool; label: string }[] = [
+  { tool: 'arrowTool',     label: 'Arrow' },
+  { tool: 'arrowMarker',   label: 'Arrow Marker' },
+  { tool: 'arrowMarkUp',   label: 'Arrow Mark Up' },
+  { tool: 'arrowMarkDown', label: 'Arrow Mark Down' },
+];
+
+const SHAPE_ITEMS: { tool: ShapeTool; label: string }[] = [
+  ...SHAPE_SHAPES_ITEMS, ...SHAPE_BRUSH_ITEMS, ...SHAPE_ARROW_ITEMS,
 ];
 
 const ANNOTATION_ICON: Record<AnnotationTool, React.ReactNode> = {
@@ -815,7 +872,40 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
               boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
             }}
           >
-            {SHAPE_ITEMS.map(({ tool, label }) => (
+            <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)] select-none">
+              Shapes
+            </div>
+            {SHAPE_SHAPES_ITEMS.map(({ tool, label }) => (
+              <FavoritableMenuItem
+                key={tool}
+                tool={tool}
+                label={label}
+                icon={SHAPE_ICON[tool]}
+                active={activeTool === tool}
+                favorite={favoriteTools.includes(tool)}
+                onToggleFavorite={() => toggleFavorite(tool)}
+                onSelect={() => { setTool(tool); setShapeDropdownOpen(false); }}
+              />
+            ))}
+            <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)] select-none">
+              Brushes
+            </div>
+            {SHAPE_BRUSH_ITEMS.map(({ tool, label }) => (
+              <FavoritableMenuItem
+                key={tool}
+                tool={tool}
+                label={label}
+                icon={SHAPE_ICON[tool]}
+                active={activeTool === tool}
+                favorite={favoriteTools.includes(tool)}
+                onToggleFavorite={() => toggleFavorite(tool)}
+                onSelect={() => { setTool(tool); setShapeDropdownOpen(false); }}
+              />
+            ))}
+            <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)] select-none">
+              Arrows
+            </div>
+            {SHAPE_ARROW_ITEMS.map(({ tool, label }) => (
               <FavoritableMenuItem
                 key={tool}
                 tool={tool}

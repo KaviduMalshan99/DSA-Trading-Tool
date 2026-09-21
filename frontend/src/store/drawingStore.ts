@@ -25,11 +25,11 @@ export const TREND_TOOLS: readonly TrendTool[] = [
 // the Cursor group's pointer style (CursorMode), and DrawingTool unions both,
 // so reusing the name would make `activeTool === 'arrow'` ambiguous.
 export type ShapeTool =
-  | 'rectangle' | 'rotatedRectangle' | 'circle' | 'path'
-  | 'arrowMarker' | 'arrowTool' | 'arrowMarkUp' | 'arrowMarkDown' | 'brush';
+  | 'rectangle' | 'rotatedRectangle' | 'circle' | 'ellipse' | 'path' | 'polyline'
+  | 'arrowMarker' | 'arrowTool' | 'arrowMarkUp' | 'arrowMarkDown' | 'brush' | 'highlighter';
 export const SHAPE_TOOLS: readonly ShapeTool[] = [
-  'rectangle', 'rotatedRectangle', 'circle', 'path',
-  'arrowMarker', 'arrowTool', 'arrowMarkUp', 'arrowMarkDown', 'brush',
+  'rectangle', 'rotatedRectangle', 'circle', 'ellipse', 'path', 'polyline',
+  'arrowMarker', 'arrowTool', 'arrowMarkUp', 'arrowMarkDown', 'brush', 'highlighter',
 ];
 
 // The "Annotation" group — Text and Price Note, grouped under one dropdown
@@ -173,15 +173,41 @@ export interface CircleDrawing extends LineStyle, FillStyle {
   price2: number; time2: number;
 }
 
+// Ellipse: functionally identical to Circle (both inscribe an ellipse in a
+// 2-corner bounding box) — kept as its own labeled tool per the toolbar spec,
+// but the shape/render/hitTest/drag are all shared with CircleDrawing.
+export interface EllipseDrawing extends LineStyle, FillStyle {
+  id: string;
+  type: 'ellipse';
+  price1: number; time1: number;
+  price2: number; time2: number;
+}
+
 export interface PathDrawing extends LineStyle {
   id: string;
   type: 'path';
   points: { price: number; time: number }[];
 }
 
+// Polyline: identical points[] geometry to Path, minus Path's trailing
+// arrowhead — see the `d.type === 'path'` gate in the renderer.
+export interface PolylineDrawing extends LineStyle {
+  id: string;
+  type: 'polyline';
+  points: { price: number; time: number }[];
+}
+
 export interface BrushDrawing extends LineStyle {
   id: string;
   type: 'brush';
+  points: { price: number; time: number }[];
+}
+
+// Highlighter: identical freehand points[] geometry to Brush — only its
+// creation defaults differ (thicker + translucent, see finalizeFreeform).
+export interface HighlighterDrawing extends LineStyle {
+  id: string;
+  type: 'highlighter';
   points: { price: number; time: number }[];
 }
 
@@ -358,8 +384,11 @@ export type Drawing =
   | RectangleDrawing
   | RotatedRectangleDrawing
   | CircleDrawing
+  | EllipseDrawing
   | PathDrawing
+  | PolylineDrawing
   | BrushDrawing
+  | HighlighterDrawing
   | ArrowDrawing
   | ArrowMarkDrawing
   | TextDrawing

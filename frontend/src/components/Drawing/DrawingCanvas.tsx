@@ -12,7 +12,8 @@ const CAPTURE_TOOLS = new Set<DrawingTool>([
   'trendline', 'ray', 'extendedLine', 'infoLine', 'trendAngle',
   'hline', 'hray', 'vline', 'crossline', 'rectangle', 'fibonacci', 'channel', 'regression',
   'flatChannel', 'disjointChannel', 'eraser',
-  'rotatedRectangle', 'circle', 'path', 'arrowMarker', 'arrowTool', 'arrowMarkUp', 'arrowMarkDown', 'brush',
+  'rotatedRectangle', 'circle', 'ellipse', 'path', 'polyline',
+  'arrowMarker', 'arrowTool', 'arrowMarkUp', 'arrowMarkDown', 'brush', 'highlighter',
   'text', 'priceNote', 'measure', 'zoomIn',
   'longPosition', 'shortPosition', 'priceRange', 'dateRange',
 ]);
@@ -42,6 +43,7 @@ const CLICKS_REQUIRED: Partial<Record<DrawingTool, number>> = {
   disjointChannel: 4,
   rotatedRectangle: 3,
   circle: 2,
+  ellipse: 2,
   arrowTool: 2,
   arrowMarker: 2,
   arrowMarkUp: 1,
@@ -1001,7 +1003,7 @@ function renderDrawing(
       ctx.fillRect(wx - 4, wy - 4, 8, 8);
     }
 
-  } else if (d.type === 'circle') {
+  } else if (d.type === 'circle' || d.type === 'ellipse') {
     const x1 = timeToX(chart, d.time1);
     const y1 = priceToY(series, d.price1);
     const x2 = timeToX(chart, d.time2);
@@ -1036,25 +1038,29 @@ function renderDrawing(
       }
     }
 
-  } else if (d.type === 'path' || d.type === 'brush') {
+  } else if (d.type === 'path' || d.type === 'polyline' || d.type === 'brush' || d.type === 'highlighter') {
     const pts = d.points
       .map((p) => ({ x: timeToX(chart, p.time), y: priceToY(series, p.price) }))
       .filter((p): p is { x: number; y: number } => p.x != null && p.y != null);
     if (pts.length < 2) { ctx.restore(); return; }
 
+    // Path/Polyline share dash + a thinner default width + vertex handling;
+    // Brush/Highlighter are always solid with a thicker default width.
+    const isPathLike = d.type === 'path' || d.type === 'polyline';
     const baseColor = d.color ?? '#2196F3';
     ctx.strokeStyle = eraserHover ? '#f85149' : hexToRgba(baseColor, d.opacity ?? 100);
-    ctx.lineWidth = (d.width ?? (d.type === 'brush' ? 2 : 1.5)) + (selected ? 0.5 : 0);
+    ctx.lineWidth = (d.width ?? (isPathLike ? 1.5 : 2)) + (selected ? 0.5 : 0);
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
-    if (d.type === 'path') ctx.setLineDash(d.dash === 'dashed' ? [8, 4] : d.dash === 'dotted' ? [2, 3] : []);
+    if (isPathLike) ctx.setLineDash(d.dash === 'dashed' ? [8, 4] : d.dash === 'dotted' ? [2, 3] : []);
     ctx.beginPath();
     ctx.moveTo(pts[0].x, pts[0].y);
     for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // Path (unlike Brush) ends in an arrowhead, using the direction of its last segment.
+    // Only Path ends in an arrowhead — Polyline is Path minus this, using the
+    // direction of its last segment. Brush/Highlighter never had one either.
     if (d.type === 'path') {
       const tip = pts[pts.length - 1], prev = pts[pts.length - 2];
       const angle = Math.atan2(tip.y - prev.y, tip.x - prev.x);
@@ -1068,7 +1074,7 @@ function renderDrawing(
       ctx.fill();
     }
 
-    if (selected && d.type === 'path') {
+    if (selected && isPathLike) {
       ctx.fillStyle = eraserHover ? '#f85149' : baseColor;
       for (const p of pts) {
         ctx.beginPath();
@@ -1747,7 +1753,7 @@ function hitTest(
       distToSegment(mx, my, x1, y1b, x1, y1) < TOL;
   }
 
-  if (d.type === 'circle') {
+  if (d.type === 'circle' || d.type === 'ellipse') {
     const x1 = timeToX(chart, d.time1);
     const y1 = priceToY(series, d.price1);
     const x2 = timeToX(chart, d.time2);
@@ -1762,7 +1768,7 @@ function hitTest(
     return Math.hypot(mx - bx, my - by) < TOL;
   }
 
-  if (d.type === 'path' || d.type === 'brush') {
+  if (d.type === 'path' || d.type === 'polyline' || d.type === 'brush' || d.type === 'highlighter') {
     const pts = d.points
       .map((p) => ({ x: timeToX(chart, p.time), y: priceToY(series, p.price) }))
       .filter((p): p is { x: number; y: number } => p.x != null && p.y != null);
@@ -1946,9 +1952,11 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
   // Path/Brush use a variable-length point list instead of the fixed 1-3 point
   // scheme above. Path grows one point per click and finishes on double-click;
   // Brush grows continuously while the mouse is held down and finishes on release.
+  // Polyline/Highlighter reuse this exact mechanism (Polyline = Path minus the
+  // arrowhead, Highlighter = Brush with thicker/translucent creation defaults).
   const freeformRef = useRef<{
     active: boolean;
-    tool: 'path' | 'brush' | null;
+    tool: 'path' | 'polyline' | 'brush' | 'highlighter' | null;
     points: { x: number; y: number }[];
   }>({ active: false, tool: null, points: [] });
 
@@ -2112,11 +2120,11 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
             };
           } else if (drag.kind === 'fibonacci' && d.type === 'fibonacci') {
             dd = { ...d, priceHigh: drag.priceHigh, timeHigh: drag.timeHigh, priceLow: drag.priceLow, timeLow: drag.timeLow };
-          } else if (drag.kind === 'box' && (d.type === 'rectangle' || d.type === 'circle' || d.type === 'priceRange' || d.type === 'dateRange')) {
+          } else if (drag.kind === 'box' && (d.type === 'rectangle' || d.type === 'circle' || d.type === 'ellipse' || d.type === 'priceRange' || d.type === 'dateRange')) {
             dd = { ...d, price1: drag.price1, time1: drag.time1, price2: drag.price2, time2: drag.time2 };
-          } else if (drag.kind === 'path' && d.type === 'path') {
+          } else if (drag.kind === 'path' && (d.type === 'path' || d.type === 'polyline')) {
             dd = { ...d, points: drag.points };
-          } else if (drag.kind === 'brush' && d.type === 'brush') {
+          } else if (drag.kind === 'brush' && (d.type === 'brush' || d.type === 'highlighter')) {
             dd = { ...d, points: drag.points };
           } else if (drag.kind === 'arrowMark' && d.type === 'arrowMark') {
             dd = { ...d, price: drag.price, time: drag.time };
@@ -2194,6 +2202,8 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
               price3: price3 ?? price2, time3: time3 ?? time2 };
           else if (tool === 'circle' && price2 != null && time2 != null)
             preview = { id: '__preview', type: 'circle', price1, time1, price2, time2 };
+          else if (tool === 'ellipse' && price2 != null && time2 != null)
+            preview = { id: '__preview', type: 'ellipse', price1, time1, price2, time2 };
           else if ((tool === 'arrowTool' || tool === 'arrowMarker') && price2 != null && time2 != null)
             preview = { id: '__preview', type: 'arrow', price1, time1, price2, time2,
               variant: tool === 'arrowMarker' ? 'marker' : 'plain' };
@@ -2253,24 +2263,27 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           }
         }
 
-        // Path/Brush: variable-length point list, not the fixed-count drawingRef above.
+        // Path/Polyline/Brush/Highlighter: variable-length point list, not the
+        // fixed-count drawingRef above. Polyline mirrors Path's rubber-band +
+        // vertex dots; Highlighter mirrors Brush's plain live stroke.
         const fr = freeformRef.current;
+        const frIsPathLike = fr.tool === 'path' || fr.tool === 'polyline';
         if (fr.active && fr.points.length >= 1) {
           ctx.save();
           ctx.strokeStyle = 'rgba(33,150,243,0.9)';
-          ctx.lineWidth = fr.tool === 'brush' ? 2 : 1.5;
+          ctx.lineWidth = frIsPathLike ? 1.5 : 2;
           ctx.lineJoin = 'round';
           ctx.lineCap = 'round';
-          if (fr.tool === 'path') ctx.setLineDash([4, 3]);
+          if (frIsPathLike) ctx.setLineDash([4, 3]);
           ctx.beginPath();
           ctx.moveTo(fr.points[0].x, fr.points[0].y);
           for (let i = 1; i < fr.points.length; i++) ctx.lineTo(fr.points[i].x, fr.points[i].y);
-          if (fr.tool === 'path' && mousePosRef.current.inside) {
+          if (frIsPathLike && mousePosRef.current.inside) {
             ctx.lineTo(mousePosRef.current.x, mousePosRef.current.y);
           }
           ctx.stroke();
           ctx.setLineDash([]);
-          if (fr.tool === 'path') {
+          if (frIsPathLike) {
             ctx.fillStyle = 'rgba(33,150,243,0.9)';
             for (const p of fr.points) {
               ctx.beginPath();
@@ -2459,7 +2472,11 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
         .filter((p): p is { price: number; time: number } => p != null);
       if (pts.length >= 2) {
         const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-        addDrawing({ id, type: tool, points: pts });
+        // Highlighter's only difference from Brush: thicker + translucent
+        // creation defaults (still just ordinary LineStyle fields the user
+        // can override afterward via the style toolbar like any other tool).
+        const styleDefaults = tool === 'highlighter' ? { width: 12, opacity: 30 } : {};
+        addDrawing({ id, type: tool, points: pts, ...styleDefaults });
         selectDrawing(id);
         if (!keepToolActiveRef.current) setTool(lastCursorModeRef.current);
       }
@@ -2508,10 +2525,27 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
       return;
     }
 
+    if (tool === 'polyline') {
+      const fr = freeformRef.current;
+      if (!fr.active) { fr.active = true; fr.tool = 'polyline'; fr.points = [{ x, y }]; }
+      else fr.points.push({ x, y });
+      scheduleRender();
+      return;
+    }
+
     if (tool === 'brush') {
       const fr = freeformRef.current;
       fr.active = true;
       fr.tool = 'brush';
+      fr.points = [{ x, y }];
+      scheduleRender();
+      return;
+    }
+
+    if (tool === 'highlighter') {
+      const fr = freeformRef.current;
+      fr.active = true;
+      fr.tool = 'highlighter';
       fr.points = [{ x, y }];
       scheduleRender();
       return;
@@ -2608,6 +2642,9 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
     } else if (tool === 'circle') {
       if (price2 == null || time2 == null) return;
       addDrawing({ id, type: 'circle', price1, time1, price2, time2 });
+    } else if (tool === 'ellipse') {
+      if (price2 == null || time2 == null) return;
+      addDrawing({ id, type: 'ellipse', price1, time1, price2, time2 });
     } else if (tool === 'arrowTool' || tool === 'arrowMarker') {
       if (price2 == null || time2 == null) return;
       addDrawing({
@@ -2682,11 +2719,11 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
       return;
     }
 
-    if (tool === 'brush') {
+    if (tool === 'brush' || tool === 'highlighter') {
       const fr = freeformRef.current;
       // `e.buttons & 1` — the left button is still held down; a mouseup we
       // missed (e.g. released outside the canvas) means the drag already ended.
-      if (fr.active && fr.tool === 'brush' && (e.buttons & 1) === 1) {
+      if (fr.active && fr.tool === tool && (e.buttons & 1) === 1) {
         const last = fr.points[fr.points.length - 1];
         if (!last || Math.hypot(x - last.x, y - last.y) > 3) {
           fr.points.push({ x, y });
@@ -2696,7 +2733,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
       return;
     }
 
-    if (tool === 'path') {
+    if (tool === 'path' || tool === 'polyline') {
       // just needs the live rubber-band redraw; mousePosRef is already updated above
       scheduleRender();
       return;
@@ -2730,14 +2767,14 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
   // Brush finishes when the mouse button is released.
   const handleMouseUp = () => {
     const fr = freeformRef.current;
-    if (fr.active && fr.tool === 'brush') finalizeFreeform();
+    if (fr.active && (fr.tool === 'brush' || fr.tool === 'highlighter')) finalizeFreeform();
   };
 
-  // Path finishes on double-click (the extra point dblclick's own second
+  // Path/Polyline finish on double-click (the extra point dblclick's own second
   // mousedown already added is a harmless duplicate of the last vertex).
   const handleDoubleClick = () => {
     const fr = freeformRef.current;
-    if (fr.active && fr.tool === 'path') finalizeFreeform();
+    if (fr.active && (fr.tool === 'path' || fr.tool === 'polyline')) finalizeFreeform();
   };
 
   // ── mouse tracking for cursor-group tools (cross/dot/arrow/demonstration/eraser) ─
@@ -3084,7 +3121,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
             .some(([hx, hy]) => Math.hypot(x - hx, y - hy) < 8);
           if (nearAny) { hoverCursor = 'grab'; break; }
           if (hitTest(d, x, y, chart, series, candlesRef.current)) { hoverCursor = 'move'; break; }
-        } else if (d.type === 'rectangle' || d.type === 'circle' || d.type === 'priceRange' || d.type === 'dateRange') {
+        } else if (d.type === 'rectangle' || d.type === 'circle' || d.type === 'ellipse' || d.type === 'priceRange' || d.type === 'dateRange') {
           const x1 = timeToX(chart, d.time1), y1 = priceToY(series, d.price1);
           const x2 = timeToX(chart, d.time2), y2 = priceToY(series, d.price2);
           if (x1 == null || y1 == null || x2 == null || y2 == null) continue;
@@ -3092,11 +3129,11 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
             Math.hypot(x - x1, y - y2) < 8 || Math.hypot(x - x2, y - y1) < 8;
           if (nearCorner) { hoverCursor = 'nwse-resize'; break; }
           if (hitTest(d, x, y, chart, series, candlesRef.current)) { hoverCursor = 'move'; break; }
-        } else if (d.type === 'path' || d.type === 'brush') {
+        } else if (d.type === 'path' || d.type === 'polyline' || d.type === 'brush' || d.type === 'highlighter') {
           const pts = d.points
             .map((p) => ({ x: timeToX(chart, p.time), y: priceToY(series, p.price) }))
             .filter((p): p is { x: number; y: number } => p.x != null && p.y != null);
-          const nearVertex = d.type === 'path' && pts.some((p) => Math.hypot(x - p.x, y - p.y) < 8);
+          const nearVertex = (d.type === 'path' || d.type === 'polyline') && pts.some((p) => Math.hypot(x - p.x, y - p.y) < 8);
           if (nearVertex) { hoverCursor = 'grab'; break; }
           if (hitTest(d, x, y, chart, series, candlesRef.current)) { hoverCursor = 'move'; break; }
         } else if (d.type === 'fibonacci') {
@@ -3302,7 +3339,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           return;
         }
 
-        if (d.type === 'rectangle' || d.type === 'circle' || d.type === 'priceRange' || d.type === 'dateRange') {
+        if (d.type === 'rectangle' || d.type === 'circle' || d.type === 'ellipse' || d.type === 'priceRange' || d.type === 'dateRange') {
           const x1 = timeToX(chart, d.time1), y1 = priceToY(series, d.price1);
           const x2 = timeToX(chart, d.time2), y2 = priceToY(series, d.price2);
           if (x1 == null || y1 == null || x2 == null || y2 == null) continue;
@@ -3327,16 +3364,20 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           return;
         }
 
-        if (d.type === 'path' || d.type === 'brush') {
+        if (d.type === 'path' || d.type === 'polyline' || d.type === 'brush' || d.type === 'highlighter') {
           const screenPts = d.points
             .map((p) => ({ x: timeToX(chart, p.time), y: priceToY(series, p.price) }))
             .filter((p): p is { x: number; y: number } => p.x != null && p.y != null);
           if (screenPts.length < 2) continue;
 
-          // Path's individual vertices can be dragged to reshape it; Brush is
-          // freehand and only supports moving the whole stroke.
+          // Path/Polyline's individual vertices can be dragged to reshape them;
+          // Brush/Highlighter are freehand and only support moving the whole
+          // stroke. Polyline/Highlighter reuse the 'path'/'brush' drag kinds
+          // respectively — the drag logic only cares about vertex-vs-move
+          // capability, not the exact original type.
+          const isPathLike = d.type === 'path' || d.type === 'polyline';
           let vertexIndex: number | null = null;
-          if (d.type === 'path') {
+          if (isPathLike) {
             for (let vi = 0; vi < screenPts.length; vi++) {
               if (Math.hypot(x - screenPts[vi].x, y - screenPts[vi].y) < 8) { vertexIndex = vi; break; }
             }
@@ -3344,7 +3385,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           if (vertexIndex == null && !hitTest(d, x, y, chart, series, candlesRef.current)) continue;
 
           dragRef.current = {
-            active: true, kind: d.type, id: d.id,
+            active: true, kind: isPathLike ? 'path' : 'brush', id: d.id,
             mode: vertexIndex != null ? 'vertex' : 'move',
             vertexIndex: vertexIndex ?? undefined,
             startX: x, startY: y,
@@ -3450,10 +3491,10 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
     };
 
     const onWinUp = () => {
-      // Safety net: if a Brush drag left the canvas bounds before the button
-      // was released, our own onMouseUp never fires — finalize here instead.
+      // Safety net: if a Brush/Highlighter drag left the canvas bounds before
+      // the button was released, our own onMouseUp never fires — finalize here instead.
       const fr = freeformRef.current;
-      if (fr.active && fr.tool === 'brush') finalizeFreeform();
+      if (fr.active && (fr.tool === 'brush' || fr.tool === 'highlighter')) finalizeFreeform();
 
       const drag = dragRef.current;
       if (!drag?.active) return;
