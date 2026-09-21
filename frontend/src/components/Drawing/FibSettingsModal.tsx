@@ -1,22 +1,22 @@
 import { useRef, useState } from 'react';
 import {
   useDrawingStore,
-  type FibonacciDrawing,
+  type FibLikeDrawing,
   type FibLevelConfig,
   type FibExtend,
 } from '../../store/drawingStore';
-import { FIB_LEVELS } from './DrawingCanvas';
+import { fibLevelsFor } from './DrawingCanvas';
 import { MiniColorSwatch, MiniWidthPicker, MiniDashPicker } from './drawingStyleShared';
 
 interface Props {
-  fib: FibonacciDrawing;
+  fib: FibLikeDrawing;
   onClose: () => void;
 }
 
 type Tab = 'Style' | 'Coordinates' | 'Visibility';
 
-function ensureLevels(fib: FibonacciDrawing): FibLevelConfig[] {
-  return fib.levels ?? FIB_LEVELS.map((l) => ({ enabled: true, pct: l.pct, color: l.color }));
+function ensureLevels(fib: FibLikeDrawing): FibLevelConfig[] {
+  return fib.levels ?? fibLevelsFor(fib.type).map((l) => ({ enabled: true, pct: l.pct, color: l.color }));
 }
 
 const EXTEND_OPTIONS: { value: FibExtend; label: string }[] = [
@@ -30,10 +30,10 @@ export function FibSettingsModal({ fib, onClose }: Props) {
   const { updateDrawing, deleteDrawing } = useDrawingStore();
   // Snapshot taken once, when the modal mounts — Cancel restores this so
   // live-previewed edits don't stick if the user backs out.
-  const originalRef = useRef<FibonacciDrawing>(fib);
+  const originalRef = useRef<FibLikeDrawing>(fib);
   const [tab, setTab] = useState<Tab>('Style');
 
-  const patch = (p: Partial<FibonacciDrawing>) => updateDrawing(fib.id, p);
+  const patch = (p: Partial<FibLikeDrawing>) => updateDrawing(fib.id, p);
 
   const setLevel = (i: number, levelPatch: Partial<FibLevelConfig>) => {
     const levels = ensureLevels(fib);
@@ -61,7 +61,9 @@ export function FibSettingsModal({ fib, onClose }: Props) {
       >
         {/* header */}
         <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid var(--border-color-softer)' }}>
-          <span className="text-[var(--text-secondary)] font-medium">Fib Retracement</span>
+          <span className="text-[var(--text-secondary)] font-medium">
+            {fib.type === 'fibExtension' ? 'Fib Extension' : 'Fib Retracement'}
+          </span>
           <button onClick={handleCancel} className="text-[var(--text-muted)] hover:text-[var(--text-primary)] text-lg leading-none">×</button>
         </div>
 
@@ -125,7 +127,7 @@ export function FibSettingsModal({ fib, onClose }: Props) {
               </div>
 
               <div className="pt-2 grid grid-cols-2 gap-x-4 gap-y-2" style={{ borderTop: '1px solid var(--border-color-softer)' }}>
-                {FIB_LEVELS.map((defaults, i) => {
+                {fibLevelsFor(fib.type).map((defaults, i) => {
                   const lvl = levels[i];
                   return (
                     <div key={i} className="flex items-center gap-2 pt-2">

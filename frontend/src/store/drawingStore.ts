@@ -56,8 +56,14 @@ export const POSITION_RANGE_TOOLS: readonly PositionRangeTool[] = [
   'longPosition', 'shortPosition', 'anchoredVwap', 'priceRange', 'dateRange', 'datePriceRange',
 ];
 
+// The "Fibonacci" group — Fib Retracement plus ratio-table variants (Fib
+// Extension for now, more added later), grouped under one dropdown just like
+// Trend Line/Shapes/Annotation/Prediction & measurement.
+export type FibTool = 'fibonacci' | 'fibExtension';
+export const FIB_TOOLS: readonly FibTool[] = ['fibonacci', 'fibExtension'];
+
 export type DrawingTool =
-  | CursorMode | TrendTool | ShapeTool | AnnotationTool | ActionTool | PositionRangeTool | 'fibonacci';
+  | CursorMode | TrendTool | ShapeTool | AnnotationTool | ActionTool | PositionRangeTool | FibTool;
 
 export type LineDash = 'solid' | 'dashed' | 'dotted';
 
@@ -446,6 +452,18 @@ export interface FibonacciDrawing {
   lineDash?: LineDash;
 }
 
+// Fib Extension: same 2-point high/low shape as Fib Retracement — only its
+// ratio table differs (FIB_EXTENSION_LEVELS in DrawingCanvas.tsx vs
+// FIB_LEVELS), selected via the type-aware `fibLevelsFor` helper wherever
+// FibonacciDrawing's level list is read (render/hitTest/settings modal).
+export interface FibExtensionDrawing extends Omit<FibonacciDrawing, 'type'> {
+  type: 'fibExtension';
+}
+
+// Shared alias for the places (settings modal, style toolbar) that treat
+// both Fib tools identically except for which ratio table they resolve to.
+export type FibLikeDrawing = FibonacciDrawing | FibExtensionDrawing;
+
 export interface ChannelDrawing {
   id: string;
   type: 'channel';
@@ -528,6 +546,7 @@ export type Drawing =
   | DatePriceRangeDrawing
   | AnchoredVwapDrawing
   | FibonacciDrawing
+  | FibExtensionDrawing
   | ChannelDrawing
   | RegressionDrawing
   | FlatChannelDrawing
@@ -546,6 +565,8 @@ interface DrawingState {
   lastAnnotationTool: AnnotationTool;
   // Same idea for the Prediction & measurement group's dropdown button icon.
   lastPositionRangeTool: PositionRangeTool;
+  // Same idea for the Fibonacci group's dropdown button icon.
+  lastFibTool: FibTool;
   // Cursor-group tools keep the chart interactive; the legacy magic snap mode is not exposed.
   magnetEnabled: boolean;
   // "Stay in Drawing Mode" — off (default) matches TradingView: finishing a
@@ -610,6 +631,10 @@ function isPositionRangeTool(tool: DrawingTool): tool is PositionRangeTool {
   return (POSITION_RANGE_TOOLS as readonly string[]).includes(tool);
 }
 
+function isFibTool(tool: DrawingTool): tool is FibTool {
+  return (FIB_TOOLS as readonly string[]).includes(tool);
+}
+
 // Capped so a long session doesn't grow this unboundedly.
 const MAX_HISTORY = 50;
 
@@ -641,6 +666,7 @@ export const useDrawingStore = create<DrawingState>((set) => ({
   lastShapeTool: 'rectangle',
   lastAnnotationTool: 'text',
   lastPositionRangeTool: 'longPosition',
+  lastFibTool: 'fibonacci',
   magnetEnabled: false,
   keepToolActive: false,
   drawingsLocked: false,
@@ -659,6 +685,7 @@ export const useDrawingStore = create<DrawingState>((set) => ({
       const shapeGroup = isShapeTool(tool);
       const annotationGroup = isAnnotationTool(tool);
       const positionRangeGroup = isPositionRangeTool(tool);
+      const fibGroup = isFibTool(tool);
       // Re-clicking the active drawing tool deselects it back to the last cursor mode.
       const activeTool = !cursorGroup && s.activeTool === tool ? s.lastCursorMode : tool;
       return {
@@ -668,6 +695,7 @@ export const useDrawingStore = create<DrawingState>((set) => ({
         lastShapeTool: shapeGroup ? tool : s.lastShapeTool,
         lastAnnotationTool: annotationGroup ? tool : s.lastAnnotationTool,
         lastPositionRangeTool: positionRangeGroup ? tool : s.lastPositionRangeTool,
+        lastFibTool: fibGroup ? tool : s.lastFibTool,
         magnetEnabled: cursorGroup ? false : s.magnetEnabled,
       };
     }),

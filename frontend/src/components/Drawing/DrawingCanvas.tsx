@@ -12,7 +12,7 @@ import type { Candle } from '../../types/market';
 // deliberately do NOT capture, so the chart stays pannable by default.
 const CAPTURE_TOOLS = new Set<DrawingTool>([
   'trendline', 'ray', 'extendedLine', 'infoLine', 'trendAngle',
-  'hline', 'hray', 'vline', 'crossline', 'rectangle', 'fibonacci', 'channel', 'regression',
+  'hline', 'hray', 'vline', 'crossline', 'rectangle', 'fibonacci', 'fibExtension', 'channel', 'regression',
   'flatChannel', 'disjointChannel', 'eraser',
   'rotatedRectangle', 'circle', 'ellipse', 'path', 'polyline',
   'triangle', 'arc', 'curve', 'doubleCurve',
@@ -40,6 +40,7 @@ const CLICKS_REQUIRED: Partial<Record<DrawingTool, number>> = {
   crossline: 1,
   rectangle: 2,
   fibonacci: 2,
+  fibExtension: 2,
   channel: 3,
   regression: 2,
   flatChannel: 3,
@@ -92,6 +93,27 @@ export const FIB_LEVELS = [
   { pct: 0.786, color: '#9C27B0', label: '0.786' },
   { pct: 1.618, color: '#00BCD4', label: '1.618' },
 ] as const;
+
+// Fib Extension's ratio table — the render loop iterates whichever level
+// array `fibLevelsFor` resolves to with no clamping, so these extension
+// ratios (beyond the 0..1 retracement range) just work.
+export const FIB_EXTENSION_LEVELS = [
+  { pct: 0,     color: '#787B86', label: '0' },
+  { pct: 0.618, color: '#2196F3', label: '0.618' },
+  { pct: 1.0,   color: '#787B86', label: '1.0' },
+  { pct: 1.272, color: '#FF9800', label: '1.272' },
+  { pct: 1.618, color: '#00BCD4', label: '1.618' },
+  { pct: 2.0,   color: '#F23645', label: '2.0' },
+  { pct: 2.618, color: '#9C27B0', label: '2.618' },
+] as const;
+
+// Fib Retracement and Fib Extension share one drawing shape/render/hitTest —
+// only which ratio table they read differs. Every FIB_LEVELS read that must
+// also serve fibExtension goes through this helper instead of the constant
+// directly, so Fib Retracement's own resolution never changes.
+export function fibLevelsFor(type: 'fibonacci' | 'fibExtension') {
+  return type === 'fibExtension' ? FIB_EXTENSION_LEVELS : FIB_LEVELS;
+}
 
 interface Props {
   sharedChartRef:  React.RefObject<IChartApi | null>;
@@ -1813,7 +1835,7 @@ function renderDrawing(
       ctx.fillRect(rx - 4, yEntry - 4, 8, 8);
     }
 
-  } else if (d.type === 'fibonacci') {
+  } else if (d.type === 'fibonacci' || d.type === 'fibExtension') {
     const xH = timeToX(chart, d.timeHigh);
     const yH = priceToY(series, d.priceHigh);
     const xL = timeToX(chart, d.timeLow);
@@ -1832,7 +1854,7 @@ function renderDrawing(
 
     const levelDash: number[] = d.levelDash === 'dashed' ? [8, 4] : d.levelDash === 'solid' ? [] : [4, 3];
 
-    FIB_LEVELS.forEach(({ pct: defaultPct, color: defaultColor }, i) => {
+    fibLevelsFor(d.type).forEach(({ pct: defaultPct, color: defaultColor }, i) => {
       const cfg = d.levels?.[i];
       if (cfg?.enabled === false) return;
       const pct = cfg?.pct ?? defaultPct;
@@ -2392,12 +2414,13 @@ function hitTest(
     return mx >= lx - TOL && mx <= rx + TOL && my >= ty - TOL && my <= by + TOL;
   }
 
-  if (d.type === 'fibonacci') {
+  if (d.type === 'fibonacci' || d.type === 'fibExtension') {
     const range = d.priceHigh - d.priceLow;
-    for (let i = 0; i < FIB_LEVELS.length; i++) {
+    const fibLevels = fibLevelsFor(d.type);
+    for (let i = 0; i < fibLevels.length; i++) {
       const cfg = d.levels?.[i];
       if (cfg?.enabled === false) continue;
-      const pct = cfg?.pct ?? FIB_LEVELS[i].pct;
+      const pct = cfg?.pct ?? fibLevels[i].pct;
       const price = d.priceHigh - pct * range;
       const y = priceToY(series, price);
       if (y != null && Math.abs(my - y) < TOL) return true;
@@ -2665,7 +2688,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
               priceA1: drag.priceA1, timeA1: drag.timeA1, priceA2: drag.priceA2, timeA2: drag.timeA2,
               priceB1: drag.priceB1, timeB1: drag.timeB1, priceB2: drag.priceB2, timeB2: drag.timeB2,
             };
-          } else if (drag.kind === 'fibonacci' && d.type === 'fibonacci') {
+          } else if (drag.kind === 'fibonacci' && (d.type === 'fibonacci' || d.type === 'fibExtension')) {
             dd = { ...d, priceHigh: drag.priceHigh, timeHigh: drag.timeHigh, priceLow: drag.priceLow, timeLow: drag.timeLow };
           } else if (drag.kind === 'box' && (d.type === 'rectangle' || d.type === 'circle' || d.type === 'ellipse' || d.type === 'priceRange' || d.type === 'dateRange' || d.type === 'datePriceRange')) {
             dd = { ...d, price1: drag.price1, time1: drag.time1, price2: drag.price2, time2: drag.time2 };
@@ -2740,6 +2763,10 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
             preview = { id: '__preview', type: 'rectangle', price1, time1, price2, time2 };
           else if (tool === 'fibonacci' && price2 != null && time2 != null)
             preview = { id: '__preview', type: 'fibonacci',
+              priceHigh: Math.max(price1, price2), timeHigh: price1 >= price2 ? time1 : time2,
+              priceLow:  Math.min(price1, price2), timeLow:  price1 < price2  ? time1 : time2 };
+          else if (tool === 'fibExtension' && price2 != null && time2 != null)
+            preview = { id: '__preview', type: 'fibExtension',
               priceHigh: Math.max(price1, price2), timeHigh: price1 >= price2 ? time1 : time2,
               priceLow:  Math.min(price1, price2), timeLow:  price1 < price2  ? time1 : time2 };
           else if (tool === 'channel' && price2 != null && time2 != null)
@@ -3195,6 +3222,11 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
     } else if (tool === 'fibonacci') {
       if (price2 == null || time2 == null) return;
       addDrawing({ id, type: 'fibonacci',
+        priceHigh: Math.max(price1, price2), timeHigh: price1 >= price2 ? time1 : time2,
+        priceLow:  Math.min(price1, price2), timeLow:  price1 < price2  ? time1 : time2 });
+    } else if (tool === 'fibExtension') {
+      if (price2 == null || time2 == null) return;
+      addDrawing({ id, type: 'fibExtension',
         priceHigh: Math.max(price1, price2), timeHigh: price1 >= price2 ? time1 : time2,
         priceLow:  Math.min(price1, price2), timeLow:  price1 < price2  ? time1 : time2 });
     } else if (tool === 'channel') {
@@ -3780,7 +3812,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           const nearVertex = (d.type === 'path' || d.type === 'polyline') && pts.some((p) => Math.hypot(x - p.x, y - p.y) < 8);
           if (nearVertex) { hoverCursor = 'grab'; break; }
           if (hitTest(d, x, y, chart, series, candlesRef.current)) { hoverCursor = 'move'; break; }
-        } else if (d.type === 'fibonacci') {
+        } else if (d.type === 'fibonacci' || d.type === 'fibExtension') {
           const xH = timeToX(chart, d.timeHigh), yH = priceToY(series, d.priceHigh);
           const xL = timeToX(chart, d.timeLow),  yL = priceToY(series, d.priceLow);
           if (xH == null || yH == null || xL == null || yL == null) continue;
@@ -4069,7 +4101,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           return;
         }
 
-        if (d.type === 'fibonacci') {
+        if (d.type === 'fibonacci' || d.type === 'fibExtension') {
           const xH = timeToX(chart, d.timeHigh), yH = priceToY(series, d.priceHigh);
           const xL = timeToX(chart, d.timeLow),  yL = priceToY(series, d.priceLow);
           if (xH == null || yH == null || xL == null || yL == null) continue;

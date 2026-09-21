@@ -6,11 +6,13 @@ import {
   SHAPE_TOOLS,
   ANNOTATION_TOOLS,
   POSITION_RANGE_TOOLS,
+  FIB_TOOLS,
   type CursorMode,
   type TrendTool,
   type ShapeTool,
   type AnnotationTool,
   type PositionRangeTool,
+  type FibTool,
   type DrawingTool,
 } from '../../store/drawingStore';
 
@@ -343,6 +345,22 @@ function FibIcon() {
       <line x1="3" y1="15" x2="21" y2="15" />
       <line x1="3" y1="20" x2="21" y2="20" />
       <line x1="4" y1="4"  x2="4"  y2="20" strokeWidth="1" />
+    </svg>
+  );
+}
+
+// Fib Extension: same ladder-of-levels shape as Fib Retracement's icon, plus
+// a short line beyond the last rung to signal ratios past 1.0.
+function FibExtensionIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5" fill="none">
+      <line x1="3" y1="4"  x2="18" y2="4" />
+      <line x1="3" y1="9"  x2="18" y2="9" />
+      <line x1="3" y1="12" x2="18" y2="12" />
+      <line x1="3" y1="15" x2="18" y2="15" />
+      <line x1="3" y1="20" x2="18" y2="20" />
+      <line x1="4" y1="4"  x2="4"  y2="20" strokeWidth="1" />
+      <line x1="19" y1="1" x2="19" y2="23" strokeWidth="1" strokeDasharray="2 2" />
     </svg>
   );
 }
@@ -729,7 +747,17 @@ const POSITION_RANGE_ITEMS: { tool: PositionRangeTool; label: string }[] = [
   ...POSITION_RANGE_FORECASTING_ITEMS, ...POSITION_RANGE_VOLUME_ITEMS, ...POSITION_RANGE_MEASURES_ITEMS,
 ];
 
-const FIB_TOOL: ToolBtn = { tool: 'fibonacci', label: 'Fibonacci Retracement', icon: <FibIcon /> };
+const FIB_ICON: Record<FibTool, React.ReactNode> = {
+  fibonacci: <FibIcon />,
+  fibExtension: <FibExtensionIcon />,
+};
+
+// The Fibonacci group's flyout — flat list (no subsections), same pattern as
+// Annotation. FIB_ITEMS is kept flat for ALL_TOOL_ICON/ALL_TOOL_LABEL/Favorites.
+const FIB_ITEMS: { tool: FibTool; label: string }[] = [
+  { tool: 'fibonacci',    label: 'Fib Retracement' },
+  { tool: 'fibExtension', label: 'Fib Extension' },
+];
 
 const MEASURE_TOOLS: ToolBtn[] = [
   { tool: 'measure', label: 'Measure', icon: <MeasureIcon /> },
@@ -744,7 +772,7 @@ export const ALL_TOOL_ICON: Partial<Record<DrawingTool, React.ReactNode>> = {
   ...SHAPE_ICON,
   ...ANNOTATION_ICON,
   ...POSITION_RANGE_ICON,
-  fibonacci: <FibIcon />,
+  ...FIB_ICON,
 };
 
 export const ALL_TOOL_LABEL: Partial<Record<DrawingTool, string>> = {
@@ -752,7 +780,7 @@ export const ALL_TOOL_LABEL: Partial<Record<DrawingTool, string>> = {
   ...Object.fromEntries(SHAPE_ITEMS.map(({ tool, label }) => [tool, label])),
   ...Object.fromEntries(ANNOTATION_ITEMS.map(({ tool, label }) => [tool, label])),
   ...Object.fromEntries(POSITION_RANGE_ITEMS.map(({ tool, label }) => [tool, label])),
-  fibonacci: FIB_TOOL.label,
+  ...Object.fromEntries(FIB_ITEMS.map(({ tool, label }) => [tool, label])),
 };
 
 // One row in a dropdown flyout (Trend Line / Shapes / Annotation / Prediction
@@ -794,7 +822,7 @@ function FavoritableMenuItem({
 
 export const DrawingToolbar = memo(function DrawingToolbar() {
   const {
-    activeTool, lastCursorMode, lastTrendTool, lastShapeTool, lastAnnotationTool, lastPositionRangeTool,
+    activeTool, lastCursorMode, lastTrendTool, lastShapeTool, lastAnnotationTool, lastPositionRangeTool, lastFibTool,
     drawings, setTool, selectedId, deleteDrawing, clearAll,
     keepToolActive, drawingsLocked, drawingsHidden, toggleKeepToolActive, toggleDrawingsLocked, toggleDrawingsHidden,
     favoriteTools, favoritesBarOpen, toggleFavorite, toggleFavoritesBar,
@@ -804,12 +832,14 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
   const [shapeDropdownOpen, setShapeDropdownOpen] = useState(false);
   const [annotationDropdownOpen, setAnnotationDropdownOpen] = useState(false);
   const [positionRangeDropdownOpen, setPositionRangeDropdownOpen] = useState(false);
+  const [fibDropdownOpen, setFibDropdownOpen] = useState(false);
   const [deleteMenuOpen, setDeleteMenuOpen] = useState(false);
   const cursorGroupRef = useRef<HTMLDivElement>(null);
   const trendGroupRef = useRef<HTMLDivElement>(null);
   const shapeGroupRef = useRef<HTMLDivElement>(null);
   const annotationGroupRef = useRef<HTMLDivElement>(null);
   const positionRangeGroupRef = useRef<HTMLDivElement>(null);
+  const fibGroupRef = useRef<HTMLDivElement>(null);
   const deleteGroupRef = useRef<HTMLDivElement>(null);
 
   const isCursorGroupActive = (CURSOR_MODES as readonly string[]).includes(activeTool);
@@ -817,10 +847,11 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
   const isShapeGroupActive = (SHAPE_TOOLS as readonly string[]).includes(activeTool);
   const isAnnotationGroupActive = (ANNOTATION_TOOLS as readonly string[]).includes(activeTool);
   const isPositionRangeGroupActive = (POSITION_RANGE_TOOLS as readonly string[]).includes(activeTool);
+  const isFibGroupActive = (FIB_TOOLS as readonly string[]).includes(activeTool);
 
   useEffect(() => {
     if (!cursorDropdownOpen && !trendDropdownOpen && !shapeDropdownOpen && !annotationDropdownOpen &&
-        !positionRangeDropdownOpen && !deleteMenuOpen) return;
+        !positionRangeDropdownOpen && !fibDropdownOpen && !deleteMenuOpen) return;
     const onOutsideMouseDown = (e: MouseEvent) => {
       const target = e.target as Node;
       if (cursorGroupRef.current && !cursorGroupRef.current.contains(target)) setCursorDropdownOpen(false);
@@ -828,11 +859,12 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
       if (shapeGroupRef.current && !shapeGroupRef.current.contains(target)) setShapeDropdownOpen(false);
       if (annotationGroupRef.current && !annotationGroupRef.current.contains(target)) setAnnotationDropdownOpen(false);
       if (positionRangeGroupRef.current && !positionRangeGroupRef.current.contains(target)) setPositionRangeDropdownOpen(false);
+      if (fibGroupRef.current && !fibGroupRef.current.contains(target)) setFibDropdownOpen(false);
       if (deleteGroupRef.current && !deleteGroupRef.current.contains(target)) setDeleteMenuOpen(false);
     };
     document.addEventListener('mousedown', onOutsideMouseDown);
     return () => document.removeEventListener('mousedown', onOutsideMouseDown);
-  }, [cursorDropdownOpen, trendDropdownOpen, shapeDropdownOpen, annotationDropdownOpen, positionRangeDropdownOpen, deleteMenuOpen]);
+  }, [cursorDropdownOpen, trendDropdownOpen, shapeDropdownOpen, annotationDropdownOpen, positionRangeDropdownOpen, fibDropdownOpen, deleteMenuOpen]);
 
   return (
     <div className="flex flex-col items-center gap-1 py-2 px-1 bg-[var(--bg-panel)] border-r border-[var(--border-color-soft)] select-none"
@@ -1106,18 +1138,58 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
 
       <div className="w-6 border-t border-[var(--border-color-soft)] my-1" />
 
-      <button
-        title={FIB_TOOL.label}
-        onClick={() => setTool(FIB_TOOL.tool)}
-        className={`
-          w-9 h-9 flex items-center justify-center rounded transition-colors [&_svg]:w-5 [&_svg]:h-5
-          ${activeTool === FIB_TOOL.tool
-            ? 'bg-[var(--accent)] text-white'
-            : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'}
-        `}
-      >
-        {FIB_TOOL.icon}
-      </button>
+      <div className="relative group" ref={fibGroupRef}>
+        <button
+          title="Fibonacci tools"
+          onClick={() => { setTool(lastFibTool); setFibDropdownOpen(false); }}
+          className={`
+            relative w-9 h-9 flex items-center justify-center rounded transition-colors [&_svg]:w-5 [&_svg]:h-5
+            ${isFibGroupActive
+              ? 'bg-[var(--accent)] text-white'
+              : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'}
+          `}
+        >
+          {FIB_ICON[lastFibTool]}
+        </button>
+        <button
+          aria-label="Fibonacci tool options"
+          title="Fibonacci tool options"
+          onClick={() => setFibDropdownOpen((v) => !v)}
+          className={`
+            absolute bottom-0 right-0 w-3 h-3 flex items-center justify-center
+            opacity-0 group-hover:opacity-100 transition-opacity
+            ${isFibGroupActive ? 'text-white' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'}
+          `}
+        >
+          <CornerArrow />
+        </button>
+
+        {fibDropdownOpen && (
+          <div
+            className="absolute left-full top-0 ml-1 py-1 overflow-hidden"
+            style={{
+              zIndex: 100,
+              width: 180,
+              background: 'var(--bg-panel-alt)',
+              borderRadius: 4,
+              boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
+            }}
+          >
+            {FIB_ITEMS.map(({ tool, label }) => (
+              <FavoritableMenuItem
+                key={tool}
+                tool={tool}
+                label={label}
+                icon={FIB_ICON[tool]}
+                active={activeTool === tool}
+                favorite={favoriteTools.includes(tool)}
+                onToggleFavorite={() => toggleFavorite(tool)}
+                onSelect={() => { setTool(tool); setFibDropdownOpen(false); }}
+              />
+            ))}
+          </div>
+        )}
+      </div>
 
       <div className="relative group" ref={positionRangeGroupRef}>
         <button

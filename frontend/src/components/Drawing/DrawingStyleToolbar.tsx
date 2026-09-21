@@ -75,7 +75,7 @@ export const DrawingStyleToolbar = memo(function DrawingStyleToolbar({ sharedCha
       return;
     }
 
-    if (selected.type === 'fibonacci') {
+    if (selected.type === 'fibonacci' || selected.type === 'fibExtension') {
       const xH = timeToX(chart, selected.timeHigh), yH = priceToY(series, selected.priceHigh);
       const xL = timeToX(chart, selected.timeLow),  yL = priceToY(series, selected.priceLow);
       if (xH == null || yH == null || xL == null || yL == null) { setPos(null); return; }
@@ -184,7 +184,7 @@ export const DrawingStyleToolbar = memo(function DrawingStyleToolbar({ sharedCha
 
   if (!pos || !selected || drawingsHidden || drawingsLocked) return null;
   if (selected.type !== 'trendline' && selected.type !== 'hline' && selected.type !== 'hray' &&
-      selected.type !== 'vline' && selected.type !== 'fibonacci' && selected.type !== 'rectangle' &&
+      selected.type !== 'vline' && selected.type !== 'fibonacci' && selected.type !== 'fibExtension' && selected.type !== 'rectangle' &&
       selected.type !== 'rotatedRectangle' && selected.type !== 'circle' && selected.type !== 'path' &&
       selected.type !== 'brush' && selected.type !== 'arrow' && selected.type !== 'arrowMark' &&
       selected.type !== 'text' && selected.type !== 'priceNote' && selected.type !== 'priceRange' &&
@@ -201,7 +201,7 @@ export const DrawingStyleToolbar = memo(function DrawingStyleToolbar({ sharedCha
     border: '1px solid var(--border-color-softer)',
   };
 
-  if (selected.type === 'fibonacci') {
+  if (selected.type === 'fibonacci' || selected.type === 'fibExtension') {
     const fib = selected;
     return (
       <>
