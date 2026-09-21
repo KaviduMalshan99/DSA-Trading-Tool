@@ -138,6 +138,16 @@ function VLineIcon() {
   );
 }
 
+function CrosslineIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" fill="none">
+      <line x1="2" y1="12" x2="22" y2="12" strokeDasharray="3 2" />
+      <line x1="12" y1="2" x2="12" y2="22" strokeDasharray="3 2" />
+      <circle cx="12" cy="12" r="2" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
 function ChannelIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" fill="none">
@@ -434,6 +444,7 @@ const TREND_ICON: Record<TrendTool, React.ReactNode> = {
   hline: <HLineIcon />,
   hray: <HRayIcon />,
   vline: <VLineIcon />,
+  crossline: <CrosslineIcon />,
   channel: <ChannelIcon />,
   regression: <RegressionIcon />,
 };
@@ -451,6 +462,7 @@ const TREND_LINE_ITEMS: { tool: TrendTool; label: string }[] = [
   { tool: 'hline',        label: 'Horizontal Line' },
   { tool: 'hray',         label: 'Horizontal Ray' },
   { tool: 'vline',        label: 'Vertical Line' },
+  { tool: 'crossline',    label: 'Crossline' },
 ];
 
 const TREND_CHANNEL_ITEMS: { tool: TrendTool; label: string }[] = [

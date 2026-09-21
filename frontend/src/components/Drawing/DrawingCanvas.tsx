@@ -10,7 +10,7 @@ import type { Candle } from '../../types/market';
 // deliberately do NOT capture, so the chart stays pannable by default.
 const CAPTURE_TOOLS = new Set<DrawingTool>([
   'trendline', 'ray', 'extendedLine', 'infoLine', 'trendAngle',
-  'hline', 'hray', 'vline', 'rectangle', 'fibonacci', 'channel', 'regression', 'eraser',
+  'hline', 'hray', 'vline', 'crossline', 'rectangle', 'fibonacci', 'channel', 'regression', 'eraser',
   'rotatedRectangle', 'circle', 'path', 'arrowMarker', 'arrowTool', 'arrowMarkUp', 'arrowMarkDown', 'brush',
   'text', 'priceNote', 'measure', 'zoomIn',
   'longPosition', 'shortPosition', 'priceRange', 'dateRange',
@@ -32,6 +32,7 @@ const CLICKS_REQUIRED: Partial<Record<DrawingTool, number>> = {
   hline: 1,
   hray: 1,
   vline: 1,
+  crossline: 1,
   rectangle: 2,
   fibonacci: 2,
   channel: 3,
@@ -685,6 +686,40 @@ function renderDrawing(
     ctx.fillRect(tagX, tagY, tagW, 18);
     ctx.fillStyle = '#0d1117';
     ctx.fillText(label, tagX + 6, tagY + 13);
+
+  } else if (d.type === 'crossline') {
+    const y = priceToY(series, d.price);
+    const x = timeToX(chart, d.time);
+    if (y == null || x == null) { ctx.restore(); return; }
+
+    const baseColor = d.color ?? '#2196F3';
+    const lineColor = hexToRgba(baseColor, d.opacity ?? 100);
+    const dashPattern: number[] = d.dash === 'dashed' ? [8, 4] : d.dash === 'dotted' ? [2, 3] : [];
+
+    ctx.strokeStyle = eraserHover ? '#f85149' : lineColor;
+    ctx.lineWidth = (d.width ?? 1.5) + (selected ? 1 : 0);
+    ctx.setLineDash(dashPattern);
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(W, y);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, H);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    if (selected) {
+      ctx.fillStyle = eraserHover ? '#f85149' : baseColor;
+      ctx.beginPath();
+      ctx.arc(x, y, 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    const label = d.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    ctx.fillStyle = eraserHover ? '#f85149' : baseColor;
+    ctx.font = '11px monospace';
+    ctx.fillText(label, W - 90, y - 4);
 
   } else if (d.type === 'channel') {
     const lines = getChannelLines(d, chart, series);
@@ -1518,6 +1553,13 @@ function hitTest(
     return x != null && Math.abs(mx - x) < TOL;
   }
 
+  if (d.type === 'crossline') {
+    const y = priceToY(series, d.price);
+    const x = timeToX(chart, d.time);
+    if (y == null || x == null) return false;
+    return Math.abs(my - y) < TOL || Math.abs(mx - x) < TOL;
+  }
+
   if (d.type === 'trendline' || d.type === 'ray' || d.type === 'extendedLine' ||
       d.type === 'infoLine' || d.type === 'trendAngle') {
     const x1 = timeToX(chart, d.time1);
@@ -1828,7 +1870,8 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
   // is applied to, so one drag implementation legitimately serves both pairs.
   const dragRef = useRef<{
     active: boolean;
-    kind: 'trendline' | 'channel' | 'fibonacci' | 'box' | 'path' | 'brush' | 'arrowMark' | 'note' | 'position';
+    kind: 'trendline' | 'channel' | 'fibonacci' | 'box' | 'path' | 'brush' | 'arrowMark' | 'note' | 'position'
+      | 'hline' | 'vline' | 'hray';
     id: string;
     mode: 'move' | 'p1' | 'p2' | 'p3' | 'c2' | 'c3' | 'vertex' | 'target' | 'stop' | 'width';
     vertexIndex?: number;
@@ -1847,6 +1890,9 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
     | { kind: 'arrowMark'; id: string; price: number; time: number }
     | { kind: 'note'; id: string; price: number; time: number }
     | { kind: 'position'; id: string; entryPrice: number; targetPrice: number; stopPrice: number; time1: number; time2: number }
+    | { kind: 'hline'; id: string; price: number }
+    | { kind: 'vline'; id: string; time: number }
+    | { kind: 'hray'; id: string; price: number; time: number }
     | null
   >(null);
 
@@ -1932,6 +1978,12 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
             dd = { ...d, price: drag.price, time: drag.time };
           } else if (drag.kind === 'position' && (d.type === 'longPosition' || d.type === 'shortPosition')) {
             dd = { ...d, entryPrice: drag.entryPrice, targetPrice: drag.targetPrice, stopPrice: drag.stopPrice, time1: drag.time1, time2: drag.time2 };
+          } else if (drag.kind === 'hline' && d.type === 'hline') {
+            dd = { ...d, price: drag.price };
+          } else if (drag.kind === 'vline' && d.type === 'vline') {
+            dd = { ...d, time: drag.time };
+          } else if (drag.kind === 'hray' && (d.type === 'hray' || d.type === 'crossline')) {
+            dd = { ...d, price: drag.price, time: drag.time };
           }
         }
         renderDrawing(
@@ -2018,7 +2070,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
       // even click; the click just locks the current position in
       if (!ds.active) {
         const tool = activeToolRef.current;
-        const isSingleClickTool = tool === 'hline' || tool === 'hray' || tool === 'vline' ||
+        const isSingleClickTool = tool === 'hline' || tool === 'hray' || tool === 'vline' || tool === 'crossline' ||
           tool === 'arrowMarkUp' || tool === 'arrowMarkDown' || tool === 'longPosition' || tool === 'shortPosition';
         if (isSingleClickTool && mousePosRef.current.inside) {
           const { x: mx, y: my } = mousePosRef.current;
@@ -2029,6 +2081,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
             if (tool === 'hline') preview = { id: '__preview', type: 'hline', price };
             else if (tool === 'hray') preview = { id: '__preview', type: 'hray', price, time };
             else if (tool === 'vline') preview = { id: '__preview', type: 'vline', time };
+            else if (tool === 'crossline') preview = { id: '__preview', type: 'crossline', price, time };
             else if (tool === 'longPosition' || tool === 'shortPosition') {
               const posBox = defaultPositionBox(tool, price, time, my, series, candlesRef.current);
               if (posBox) preview = { id: '__preview', type: tool, ...posBox };
@@ -2362,6 +2415,8 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
       addDrawing({ id, type: 'hray', price: price1, time: time1 });
     } else if (tool === 'vline') {
       addDrawing({ id, type: 'vline', time: time1 });
+    } else if (tool === 'crossline') {
+      addDrawing({ id, type: 'crossline', price: price1, time: time1 });
     } else if (tool === 'rectangle') {
       if (price2 == null || time2 == null) return;
       addDrawing({ id, type: 'rectangle', price1, time1, price2, time2 });
@@ -2570,6 +2625,38 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           return;
         }
 
+        if (drag.kind === 'hline') {
+          const ny = drag.origY1 + dy;
+          const price = yToPrice(series, ny);
+          if (price != null) {
+            dragPreviewRef.current = { kind: 'hline', id: drag.id, price };
+            scheduleRender();
+          }
+          return;
+        }
+
+        if (drag.kind === 'vline') {
+          const nx = drag.origX1 + dx;
+          const time = xToTime(chart, nx);
+          if (time != null) {
+            dragPreviewRef.current = { kind: 'vline', id: drag.id, time };
+            scheduleRender();
+          }
+          return;
+        }
+
+        if (drag.kind === 'hray') {
+          const nx = drag.origX1 + dx;
+          const ny = drag.origY1 + dy;
+          const price = yToPrice(series, ny);
+          const time  = xToTime(chart, nx);
+          if (price != null && time != null) {
+            dragPreviewRef.current = { kind: 'hray', id: drag.id, price, time };
+            scheduleRender();
+          }
+          return;
+        }
+
         if (drag.kind === 'box') {
           // rectangle/circle: 'p1'/'p2' drag the two *stored* corners, 'c2'/'c3'
           // drag the two *mixed* corners (one point's time, the other's price)
@@ -2744,6 +2831,12 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           if (x1 == null || y1 == null || x2 == null || y2 == null) continue;
           if (Math.hypot(x - x1, y - y1) < 8 || Math.hypot(x - x2, y - y2) < 8) { hoverCursor = 'grab'; break; }
           if (hitTest(d, x, y, chart, series, candlesRef.current)) { hoverCursor = 'move'; break; }
+        } else if (d.type === 'hline') {
+          if (hitTest(d, x, y, chart, series, candlesRef.current)) { hoverCursor = 'ns-resize'; break; }
+        } else if (d.type === 'vline') {
+          if (hitTest(d, x, y, chart, series, candlesRef.current)) { hoverCursor = 'ew-resize'; break; }
+        } else if (d.type === 'hray' || d.type === 'crossline') {
+          if (hitTest(d, x, y, chart, series, candlesRef.current)) { hoverCursor = 'move'; break; }
         } else if (d.type === 'channel' || d.type === 'rotatedRectangle') {
           const lines = computeParallelOffset(d.price1, d.time1, d.price2, d.time2, d.price3, d.time3, chart, series);
           if (!lines) continue;
@@ -2833,6 +2926,58 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           };
           selectDrawing(d.id);
           applyCursorValue('grabbing');
+          e.preventDefault();
+          e.stopPropagation();
+          scheduleRender();
+          return;
+        }
+
+        if (d.type === 'hline') {
+          const lineY = priceToY(series, d.price);
+          if (lineY == null || !hitTest(d, x, y, chart, series, candlesRef.current)) continue;
+
+          dragRef.current = {
+            active: true, kind: 'hline', id: d.id, mode: 'move',
+            startX: x, startY: y,
+            origX1: 0, origY1: lineY, origX2: 0, origY2: 0, origX3: 0, origY3: 0,
+          };
+          selectDrawing(d.id);
+          applyCursorValue('ns-resize');
+          e.preventDefault();
+          e.stopPropagation();
+          scheduleRender();
+          return;
+        }
+
+        if (d.type === 'vline') {
+          const lineX = timeToX(chart, d.time);
+          if (lineX == null || !hitTest(d, x, y, chart, series, candlesRef.current)) continue;
+
+          dragRef.current = {
+            active: true, kind: 'vline', id: d.id, mode: 'move',
+            startX: x, startY: y,
+            origX1: lineX, origY1: 0, origX2: 0, origY2: 0, origX3: 0, origY3: 0,
+          };
+          selectDrawing(d.id);
+          applyCursorValue('ew-resize');
+          e.preventDefault();
+          e.stopPropagation();
+          scheduleRender();
+          return;
+        }
+
+        if (d.type === 'hray' || d.type === 'crossline') {
+          const lineY = priceToY(series, d.price);
+          const lineX = timeToX(chart, d.time);
+          if (lineY == null || lineX == null || !hitTest(d, x, y, chart, series, candlesRef.current)) continue;
+
+          dragRef.current = {
+            active: true, kind: 'hray', id: d.id, mode: 'move',
+            startX: x, startY: y,
+            origX1: lineX, origY1: lineY, origX2: 0, origY2: 0, origX3: 0, origY3: 0,
+          };
+          selectDrawing(d.id);
+          applyCursorValue('move');
           e.preventDefault();
           e.stopPropagation();
           scheduleRender();
@@ -3046,6 +3191,12 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
             entryPrice: preview.entryPrice, targetPrice: preview.targetPrice, stopPrice: preview.stopPrice,
             time1: preview.time1, time2: preview.time2,
           });
+        } else if (preview.kind === 'hline') {
+          updateDrawing(drag.id, { price: preview.price });
+        } else if (preview.kind === 'vline') {
+          updateDrawing(drag.id, { time: preview.time });
+        } else if (preview.kind === 'hray') {
+          updateDrawing(drag.id, { price: preview.price, time: preview.time });
         }
       }
       dragRef.current = null;

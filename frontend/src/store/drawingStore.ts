@@ -11,10 +11,10 @@ export const CURSOR_MODES: readonly CursorMode[] = ['cross', 'dot', 'arrow', 'de
 // tag and renderer differ from the plain Trend Line.
 export type TrendTool =
   | 'trendline' | 'ray' | 'extendedLine' | 'infoLine' | 'trendAngle'
-  | 'hline' | 'hray' | 'vline' | 'channel' | 'regression';
+  | 'hline' | 'hray' | 'vline' | 'crossline' | 'channel' | 'regression';
 export const TREND_TOOLS: readonly TrendTool[] = [
   'trendline', 'ray', 'extendedLine', 'infoLine', 'trendAngle',
-  'hline', 'hray', 'vline', 'channel', 'regression',
+  'hline', 'hray', 'vline', 'crossline', 'channel', 'regression',
 ];
 
 // The "Shapes" group — geometric shapes, arrows, and freehand tools, grouped
@@ -133,6 +133,16 @@ export interface HRayDrawing extends LineStyle {
 export interface VLineDrawing extends LineStyle {
   id: string;
   type: 'vline';
+  time: number;
+}
+
+// Crossline: a single anchor point rendered as both a full-width horizontal
+// line (at `price`) and a full-height vertical line (at `time`) — like
+// overlaying Horizontal Line + Vertical Line at one point.
+export interface CrosslineDrawing extends LineStyle {
+  id: string;
+  type: 'crossline';
+  price: number;
   time: number;
 }
 
@@ -314,6 +324,7 @@ export type Drawing =
   | HLineDrawing
   | HRayDrawing
   | VLineDrawing
+  | CrosslineDrawing
   | RectangleDrawing
   | RotatedRectangleDrawing
   | CircleDrawing
