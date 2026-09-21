@@ -83,6 +83,26 @@ export const DrawingStyleToolbar = memo(function DrawingStyleToolbar({ sharedCha
       return;
     }
 
+    if (selected.type === 'trendFibExtension') {
+      const x1 = timeToX(chart, selected.time1), y1 = priceToY(series, selected.price1);
+      const x2 = timeToX(chart, selected.time2), y2 = priceToY(series, selected.price2);
+      const x3 = timeToX(chart, selected.time3), y3 = priceToY(series, selected.price3);
+      if (x1 == null || y1 == null || x2 == null || y2 == null || x3 == null || y3 == null) { setPos(null); return; }
+      setPos({ x: (x1 + x2 + x3) / 3, y: Math.min(y1, y2, y3) - 46 });
+      return;
+    }
+
+    if (selected.type === 'fibChannel') {
+      const lines = computeParallelOffset(
+        selected.price1, selected.time1, selected.price2, selected.time2,
+        selected.price3, selected.time3, chart, series,
+      );
+      if (!lines) { setPos(null); return; }
+      const minY = Math.min(lines.y1, lines.y2, lines.y1b, lines.y2b);
+      setPos({ x: (lines.x1 + lines.x2) / 2, y: minY - 46 });
+      return;
+    }
+
     if (selected.type === 'rectangle' || selected.type === 'circle') {
       const x1 = timeToX(chart, selected.time1), y1 = priceToY(series, selected.price1);
       const x2 = timeToX(chart, selected.time2), y2 = priceToY(series, selected.price2);
@@ -184,7 +204,8 @@ export const DrawingStyleToolbar = memo(function DrawingStyleToolbar({ sharedCha
 
   if (!pos || !selected || drawingsHidden || drawingsLocked) return null;
   if (selected.type !== 'trendline' && selected.type !== 'hline' && selected.type !== 'hray' &&
-      selected.type !== 'vline' && selected.type !== 'fibonacci' && selected.type !== 'fibExtension' && selected.type !== 'rectangle' &&
+      selected.type !== 'vline' && selected.type !== 'fibonacci' && selected.type !== 'fibExtension' &&
+      selected.type !== 'trendFibExtension' && selected.type !== 'fibChannel' && selected.type !== 'rectangle' &&
       selected.type !== 'rotatedRectangle' && selected.type !== 'circle' && selected.type !== 'path' &&
       selected.type !== 'brush' && selected.type !== 'arrow' && selected.type !== 'arrowMark' &&
       selected.type !== 'text' && selected.type !== 'priceNote' && selected.type !== 'priceRange' &&
@@ -201,7 +222,8 @@ export const DrawingStyleToolbar = memo(function DrawingStyleToolbar({ sharedCha
     border: '1px solid var(--border-color-softer)',
   };
 
-  if (selected.type === 'fibonacci' || selected.type === 'fibExtension') {
+  if (selected.type === 'fibonacci' || selected.type === 'fibExtension' ||
+      selected.type === 'trendFibExtension' || selected.type === 'fibChannel') {
     const fib = selected;
     return (
       <>

@@ -26,6 +26,13 @@ const EXTEND_OPTIONS: { value: FibExtend; label: string }[] = [
   { value: 'both',  label: 'Extend both' },
 ];
 
+const FIB_TITLES: Record<FibLikeDrawing['type'], string> = {
+  fibonacci: 'Fib Retracement',
+  fibExtension: 'Fib Extension',
+  trendFibExtension: 'Trend-based Fib Extension',
+  fibChannel: 'Fib Channel',
+};
+
 export function FibSettingsModal({ fib, onClose }: Props) {
   const { updateDrawing, deleteDrawing } = useDrawingStore();
   // Snapshot taken once, when the modal mounts — Cancel restores this so
@@ -62,7 +69,7 @@ export function FibSettingsModal({ fib, onClose }: Props) {
         {/* header */}
         <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid var(--border-color-softer)' }}>
           <span className="text-[var(--text-secondary)] font-medium">
-            {fib.type === 'fibExtension' ? 'Fib Extension' : 'Fib Retracement'}
+            {FIB_TITLES[fib.type]}
           </span>
           <button onClick={handleCancel} className="text-[var(--text-muted)] hover:text-[var(--text-primary)] text-lg leading-none">×</button>
         </div>
@@ -88,21 +95,23 @@ export function FibSettingsModal({ fib, onClose }: Props) {
         <div className="p-4 overflow-y-auto" style={{ flex: 1 }}>
           {tab === 'Style' && (
             <div className="flex flex-col gap-4">
-              <div className="flex items-center justify-between">
-                <label className="flex items-center gap-2 text-sm text-[var(--text-secondary)]">
-                  <input
-                    type="checkbox"
-                    checked={fib.lineVisible !== false}
-                    onChange={(e) => patch({ lineVisible: e.target.checked })}
-                  />
-                  Trend line
-                </label>
-                <div className="flex items-center gap-2">
-                  <MiniColorSwatch color={fib.lineColor ?? '#787B86'} onChange={(c) => patch({ lineColor: c })} />
-                  <MiniDashPicker dash={fib.lineDash ?? 'dotted'} onChange={(d) => patch({ lineDash: d })} />
-                  <MiniWidthPicker width={fib.lineWidth ?? 1} onChange={(w) => patch({ lineWidth: w })} />
+              {fib.type !== 'fibChannel' && (
+                <div className="flex items-center justify-between">
+                  <label className="flex items-center gap-2 text-sm text-[var(--text-secondary)]">
+                    <input
+                      type="checkbox"
+                      checked={fib.lineVisible !== false}
+                      onChange={(e) => patch({ lineVisible: e.target.checked })}
+                    />
+                    {fib.type === 'trendFibExtension' ? 'A-B-C line' : 'Trend line'}
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <MiniColorSwatch color={fib.lineColor ?? '#787B86'} onChange={(c) => patch({ lineColor: c })} />
+                    <MiniDashPicker dash={fib.lineDash ?? 'dotted'} onChange={(d) => patch({ lineDash: d })} />
+                    <MiniWidthPicker width={fib.lineWidth ?? 1} onChange={(w) => patch({ lineWidth: w })} />
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div className="flex items-center justify-between">
                 <span className="text-sm text-[var(--text-secondary)]">Levels line</span>
@@ -112,19 +121,21 @@ export function FibSettingsModal({ fib, onClose }: Props) {
                 </div>
               </div>
 
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-[var(--text-secondary)]">Extend</span>
-                <select
-                  value={fib.extend ?? 'none'}
-                  onChange={(e) => patch({ extend: e.target.value as FibExtend })}
-                  className="text-sm px-2 py-1 rounded"
-                  style={{ background: 'var(--bg-app)', color: 'var(--text-secondary)', border: '1px solid var(--border-color-softer)' }}
-                >
-                  {EXTEND_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
-                  ))}
-                </select>
-              </div>
+              {(fib.type === 'fibonacci' || fib.type === 'fibExtension') && (
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-[var(--text-secondary)]">Extend</span>
+                  <select
+                    value={fib.extend ?? 'none'}
+                    onChange={(e) => patch({ extend: e.target.value as FibExtend })}
+                    className="text-sm px-2 py-1 rounded"
+                    style={{ background: 'var(--bg-app)', color: 'var(--text-secondary)', border: '1px solid var(--border-color-softer)' }}
+                  >
+                    {EXTEND_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               <div className="pt-2 grid grid-cols-2 gap-x-4 gap-y-2" style={{ borderTop: '1px solid var(--border-color-softer)' }}>
                 {fibLevelsFor(fib.type).map((defaults, i) => {
@@ -158,7 +169,7 @@ export function FibSettingsModal({ fib, onClose }: Props) {
             </div>
           )}
 
-          {tab === 'Coordinates' && (
+          {tab === 'Coordinates' && (fib.type === 'fibonacci' || fib.type === 'fibExtension') && (
             <div className="flex flex-col gap-4 text-sm text-[var(--text-secondary)]">
               <div>
                 <div className="text-xs text-[var(--text-muted)] mb-1 uppercase tracking-wide">Point 1 (high)</div>
@@ -186,6 +197,54 @@ export function FibSettingsModal({ fib, onClose }: Props) {
                   />
                 </div>
               </div>
+            </div>
+          )}
+
+          {tab === 'Coordinates' && fib.type === 'trendFibExtension' && (
+            <div className="flex flex-col gap-4 text-sm text-[var(--text-secondary)]">
+              {([
+                ['Point A (move start)', 'price1'],
+                ['Point B (move end)', 'price2'],
+                ['Point C (projection origin)', 'price3'],
+              ] as const).map(([label, key]) => (
+                <div key={key}>
+                  <div className="text-xs text-[var(--text-muted)] mb-1 uppercase tracking-wide">{label}</div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-12 text-xs text-[var(--text-muted)]">Price</span>
+                    <input
+                      type="number"
+                      value={fib[key]}
+                      onChange={(e) => { const n = Number(e.target.value); if (Number.isFinite(n)) patch({ [key]: n }); }}
+                      className="flex-1 px-2 py-1 rounded font-mono text-xs"
+                      style={{ background: 'var(--bg-app)', border: '1px solid var(--border-color-softer)', color: 'var(--text-secondary)' }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {tab === 'Coordinates' && fib.type === 'fibChannel' && (
+            <div className="flex flex-col gap-4 text-sm text-[var(--text-secondary)]">
+              {([
+                ['Baseline point 1', 'price1'],
+                ['Baseline point 2', 'price2'],
+                ['Offset point', 'price3'],
+              ] as const).map(([label, key]) => (
+                <div key={key}>
+                  <div className="text-xs text-[var(--text-muted)] mb-1 uppercase tracking-wide">{label}</div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-12 text-xs text-[var(--text-muted)]">Price</span>
+                    <input
+                      type="number"
+                      value={fib[key]}
+                      onChange={(e) => { const n = Number(e.target.value); if (Number.isFinite(n)) patch({ [key]: n }); }}
+                      className="flex-1 px-2 py-1 rounded font-mono text-xs"
+                      style={{ background: 'var(--bg-app)', border: '1px solid var(--border-color-softer)', color: 'var(--text-secondary)' }}
+                    />
+                  </div>
+                </div>
+              ))}
             </div>
           )}
 

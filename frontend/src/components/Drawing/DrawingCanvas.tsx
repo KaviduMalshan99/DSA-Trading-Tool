@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback, useState, memo } from 'react';
 import type { IChartApi, ISeriesApi } from 'lightweight-charts';
-import { useDrawingStore, type Drawing, type DrawingTool } from '../../store/drawingStore';
+import { useDrawingStore, type Drawing, type DrawingTool, type FibTool } from '../../store/drawingStore';
 import { useMarketStore } from '../../store/marketStore';
 import { toChartTimeSeconds } from '../../utils/chartTime';
 import { computeSessionVWAPFromCandles } from '../../utils/klineAnalytics';
@@ -12,7 +12,8 @@ import type { Candle } from '../../types/market';
 // deliberately do NOT capture, so the chart stays pannable by default.
 const CAPTURE_TOOLS = new Set<DrawingTool>([
   'trendline', 'ray', 'extendedLine', 'infoLine', 'trendAngle',
-  'hline', 'hray', 'vline', 'crossline', 'rectangle', 'fibonacci', 'fibExtension', 'channel', 'regression',
+  'hline', 'hray', 'vline', 'crossline', 'rectangle', 'fibonacci', 'fibExtension',
+  'trendFibExtension', 'fibChannel', 'channel', 'regression',
   'flatChannel', 'disjointChannel', 'eraser',
   'rotatedRectangle', 'circle', 'ellipse', 'path', 'polyline',
   'triangle', 'arc', 'curve', 'doubleCurve',
@@ -41,6 +42,8 @@ const CLICKS_REQUIRED: Partial<Record<DrawingTool, number>> = {
   rectangle: 2,
   fibonacci: 2,
   fibExtension: 2,
+  trendFibExtension: 3,
+  fibChannel: 3,
   channel: 3,
   regression: 2,
   flatChannel: 3,
@@ -107,12 +110,75 @@ export const FIB_EXTENSION_LEVELS = [
   { pct: 2.618, color: '#9C27B0', label: '2.618' },
 ] as const;
 
-// Fib Retracement and Fib Extension share one drawing shape/render/hitTest —
+// Trend-based Fib Extension's ratio table — projected forward from the
+// origin (click C) by the A->B move, see the 'trendFibExtension' render
+// branch below.
+export const FIB_TREND_EXT_LEVELS = [
+  { pct: 0,     color: '#787B86', label: '0' },
+  { pct: 0.382, color: '#FF9800', label: '0.382' },
+  { pct: 0.618, color: '#2196F3', label: '0.618' },
+  { pct: 1.0,   color: '#787B86', label: '1.0' },
+  { pct: 1.272, color: '#FF9800', label: '1.272' },
+  { pct: 1.618, color: '#00BCD4', label: '1.618' },
+  { pct: 2.618, color: '#9C27B0', label: '2.618' },
+] as const;
+
+// Fib Channel's ratio table — 0 is the baseline, 1 is the fully-offset
+// parallel line, and every ratio in between is the baseline shifted by that
+// fraction of the channel width (see the 'fibChannel' render branch below).
+export const FIB_CHANNEL_LEVELS = [
+  { pct: 0,     color: '#787B86', label: '0' },
+  { pct: 0.236, color: '#F23645', label: '0.236' },
+  { pct: 0.382, color: '#FF9800', label: '0.382' },
+  { pct: 0.500, color: '#4CAF50', label: '0.5' },
+  { pct: 0.618, color: '#2196F3', label: '0.618' },
+  { pct: 0.786, color: '#9C27B0', label: '0.786' },
+  { pct: 1.0,   color: '#787B86', label: '1.0' },
+] as const;
+
+// Every fib-family tool shares one drawing/render/hitTest pattern per shape —
 // only which ratio table they read differs. Every FIB_LEVELS read that must
-// also serve fibExtension goes through this helper instead of the constant
-// directly, so Fib Retracement's own resolution never changes.
-export function fibLevelsFor(type: 'fibonacci' | 'fibExtension') {
-  return type === 'fibExtension' ? FIB_EXTENSION_LEVELS : FIB_LEVELS;
+// also serve the other fib tools goes through this helper instead of a
+// constant directly, so Fib Retracement/Extension's own resolution never changes.
+export function fibLevelsFor(type: FibTool) {
+  switch (type) {
+    case 'fibExtension': return FIB_EXTENSION_LEVELS;
+    case 'trendFibExtension': return FIB_TREND_EXT_LEVELS;
+    case 'fibChannel': return FIB_CHANNEL_LEVELS;
+    default: return FIB_LEVELS;
+  }
+}
+
+// Draws one fib level: a horizontal line from spanLeft to spanRight at `y`,
+// plus its "${label} ${price}" text label — factored out of the Fib
+// Retracement/Extension render loop below so Trend-based Fib Extension's
+// projected levels can draw with the exact same line+label code.
+function drawFibLevelLine(
+  ctx: CanvasRenderingContext2D,
+  color: string,
+  y: number,
+  spanLeft: number,
+  spanRight: number,
+  width: number,
+  dash: number[],
+  alpha: number,
+  label: string,
+  labelX: number,
+): void {
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  ctx.setLineDash(dash);
+  ctx.globalAlpha = alpha;
+  ctx.beginPath();
+  ctx.moveTo(spanLeft, y);
+  ctx.lineTo(spanRight, y);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.globalAlpha = 1;
+
+  ctx.fillStyle = color;
+  ctx.font = '10px monospace';
+  ctx.fillText(label, labelX, y - 3);
 }
 
 interface Props {
@@ -1863,22 +1929,12 @@ function renderDrawing(
       if (y == null) return;
 
       const lineColor = eraserHover ? '#f85149' : (cfg?.color ?? defaultColor);
-      ctx.strokeStyle = lineColor;
-      ctx.lineWidth = d.levelWidth ?? (pct === 0.618 ? 1.5 : 1);
-      ctx.setLineDash(levelDash);
-      ctx.globalAlpha = selected ? 1 : 0.85;
-      ctx.beginPath();
-      ctx.moveTo(spanLeft, y);
-      ctx.lineTo(spanRight, y);
-      ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.globalAlpha = 1;
-
-      // label on right
       const priceStr = price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-      ctx.fillStyle = lineColor;
-      ctx.font = '10px monospace';
-      ctx.fillText(`${pct}  ${priceStr}`, Math.min(xRight + 4, W - 120), y - 3);
+      drawFibLevelLine(
+        ctx, lineColor, y, spanLeft, spanRight,
+        d.levelWidth ?? (pct === 0.618 ? 1.5 : 1), levelDash, selected ? 1 : 0.85,
+        `${pct}  ${priceStr}`, Math.min(xRight + 4, W - 120),
+      );
     });
 
     // shaded region
@@ -1909,6 +1965,105 @@ function renderDrawing(
       ctx.beginPath();
       ctx.arc(xL, yL, 4, 0, Math.PI * 2);
       ctx.fill();
+    }
+
+  } else if (d.type === 'trendFibExtension') {
+    const pts3 = get3PointScreen(d.price1, d.time1, d.price2, d.time2, d.price3, d.time3, chart, series);
+    if (!pts3) { ctx.restore(); return; }
+    const { x1: xA, y1: yA, x2: xB, y2: yB, x3: xC, y3: yC } = pts3;
+
+    const xLeft  = Math.min(xA, xB, xC);
+    const xRight = Math.max(xA, xB, xC);
+    // the A->B move, projected forward from origin C
+    const move = d.price2 - d.price1;
+
+    const levelDash: number[] = d.levelDash === 'dashed' ? [8, 4] : d.levelDash === 'solid' ? [] : [4, 3];
+
+    fibLevelsFor(d.type).forEach(({ pct: defaultPct, color: defaultColor }, i) => {
+      const cfg = d.levels?.[i];
+      if (cfg?.enabled === false) return;
+      const pct = cfg?.pct ?? defaultPct;
+      const price = d.price3 + move * pct;
+      const y = priceToY(series, price);
+      if (y == null) return;
+
+      const lineColor = eraserHover ? '#f85149' : (cfg?.color ?? defaultColor);
+      const priceStr = price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      drawFibLevelLine(
+        ctx, lineColor, y, xLeft, xRight,
+        d.levelWidth ?? (pct === 0.618 ? 1.5 : 1), levelDash, selected ? 1 : 0.85,
+        `${pct}  ${priceStr}`, Math.min(xRight + 4, W - 120),
+      );
+    });
+
+    // A->B->C connecting lines so the projection structure stays visible
+    if (d.lineVisible !== false) {
+      const connColor = eraserHover ? '#f85149' : hexToRgba(d.lineColor ?? '#787B86', 100);
+      const connDash: number[] =
+        d.lineDash === 'dashed' ? [8, 4] : d.lineDash === 'solid' ? [] : [2, 3];
+      ctx.strokeStyle = connColor;
+      ctx.lineWidth = d.lineWidth ?? 1;
+      ctx.setLineDash(connDash);
+      ctx.beginPath();
+      ctx.moveTo(xA, yA);
+      ctx.lineTo(xB, yB);
+      ctx.lineTo(xC, yC);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    if (selected) {
+      ctx.fillStyle = eraserHover ? '#f85149' : '#2196F3';
+      for (const [hx, hy] of [[xA, yA], [xB, yB], [xC, yC]] as const) {
+        ctx.beginPath();
+        ctx.arc(hx, hy, 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+  } else if (d.type === 'fibChannel') {
+    const lines = computeParallelOffset(d.price1, d.time1, d.price2, d.time2, d.price3, d.time3, chart, series);
+    if (!lines) { ctx.restore(); return; }
+    const { x1, y1, x2, y2, y1b, y2b } = lines;
+
+    const levelDash: number[] = d.levelDash === 'dashed' ? [8, 4] : d.levelDash === 'solid' ? [] : [4, 3];
+
+    fibLevelsFor(d.type).forEach(({ pct: defaultPct, color: defaultColor }, i) => {
+      const cfg = d.levels?.[i];
+      if (cfg?.enabled === false) return;
+      const pct = cfg?.pct ?? defaultPct;
+      // each level is the baseline shifted toward the offset line by `pct`
+      // of the channel width — parallel to the baseline, not horizontal.
+      const ly1 = y1 + (y1b - y1) * pct;
+      const ly2 = y2 + (y2b - y2) * pct;
+
+      const lineColor = eraserHover ? '#f85149' : (cfg?.color ?? defaultColor);
+      ctx.strokeStyle = lineColor;
+      ctx.lineWidth = d.levelWidth ?? (pct === 0.618 ? 1.5 : 1);
+      ctx.setLineDash(levelDash);
+      ctx.globalAlpha = selected ? 1 : 0.85;
+      ctx.beginPath();
+      ctx.moveTo(x1, ly1);
+      ctx.lineTo(x2, ly2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
+
+      ctx.fillStyle = lineColor;
+      ctx.font = '10px monospace';
+      ctx.fillText(`${pct}`, Math.min(x2 + 4, W - 60), ly2 - 3);
+    });
+
+    if (selected) {
+      const handleColor = eraserHover ? '#f85149' : '#2196F3';
+      ctx.fillStyle = handleColor;
+      for (const [hx, hy] of [[x1, y1], [x2, y2]] as const) {
+        ctx.beginPath();
+        ctx.arc(hx, hy, 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      const wx = (x1 + x2) / 2, wy = (y1b + y2b) / 2;
+      ctx.fillRect(wx - 4, wy - 4, 8, 8);
     }
 
   } else if (d.type === 'anchoredVwap') {
@@ -2434,6 +2589,42 @@ function hitTest(
     }
   }
 
+  if (d.type === 'trendFibExtension') {
+    const pts3 = get3PointScreen(d.price1, d.time1, d.price2, d.time2, d.price3, d.time3, chart, series);
+    if (!pts3) return false;
+    const { x1: xA, y1: yA, x2: xB, y2: yB, x3: xC, y3: yC } = pts3;
+    const move = d.price2 - d.price1;
+    const fibLevels = fibLevelsFor(d.type);
+    for (let i = 0; i < fibLevels.length; i++) {
+      const cfg = d.levels?.[i];
+      if (cfg?.enabled === false) continue;
+      const pct = cfg?.pct ?? fibLevels[i].pct;
+      const price = d.price3 + move * pct;
+      const y = priceToY(series, price);
+      if (y != null && Math.abs(my - y) < TOL) return true;
+    }
+    if (d.lineVisible !== false) {
+      return distToSegment(mx, my, xA, yA, xB, yB) < TOL || distToSegment(mx, my, xB, yB, xC, yC) < TOL;
+    }
+    return false;
+  }
+
+  if (d.type === 'fibChannel') {
+    const lines = computeParallelOffset(d.price1, d.time1, d.price2, d.time2, d.price3, d.time3, chart, series);
+    if (!lines) return false;
+    const { x1, y1, x2, y2, y1b, y2b } = lines;
+    const fibLevels = fibLevelsFor(d.type);
+    for (let i = 0; i < fibLevels.length; i++) {
+      const cfg = d.levels?.[i];
+      if (cfg?.enabled === false) continue;
+      const pct = cfg?.pct ?? fibLevels[i].pct;
+      const ly1 = y1 + (y1b - y1) * pct;
+      const ly2 = y2 + (y2b - y2) * pct;
+      if (distToSegment(mx, my, x1, ly1, x2, ly2) < TOL) return true;
+    }
+    return false;
+  }
+
   return false;
 }
 
@@ -2579,7 +2770,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
   const dragRef = useRef<{
     active: boolean;
     kind: 'trendline' | 'channel' | 'flatChannel' | 'disjointChannel' | 'fibonacci' | 'box' | 'path' | 'brush'
-      | 'triangle' | 'arc' | 'curve' | 'doubleCurve'
+      | 'triangle' | 'arc' | 'curve' | 'doubleCurve' | 'trendFibExtension'
       | 'arrowMark' | 'note' | 'position' | 'hline' | 'vline' | 'hray';
     id: string;
     mode: 'move' | 'p1' | 'p2' | 'p3' | 'c2' | 'c3' | 'vertex' | 'target' | 'stop' | 'width'
@@ -2600,7 +2791,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
         priceB1: number; timeB1: number; priceB2: number; timeB2: number }
     | { kind: 'fibonacci'; id: string; priceHigh: number; timeHigh: number; priceLow: number; timeLow: number }
     | { kind: 'box'; id: string; price1: number; time1: number; price2: number; time2: number }
-    | { kind: 'triangle' | 'arc' | 'curve' | 'doubleCurve'; id: string;
+    | { kind: 'triangle' | 'arc' | 'curve' | 'doubleCurve' | 'trendFibExtension'; id: string;
         price1: number; time1: number; price2: number; time2: number; price3: number; time3: number }
     | { kind: 'path' | 'brush'; id: string; points: { price: number; time: number }[] }
     | { kind: 'arrowMark'; id: string; price: number; time: number }
@@ -2677,7 +2868,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           if (drag.kind === 'trendline' && (d.type === 'trendline' || d.type === 'arrow' || d.type === 'priceNote' ||
               d.type === 'ray' || d.type === 'extendedLine' || d.type === 'infoLine' || d.type === 'trendAngle')) {
             dd = { ...d, price1: drag.price1, time1: drag.time1, price2: drag.price2, time2: drag.time2 };
-          } else if (drag.kind === 'channel' && (d.type === 'channel' || d.type === 'rotatedRectangle')) {
+          } else if (drag.kind === 'channel' && (d.type === 'channel' || d.type === 'rotatedRectangle' || d.type === 'fibChannel')) {
             dd = { ...d, price1: drag.price1, time1: drag.time1, price2: drag.price2, time2: drag.time2,
               price3: drag.price3, time3: drag.time3 };
           } else if (drag.kind === 'flatChannel' && d.type === 'flatChannel') {
@@ -2699,6 +2890,8 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           } else if (drag.kind === 'curve' && d.type === 'curve') {
             dd = { ...d, price1: drag.price1, time1: drag.time1, price2: drag.price2, time2: drag.time2, price3: drag.price3, time3: drag.time3 };
           } else if (drag.kind === 'doubleCurve' && d.type === 'doubleCurve') {
+            dd = { ...d, price1: drag.price1, time1: drag.time1, price2: drag.price2, time2: drag.time2, price3: drag.price3, time3: drag.time3 };
+          } else if (drag.kind === 'trendFibExtension' && d.type === 'trendFibExtension') {
             dd = { ...d, price1: drag.price1, time1: drag.time1, price2: drag.price2, time2: drag.time2, price3: drag.price3, time3: drag.time3 };
           } else if (drag.kind === 'path' && (d.type === 'path' || d.type === 'polyline')) {
             dd = { ...d, points: drag.points };
@@ -2769,6 +2962,12 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
             preview = { id: '__preview', type: 'fibExtension',
               priceHigh: Math.max(price1, price2), timeHigh: price1 >= price2 ? time1 : time2,
               priceLow:  Math.min(price1, price2), timeLow:  price1 < price2  ? time1 : time2 };
+          else if (tool === 'trendFibExtension' && price2 != null && time2 != null)
+            preview = { id: '__preview', type: 'trendFibExtension', price1, time1, price2, time2,
+              price3: price3 ?? price2, time3: time3 ?? time2 };
+          else if (tool === 'fibChannel' && price2 != null && time2 != null)
+            preview = { id: '__preview', type: 'fibChannel', price1, time1, price2, time2,
+              price3: price3 ?? price2, time3: time3 ?? time2 };
           else if (tool === 'channel' && price2 != null && time2 != null)
             preview = { id: '__preview', type: 'channel', price1, time1, price2, time2,
               price3: price3 ?? price2, time3: time3 ?? time2 };
@@ -3229,6 +3428,12 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
       addDrawing({ id, type: 'fibExtension',
         priceHigh: Math.max(price1, price2), timeHigh: price1 >= price2 ? time1 : time2,
         priceLow:  Math.min(price1, price2), timeLow:  price1 < price2  ? time1 : time2 });
+    } else if (tool === 'trendFibExtension') {
+      if (price2 == null || time2 == null || price3 == null || time3 == null) return;
+      addDrawing({ id, type: 'trendFibExtension', price1, time1, price2, time2, price3, time3 });
+    } else if (tool === 'fibChannel') {
+      if (price2 == null || time2 == null || price3 == null || time3 == null) return;
+      addDrawing({ id, type: 'fibChannel', price1, time1, price2, time2, price3, time3 });
     } else if (tool === 'channel') {
       if (price2 == null || time2 == null || price3 == null || time3 == null) return;
       addDrawing({ id, type: 'channel', price1, time1, price2, time2, price3, time3 });
@@ -3533,8 +3738,9 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           return;
         }
 
-        if (drag.kind === 'triangle' || drag.kind === 'arc' || drag.kind === 'curve' || drag.kind === 'doubleCurve') {
-          // All 4 store 3 independent anchor points with identical move/p1/p2/p3
+        if (drag.kind === 'triangle' || drag.kind === 'arc' || drag.kind === 'curve' || drag.kind === 'doubleCurve' ||
+            drag.kind === 'trendFibExtension') {
+          // All 5 store 3 independent anchor points with identical move/p1/p2/p3
           // semantics — a single drag application covers all of them.
           let nx1 = drag.origX1, ny1 = drag.origY1;
           let nx2 = drag.origX2, ny2 = drag.origY2;
@@ -3762,7 +3968,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           if (hitTest(d, x, y, chart, series, candlesRef.current)) { hoverCursor = 'ew-resize'; break; }
         } else if (d.type === 'hray' || d.type === 'crossline') {
           if (hitTest(d, x, y, chart, series, candlesRef.current)) { hoverCursor = 'move'; break; }
-        } else if (d.type === 'channel' || d.type === 'rotatedRectangle') {
+        } else if (d.type === 'channel' || d.type === 'rotatedRectangle' || d.type === 'fibChannel') {
           const lines = computeParallelOffset(d.price1, d.time1, d.price2, d.time2, d.price3, d.time3, chart, series);
           if (!lines) continue;
           const { x1, y1, x2, y2, y1b, y2b } = lines;
@@ -3790,7 +3996,8 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
             .some(([hx, hy]) => Math.hypot(x - hx, y - hy) < 8);
           if (nearAny) { hoverCursor = 'grab'; break; }
           if (hitTest(d, x, y, chart, series, candlesRef.current)) { hoverCursor = 'move'; break; }
-        } else if (d.type === 'triangle' || d.type === 'arc' || d.type === 'curve' || d.type === 'doubleCurve') {
+        } else if (d.type === 'triangle' || d.type === 'arc' || d.type === 'curve' || d.type === 'doubleCurve' ||
+            d.type === 'trendFibExtension') {
           const pts3 = get3PointScreen(d.price1, d.time1, d.price2, d.time2, d.price3, d.time3, chart, series);
           if (!pts3) continue;
           const { x1, y1, x2, y2, x3, y3 } = pts3;
@@ -3937,7 +4144,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           return;
         }
 
-        if (d.type === 'channel' || d.type === 'rotatedRectangle') {
+        if (d.type === 'channel' || d.type === 'rotatedRectangle' || d.type === 'fibChannel') {
           const lines = computeParallelOffset(d.price1, d.time1, d.price2, d.time2, d.price3, d.time3, chart, series);
           if (!lines) continue;
           const { x1, y1, x2, y2, y1b, y2b } = lines;
@@ -4016,7 +4223,8 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           return;
         }
 
-        if (d.type === 'triangle' || d.type === 'arc' || d.type === 'curve' || d.type === 'doubleCurve') {
+        if (d.type === 'triangle' || d.type === 'arc' || d.type === 'curve' || d.type === 'doubleCurve' ||
+            d.type === 'trendFibExtension') {
           const pts3 = get3PointScreen(d.price1, d.time1, d.price2, d.time2, d.price3, d.time3, chart, series);
           if (!pts3) continue;
           const { x1, y1, x2, y2, x3, y3 } = pts3;
@@ -4208,7 +4416,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
             price2: preview.price2, time2: preview.time2,
           });
         } else if (preview.kind === 'channel' || preview.kind === 'triangle' || preview.kind === 'arc' ||
-            preview.kind === 'curve' || preview.kind === 'doubleCurve') {
+            preview.kind === 'curve' || preview.kind === 'doubleCurve' || preview.kind === 'trendFibExtension') {
           updateDrawing(drag.id, {
             price1: preview.price1, time1: preview.time1,
             price2: preview.price2, time2: preview.time2,

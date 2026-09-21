@@ -365,6 +365,32 @@ function FibExtensionIcon() {
   );
 }
 
+// Trend-based Fib Extension: a fib ladder with a projection arrow shooting
+// off from the anchor, signaling the A->B move projected forward from C.
+function TrendFibExtensionIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5" fill="none">
+      <line x1="9" y1="5"  x2="21" y2="5" />
+      <line x1="9" y1="10" x2="21" y2="10" />
+      <line x1="9" y1="15" x2="21" y2="15" />
+      <line x1="9" y1="20" x2="21" y2="20" />
+      <path d="M3 20 L9 15 L3 10" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+// Fib Channel: slanted parallel fib lines (unlike Fib Retracement/
+// Extension's horizontal ladder), echoing Parallel Channel's icon.
+function FibChannelIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5" fill="none">
+      <line x1="3" y1="20" x2="15" y2="5" />
+      <line x1="7" y1="20" x2="19" y2="5" />
+      <line x1="11" y1="20" x2="21" y2="7" strokeDasharray="2 2" strokeWidth="1" />
+    </svg>
+  );
+}
+
 function TextIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round">
@@ -750,13 +776,17 @@ const POSITION_RANGE_ITEMS: { tool: PositionRangeTool; label: string }[] = [
 const FIB_ICON: Record<FibTool, React.ReactNode> = {
   fibonacci: <FibIcon />,
   fibExtension: <FibExtensionIcon />,
+  trendFibExtension: <TrendFibExtensionIcon />,
+  fibChannel: <FibChannelIcon />,
 };
 
 // The Fibonacci group's flyout — flat list (no subsections), same pattern as
 // Annotation. FIB_ITEMS is kept flat for ALL_TOOL_ICON/ALL_TOOL_LABEL/Favorites.
 const FIB_ITEMS: { tool: FibTool; label: string }[] = [
-  { tool: 'fibonacci',    label: 'Fib Retracement' },
-  { tool: 'fibExtension', label: 'Fib Extension' },
+  { tool: 'fibonacci',         label: 'Fib Retracement' },
+  { tool: 'fibExtension',      label: 'Fib Extension' },
+  { tool: 'trendFibExtension', label: 'Trend-based Fib Extension' },
+  { tool: 'fibChannel',        label: 'Fib Channel' },
 ];
 
 const MEASURE_TOOLS: ToolBtn[] = [
@@ -1169,7 +1199,7 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
             className="absolute left-full top-0 ml-1 py-1 overflow-hidden"
             style={{
               zIndex: 100,
-              width: 180,
+              width: 240,
               background: 'var(--bg-panel-alt)',
               borderRadius: 4,
               boxShadow: '0 4px 12px rgba(0,0,0,0.4)',

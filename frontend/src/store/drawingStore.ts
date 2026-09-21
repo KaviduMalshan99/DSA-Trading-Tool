@@ -57,10 +57,10 @@ export const POSITION_RANGE_TOOLS: readonly PositionRangeTool[] = [
 ];
 
 // The "Fibonacci" group — Fib Retracement plus ratio-table variants (Fib
-// Extension for now, more added later), grouped under one dropdown just like
-// Trend Line/Shapes/Annotation/Prediction & measurement.
-export type FibTool = 'fibonacci' | 'fibExtension';
-export const FIB_TOOLS: readonly FibTool[] = ['fibonacci', 'fibExtension'];
+// Extension, Trend-based Fib Extension, Fib Channel), grouped under one
+// dropdown just like Trend Line/Shapes/Annotation/Prediction & measurement.
+export type FibTool = 'fibonacci' | 'fibExtension' | 'trendFibExtension' | 'fibChannel';
+export const FIB_TOOLS: readonly FibTool[] = ['fibonacci', 'fibExtension', 'trendFibExtension', 'fibChannel'];
 
 export type DrawingTool =
   | CursorMode | TrendTool | ShapeTool | AnnotationTool | ActionTool | PositionRangeTool | FibTool;
@@ -460,9 +460,47 @@ export interface FibExtensionDrawing extends Omit<FibonacciDrawing, 'type'> {
   type: 'fibExtension';
 }
 
+// Trend-based Fib Extension: 3-click A (start of move) -> B (end of move) ->
+// C (projection origin), unlike Fib Retracement/Extension's 2-point
+// high/low anchor. Modeled on ChannelDrawing/TriangleDrawing's price1..3/
+// time1..3 3-point shape. Its ratio table is projected forward from C by the
+// A->B move (see fibLevelsFor / the render branch in DrawingCanvas.tsx).
+export interface TrendFibExtensionDrawing {
+  id: string;
+  type: 'trendFibExtension';
+  price1: number; time1: number; // A
+  price2: number; time2: number; // B
+  price3: number; time3: number; // C
+  levels?: FibLevelConfig[];
+  levelWidth?: number;
+  levelDash?: LineDash;
+  /** the A->B->C connecting lines */
+  lineVisible?: boolean;
+  lineColor?: string;
+  lineWidth?: number;
+  lineDash?: LineDash;
+}
+
+// Fib Channel: identical baseline+offset storage to ChannelDrawing
+// (price1/time1 -> price2/time2 baseline, price3/time3 sets the parallel
+// offset) — only the rendering differs: one line per fib ratio between the
+// baseline (ratio 0) and the fully-offset parallel line (ratio 1), instead
+// of just the 2 outer lines.
+export interface FibChannelDrawing {
+  id: string;
+  type: 'fibChannel';
+  price1: number; time1: number;
+  price2: number; time2: number;
+  price3: number; time3: number;
+  levels?: FibLevelConfig[];
+  levelWidth?: number;
+  levelDash?: LineDash;
+}
+
 // Shared alias for the places (settings modal, style toolbar) that treat
-// both Fib tools identically except for which ratio table they resolve to.
-export type FibLikeDrawing = FibonacciDrawing | FibExtensionDrawing;
+// the fib-family tools identically except for which ratio table/geometry
+// they resolve to.
+export type FibLikeDrawing = FibonacciDrawing | FibExtensionDrawing | TrendFibExtensionDrawing | FibChannelDrawing;
 
 export interface ChannelDrawing {
   id: string;
@@ -547,6 +585,8 @@ export type Drawing =
   | AnchoredVwapDrawing
   | FibonacciDrawing
   | FibExtensionDrawing
+  | TrendFibExtensionDrawing
+  | FibChannelDrawing
   | ChannelDrawing
   | RegressionDrawing
   | FlatChannelDrawing
