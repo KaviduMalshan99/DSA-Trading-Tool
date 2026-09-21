@@ -366,6 +366,43 @@ function PriceNoteIcon() {
   );
 }
 
+// The Pin *annotation* tool's icon — distinct from the sidebar's PinIcon
+// (favorites-pin, unrelated) already defined elsewhere in this file.
+function PinMarkerIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" fill="none" strokeLinejoin="round">
+      <path d="M12 21c0-4 6-8.5 6-13a6 6 0 1 0-12 0c0 4.5 6 9 6 13Z" />
+      <circle cx="12" cy="8" r="2" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+function FlagMarkIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="5" y1="21" x2="5" y2="3" />
+      <path d="M5 4h13l-4 4 4 4H5" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+function PriceLabelIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" fill="none">
+      <rect x="3" y="9" width="18" height="8" rx="4" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+function SignpostIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="6" y1="21" x2="6" y2="9" />
+      <rect x="6" y="3" width="14" height="6" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
 function LongPositionIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round">
@@ -622,11 +659,19 @@ const SHAPE_ITEMS: { tool: ShapeTool; label: string }[] = [
 const ANNOTATION_ICON: Record<AnnotationTool, React.ReactNode> = {
   text: <TextIcon />,
   priceNote: <PriceNoteIcon />,
+  pin: <PinMarkerIcon />,
+  flagMark: <FlagMarkIcon />,
+  priceLabel: <PriceLabelIcon />,
+  signpost: <SignpostIcon />,
 };
 
 const ANNOTATION_ITEMS: { tool: AnnotationTool; label: string }[] = [
-  { tool: 'text',      label: 'Text' },
-  { tool: 'priceNote', label: 'Price Note' },
+  { tool: 'text',       label: 'Text' },
+  { tool: 'priceNote',  label: 'Price Note' },
+  { tool: 'pin',        label: 'Pin' },
+  { tool: 'flagMark',   label: 'Flag Mark' },
+  { tool: 'priceLabel', label: 'Price Label' },
+  { tool: 'signpost',   label: 'Signpost' },
 ];
 
 const POSITION_RANGE_ICON: Record<PositionRangeTool, React.ReactNode> = {

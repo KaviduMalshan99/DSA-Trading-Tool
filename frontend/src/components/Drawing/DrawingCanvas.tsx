@@ -15,7 +15,7 @@ const CAPTURE_TOOLS = new Set<DrawingTool>([
   'rotatedRectangle', 'circle', 'ellipse', 'path', 'polyline',
   'triangle', 'arc', 'curve', 'doubleCurve',
   'arrowMarker', 'arrowTool', 'arrowMarkUp', 'arrowMarkDown', 'brush', 'highlighter',
-  'text', 'priceNote', 'measure', 'zoomIn',
+  'text', 'priceNote', 'pin', 'flagMark', 'priceLabel', 'signpost', 'measure', 'zoomIn',
   'longPosition', 'shortPosition', 'priceRange', 'dateRange',
 ]);
 
@@ -55,6 +55,10 @@ const CLICKS_REQUIRED: Partial<Record<DrawingTool, number>> = {
   arrowMarkDown: 1,
   text: 1,
   priceNote: 2,
+  pin: 1,
+  flagMark: 1,
+  priceLabel: 1,
+  signpost: 1,
   measure: 2,
   zoomIn: 2,
   longPosition: 1,
@@ -1297,6 +1301,161 @@ function renderDrawing(
       ctx.setLineDash([]);
     }
 
+  } else if (d.type === 'pin') {
+    const x = timeToX(chart, d.time);
+    const y = priceToY(series, d.price);
+    if (x == null || y == null) { ctx.restore(); return; }
+
+    // Map-pin/teardrop: tip at the anchor, rounded head above (a triangular
+    // tail plus a circle, like ArrowMark's single-anchor icon shapes).
+    const baseColor = d.color ?? '#F23645';
+    const s = d.size ?? 20;
+    const r = s * 0.35;
+    const headCy = y - s * 0.65;
+
+    ctx.fillStyle = eraserHover ? '#f85149' : baseColor;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x - r * 0.55, headCy + r * 0.6);
+    ctx.lineTo(x + r * 0.55, headCy + r * 0.6);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(x, headCy, r, 0, Math.PI * 2);
+    ctx.fill();
+
+    // hollow center for the classic pin look
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(x, headCy, r * 0.4, 0, Math.PI * 2);
+    ctx.fill();
+
+    if (selected) {
+      ctx.strokeStyle = eraserHover ? '#f85149' : '#2196F3';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 3]);
+      const top = headCy - r;
+      ctx.strokeRect(x - r - 3, top - 3, r * 2 + 6, y - top + 6);
+      ctx.setLineDash([]);
+    }
+
+  } else if (d.type === 'flagMark') {
+    const x = timeToX(chart, d.time);
+    const y = priceToY(series, d.price);
+    if (x == null || y == null) { ctx.restore(); return; }
+
+    // Vertical pole from the anchor up, triangular flag at the top.
+    const baseColor = d.color ?? '#2196F3';
+    const s = d.size ?? 20;
+    const poleTop = y - s;
+    const flagW = s * 0.7, flagH = s * 0.45;
+
+    ctx.strokeStyle = eraserHover ? '#f85149' : baseColor;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x, poleTop);
+    ctx.stroke();
+
+    ctx.fillStyle = eraserHover ? '#f85149' : baseColor;
+    ctx.beginPath();
+    ctx.moveTo(x, poleTop);
+    ctx.lineTo(x + flagW, poleTop + flagH * 0.4);
+    ctx.lineTo(x, poleTop + flagH);
+    ctx.closePath();
+    ctx.fill();
+
+    if (selected) {
+      ctx.strokeStyle = eraserHover ? '#f85149' : '#2196F3';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 3]);
+      ctx.strokeRect(x - 3, poleTop - 3, flagW + 6, y - poleTop + 6);
+      ctx.setLineDash([]);
+    }
+
+  } else if (d.type === 'priceLabel') {
+    const x = timeToX(chart, d.time);
+    const y = priceToY(series, d.price);
+    if (x == null || y == null) { ctx.restore(); return; }
+
+    // Same rounded-pill tag as Price Note's price tag, just centered on a
+    // single anchor instead of hanging off a line's endpoint, and always
+    // showing the anchor's own price (never user-typed).
+    const baseColor = d.color ?? '#2196F3';
+    const priceText = d.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    ctx.font = 'bold 12px sans-serif';
+    const textW = ctx.measureText(priceText).width;
+    const tagH = 22;
+    const tagW = textW + 16;
+    const tagX = x - tagW / 2;
+    const tagY = y - tagH / 2;
+    const r = tagH / 2;
+
+    ctx.beginPath();
+    ctx.moveTo(tagX + r, tagY);
+    ctx.arcTo(tagX + tagW, tagY, tagX + tagW, tagY + tagH, r);
+    ctx.arcTo(tagX + tagW, tagY + tagH, tagX, tagY + tagH, r);
+    ctx.arcTo(tagX, tagY + tagH, tagX, tagY, r);
+    ctx.arcTo(tagX, tagY, tagX + tagW, tagY, r);
+    ctx.closePath();
+    ctx.fillStyle = eraserHover ? '#f85149' : baseColor;
+    ctx.fill();
+
+    ctx.fillStyle = '#ffffff';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(priceText, tagX + 8, tagY + tagH / 2 + 1);
+    ctx.textBaseline = 'alphabetic';
+
+    if (selected) {
+      ctx.fillStyle = eraserHover ? '#f85149' : baseColor;
+      ctx.beginPath();
+      ctx.arc(x, y, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+  } else if (d.type === 'signpost') {
+    const x = timeToX(chart, d.time);
+    const y = priceToY(series, d.price);
+    if (x == null || y == null) { ctx.restore(); return; }
+
+    // Marker on a stick: pole from the anchor up to a small rectangular sign,
+    // with the user-typed label drawn inside it (see the generalized
+    // text-editing handlers — Signpost reuses Text's editing machinery).
+    const baseColor = d.color ?? '#2196F3';
+    const text = d.text ?? '';
+    ctx.font = '12px sans-serif';
+    const textW = text.length > 0 ? ctx.measureText(text).width : 0;
+    const padX = 8;
+    const signH = 22;
+    const signW = Math.max(30, textW + padX * 2);
+    const poleH = 26;
+    const signY = y - poleH - signH;
+
+    ctx.strokeStyle = eraserHover ? '#f85149' : baseColor;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x, signY + signH);
+    ctx.stroke();
+
+    ctx.fillStyle = eraserHover ? '#f85149' : baseColor;
+    ctx.fillRect(x, signY, signW, signH);
+
+    if (text.length > 0) {
+      ctx.fillStyle = '#ffffff';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, x + padX, signY + signH / 2 + 1);
+      ctx.textBaseline = 'alphabetic';
+    }
+
+    if (selected) {
+      ctx.strokeStyle = eraserHover ? '#f85149' : '#2196F3';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 3]);
+      ctx.strokeRect(x - 3, signY - 3, signW + 6, y - signY + 6);
+      ctx.setLineDash([]);
+    }
+
   } else if (d.type === 'text') {
     const x = timeToX(chart, d.time);
     const y = priceToY(series, d.price);
@@ -1995,6 +2154,48 @@ function hitTest(
     return mx >= x - s / 2 - TOL && mx <= x + s / 2 + TOL && my >= top - TOL && my <= bottom + TOL;
   }
 
+  if (d.type === 'pin') {
+    const x = timeToX(chart, d.time);
+    const y = priceToY(series, d.price);
+    if (x == null || y == null) return false;
+    const s = d.size ?? 20;
+    return mx >= x - s / 2 - TOL && mx <= x + s / 2 + TOL && my >= y - s - TOL && my <= y + TOL;
+  }
+
+  if (d.type === 'flagMark') {
+    const x = timeToX(chart, d.time);
+    const y = priceToY(series, d.price);
+    if (x == null || y == null) return false;
+    const s = d.size ?? 20;
+    const flagW = s * 0.7;
+    return mx >= x - TOL && mx <= x + flagW + TOL && my >= y - s - TOL && my <= y + TOL;
+  }
+
+  if (d.type === 'priceLabel') {
+    const x = timeToX(chart, d.time);
+    const y = priceToY(series, d.price);
+    if (x == null || y == null) return false;
+    // Estimated pill width — no canvas context threaded through hitTest, so
+    // this mirrors renderDrawing's `bold 12px sans-serif` measurement with a
+    // char-width heuristic (same approach Text's hitTest below uses).
+    const priceText = d.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const tagW = priceText.length * 7.5 + 16;
+    const tagH = 22;
+    return mx >= x - tagW / 2 - TOL && mx <= x + tagW / 2 + TOL && my >= y - tagH / 2 - TOL && my <= y + tagH / 2 + TOL;
+  }
+
+  if (d.type === 'signpost') {
+    const x = timeToX(chart, d.time);
+    const y = priceToY(series, d.price);
+    if (x == null || y == null) return false;
+    const text = d.text ?? '';
+    const signW = Math.max(30, text.length * 6.5 + 16);
+    const signH = 22;
+    const poleH = 26;
+    const signY = y - poleH - signH;
+    return mx >= x - TOL && mx <= x + signW + TOL && my >= signY - TOL && my <= y + TOL;
+  }
+
   // Text's bounding box is estimated (no canvas context is threaded through
   // hitTest), using an average-char-width heuristic that mirrors the geometry
   // renderDrawing actually draws — close enough for hit testing given the
@@ -2330,7 +2531,8 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
             dd = { ...d, points: drag.points };
           } else if (drag.kind === 'brush' && (d.type === 'brush' || d.type === 'highlighter')) {
             dd = { ...d, points: drag.points };
-          } else if (drag.kind === 'arrowMark' && d.type === 'arrowMark') {
+          } else if (drag.kind === 'arrowMark' && (d.type === 'arrowMark' || d.type === 'pin' ||
+              d.type === 'flagMark' || d.type === 'priceLabel' || d.type === 'signpost')) {
             dd = { ...d, price: drag.price, time: drag.time };
           } else if (drag.kind === 'note' && d.type === 'text') {
             dd = { ...d, price: drag.price, time: drag.time };
@@ -2455,7 +2657,8 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
       if (!ds.active) {
         const tool = activeToolRef.current;
         const isSingleClickTool = tool === 'hline' || tool === 'hray' || tool === 'vline' || tool === 'crossline' ||
-          tool === 'arrowMarkUp' || tool === 'arrowMarkDown' || tool === 'longPosition' || tool === 'shortPosition';
+          tool === 'arrowMarkUp' || tool === 'arrowMarkDown' || tool === 'longPosition' || tool === 'shortPosition' ||
+          tool === 'pin' || tool === 'flagMark' || tool === 'priceLabel' || tool === 'signpost';
         if (isSingleClickTool && mousePosRef.current.inside) {
           const { x: mx, y: my } = mousePosRef.current;
           const price = yToPrice(series, my);
@@ -2470,6 +2673,10 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
               const posBox = defaultPositionBox(tool, price, time, my, series, candlesRef.current);
               if (posBox) preview = { id: '__preview', type: tool, ...posBox };
             }
+            else if (tool === 'pin') preview = { id: '__preview', type: 'pin', price, time };
+            else if (tool === 'flagMark') preview = { id: '__preview', type: 'flagMark', price, time };
+            else if (tool === 'priceLabel') preview = { id: '__preview', type: 'priceLabel', price, time };
+            else if (tool === 'signpost') preview = { id: '__preview', type: 'signpost', price, time, text: '' };
             else preview = { id: '__preview', type: 'arrowMark', variant: tool === 'arrowMarkUp' ? 'up' : 'down', price, time };
             if (preview) {
               ctx.globalAlpha = 0.6;
@@ -2602,10 +2809,12 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
     if (trimmed.length === 0) deleteDrawing(ed.id);
     else updateDrawing(ed.id, { text: trimmed });
     setEditing(null);
-    // Only auto-revert if Text is still the active tool — if this commit was
-    // triggered by switching to a *different* tool mid-edit, that tool choice
-    // must win, not get clobbered back to the cursor.
-    if (!keepToolActiveRef.current && activeToolRef.current === 'text') setTool(lastCursorModeRef.current);
+    // Only auto-revert if Text/Signpost is still the active tool — if this
+    // commit was triggered by switching to a *different* tool mid-edit, that
+    // tool choice must win, not get clobbered back to the cursor.
+    if (!keepToolActiveRef.current && (activeToolRef.current === 'text' || activeToolRef.current === 'signpost')) {
+      setTool(lastCursorModeRef.current);
+    }
     scheduleRender();
   }, [deleteDrawing, updateDrawing, setEditing, scheduleRender, setTool]);
 
@@ -2655,7 +2864,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
     hoverEraseIdRef.current = null;
     magnetPointRef.current = null;
     if (activeTool !== 'measure') measureResultRef.current = null;
-    if (activeTool !== 'text' && editingRef.current) commitEdit();
+    if (activeTool !== 'text' && activeTool !== 'signpost' && editingRef.current) commitEdit();
     applyCursor(activeTool);
     scheduleRender();
     return () => {
@@ -2890,6 +3099,21 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
     } else if (tool === 'priceNote') {
       if (price2 == null || time2 == null) return;
       addDrawing({ id, type: 'priceNote', price1, time1, price2, time2 });
+    } else if (tool === 'pin') {
+      addDrawing({ id, type: 'pin', price: price1, time: time1 });
+    } else if (tool === 'flagMark') {
+      addDrawing({ id, type: 'flagMark', price: price1, time: time1 });
+    } else if (tool === 'priceLabel') {
+      addDrawing({ id, type: 'priceLabel', price: price1, time: time1 });
+    } else if (tool === 'signpost') {
+      // place empty, then immediately open the inline-edit overlay to type into
+      // it — same flow as Text (see the generalized editing handlers below).
+      // The -48 offset matches renderDrawing's poleH+signH so the textarea
+      // lines up with the sign box instead of the anchor point at its base.
+      addDrawing({ id, type: 'signpost', price: price1, time: time1, text: '' });
+      selectDrawing(id);
+      setEditing({ id, x: ds.x1, y: ds.y1 - 48, value: '', isNew: true });
+      return;
     } else if (tool === 'measure') {
       if (price2 == null || time2 == null) return;
       measureResultRef.current = { x1: ds.x1, y1: ds.y1, x2: ds.x2, y2: ds.y2, price1, time1, price2, time2 };
@@ -3405,7 +3629,8 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           if (xH == null || yH == null || xL == null || yL == null) continue;
           if (Math.hypot(x - xH, y - yH) < 8 || Math.hypot(x - xL, y - yL) < 8) { hoverCursor = 'grab'; break; }
           if (hitTest(d, x, y, chart, series, candlesRef.current)) { hoverCursor = 'move'; break; }
-        } else if (d.type === 'arrowMark' || d.type === 'text') {
+        } else if (d.type === 'arrowMark' || d.type === 'text' || d.type === 'pin' ||
+            d.type === 'flagMark' || d.type === 'priceLabel' || d.type === 'signpost') {
           if (hitTest(d, x, y, chart, series, candlesRef.current)) { hoverCursor = 'move'; break; }
         } else if (d.type === 'longPosition' || d.type === 'shortPosition') {
           const x1 = timeToX(chart, d.time1), x2 = timeToX(chart, d.time2);
@@ -3710,7 +3935,8 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           return;
         }
 
-        if (d.type === 'arrowMark') {
+        if (d.type === 'arrowMark' || d.type === 'pin' || d.type === 'flagMark' ||
+            d.type === 'priceLabel' || d.type === 'signpost') {
           const x1 = timeToX(chart, d.time), y1 = priceToY(series, d.price);
           if (x1 == null || y1 == null) continue;
           if (!hitTest(d, x, y, chart, series, candlesRef.current)) continue;
@@ -3883,12 +4109,19 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
 
       for (let i = drawingsRef.current.length - 1; i >= 0; i--) {
         const d = drawingsRef.current[i];
-        if (d.type !== 'text') continue;
+        if (d.type !== 'text' && d.type !== 'signpost') continue;
         if (!hitTest(d, x, y, chart, series, candlesRef.current)) continue;
         const tx = timeToX(chart, d.time), ty = priceToY(series, d.price);
         if (tx == null || ty == null) continue;
         selectDrawing(d.id);
-        setEditing({ id: d.id, x: tx, y: ty, value: d.text, isNew: false });
+        if (d.type === 'text') {
+          setEditing({ id: d.id, x: tx, y: ty, value: d.text, isNew: false });
+        } else {
+          // Signpost's sign box sits `poleH + signH` (26 + 22 = 48) above the
+          // anchor — same offset used in renderDrawing and in the placement
+          // setEditing call below, so the textarea lines up with the sign.
+          setEditing({ id: d.id, x: tx, y: ty - 48, value: d.text ?? '', isNew: false });
+        }
         return;
       }
     };

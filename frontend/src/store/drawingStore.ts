@@ -35,9 +35,11 @@ export const SHAPE_TOOLS: readonly ShapeTool[] = [
 ];
 
 // The "Annotation" group — Text and Price Note, grouped under one dropdown
-// just like Cursor/Trend Line/Shapes.
-export type AnnotationTool = 'text' | 'priceNote';
-export const ANNOTATION_TOOLS: readonly AnnotationTool[] = ['text', 'priceNote'];
+// just like Cursor/Trend Line/Shapes. 'pin'/'flagMark'/'priceLabel'/'signpost'
+// are single-click stamp markers modeled on ArrowMarkDrawing (see that type).
+export type AnnotationTool = 'text' | 'priceNote' | 'pin' | 'flagMark' | 'priceLabel' | 'signpost';
+export const ANNOTATION_TOOLS: readonly AnnotationTool[] =
+  ['text', 'priceNote', 'pin', 'flagMark', 'priceLabel', 'signpost'];
 
 // Standalone action tools: Measure doesn't leave a persisted drawing behind
 // (it's a transient readout cleared on tool change), and Zoom In performs an
@@ -306,6 +308,53 @@ export interface PriceNoteDrawing extends LineStyle {
   price2: number; time2: number;
 }
 
+// Pin/Flag Mark/Price Label/Signpost: single-click stamp markers modeled on
+// ArrowMarkDrawing above — one anchor (price/time), no second point, moved
+// as a whole (never resized via drag; `size` is the one scale knob where
+// applicable).
+
+export interface PinDrawing {
+  id: string;
+  type: 'pin';
+  price: number;
+  time: number;
+  color?: string;
+  size?: number;
+}
+
+export interface FlagMarkDrawing {
+  id: string;
+  type: 'flagMark';
+  price: number;
+  time: number;
+  color?: string;
+  size?: number;
+}
+
+// Price Label: like Price Note's price tag, but a single-click stamp rather
+// than a 2-click line — the tag's text is always the anchor's own formatted
+// price, never user-typed.
+export interface PriceLabelDrawing {
+  id: string;
+  type: 'priceLabel';
+  price: number;
+  time: number;
+  color?: string;
+}
+
+// Signpost: the one stamp marker with a user-typed label — reuses the same
+// text-editing machinery as TextDrawing (see the generalized editing handlers
+// in DrawingCanvas.tsx). `text` is optional/absent only in the instant between
+// placement and the first commit; an empty commit deletes it, same as Text.
+export interface SignpostDrawing {
+  id: string;
+  type: 'signpost';
+  price: number;
+  time: number;
+  text?: string;
+  color?: string;
+}
+
 // Long/Short Position: single-click projection tool — entry line splits a
 // profit zone (toward targetPrice) from a loss zone (toward stopPrice); the
 // box spans time1..time2. For 'longPosition' targetPrice > entryPrice >
@@ -443,6 +492,10 @@ export type Drawing =
   | ArrowMarkDrawing
   | TextDrawing
   | PriceNoteDrawing
+  | PinDrawing
+  | FlagMarkDrawing
+  | PriceLabelDrawing
+  | SignpostDrawing
   | PositionDrawing
   | PriceRangeDrawing
   | DateRangeDrawing
