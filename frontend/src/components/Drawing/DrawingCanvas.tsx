@@ -13,6 +13,7 @@ const CAPTURE_TOOLS = new Set<DrawingTool>([
   'hline', 'hray', 'vline', 'crossline', 'rectangle', 'fibonacci', 'channel', 'regression',
   'flatChannel', 'disjointChannel', 'eraser',
   'rotatedRectangle', 'circle', 'ellipse', 'path', 'polyline',
+  'triangle', 'arc', 'curve', 'doubleCurve',
   'arrowMarker', 'arrowTool', 'arrowMarkUp', 'arrowMarkDown', 'brush', 'highlighter',
   'text', 'priceNote', 'measure', 'zoomIn',
   'longPosition', 'shortPosition', 'priceRange', 'dateRange',
@@ -44,6 +45,10 @@ const CLICKS_REQUIRED: Partial<Record<DrawingTool, number>> = {
   rotatedRectangle: 3,
   circle: 2,
   ellipse: 2,
+  triangle: 3,
+  arc: 3,
+  curve: 3,
+  doubleCurve: 3,
   arrowTool: 2,
   arrowMarker: 2,
   arrowMarkUp: 1,
@@ -1038,6 +1043,99 @@ function renderDrawing(
       }
     }
 
+  } else if (d.type === 'triangle') {
+    const pts3 = get3PointScreen(d.price1, d.time1, d.price2, d.time2, d.price3, d.time3, chart, series);
+    if (!pts3) { ctx.restore(); return; }
+    const { x1, y1, x2, y2, x3, y3 } = pts3;
+
+    const baseColor = d.color ?? '#2196F3';
+    const dashPattern: number[] = d.dash === 'dashed' ? [8, 4] : d.dash === 'dotted' ? [2, 3] : [];
+
+    if (d.filled !== false) {
+      ctx.fillStyle = eraserHover ? 'rgba(248,81,73,0.1)' : hexToRgba(d.fillColor ?? baseColor, d.fillOpacity ?? 20);
+      ctx.beginPath();
+      ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.lineTo(x3, y3);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.strokeStyle = eraserHover ? '#f85149' : hexToRgba(baseColor, d.opacity ?? 100);
+    ctx.lineWidth = (d.width ?? 1) + (selected ? 0.5 : 0);
+    ctx.setLineDash(dashPattern);
+    ctx.beginPath();
+    ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.lineTo(x3, y3);
+    ctx.closePath();
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    if (selected) {
+      ctx.fillStyle = eraserHover ? '#f85149' : baseColor;
+      for (const [hx, hy] of [[x1, y1], [x2, y2], [x3, y3]] as const) {
+        ctx.beginPath();
+        ctx.arc(hx, hy, 3.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+  } else if (d.type === 'arc' || d.type === 'curve') {
+    const pts3 = get3PointScreen(d.price1, d.time1, d.price2, d.time2, d.price3, d.time3, chart, series);
+    if (!pts3) { ctx.restore(); return; }
+    const { x1, y1, x2, y2, x3: cx, y3: cy } = pts3;
+
+    const baseColor = d.color ?? '#2196F3';
+    const dashPattern: number[] = d.dash === 'dashed' ? [8, 4] : d.dash === 'dotted' ? [2, 3] : [];
+
+    ctx.strokeStyle = eraserHover ? '#f85149' : hexToRgba(baseColor, d.opacity ?? 100);
+    ctx.lineWidth = (d.width ?? 1.5) + (selected ? 1 : 0);
+    ctx.setLineDash(dashPattern);
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.quadraticCurveTo(cx, cy, x2, y2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    if (selected) {
+      ctx.fillStyle = eraserHover ? '#f85149' : baseColor;
+      for (const [hx, hy] of [[x1, y1], [x2, y2]] as const) {
+        ctx.beginPath();
+        ctx.arc(hx, hy, 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // control-point handle, drawn hollow to distinguish it from the two anchors
+      ctx.strokeStyle = eraserHover ? '#f85149' : baseColor;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(cx, cy, 4, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+  } else if (d.type === 'doubleCurve') {
+    const pts3 = get3PointScreen(d.price1, d.time1, d.price2, d.time2, d.price3, d.time3, chart, series);
+    if (!pts3) { ctx.restore(); return; }
+    const { x1, y1, x2, y2, x3, y3 } = pts3;
+    const { c1, c2 } = doubleCurveControls(x1, y1, x2, y2, x3, y3);
+
+    const baseColor = d.color ?? '#2196F3';
+    const dashPattern: number[] = d.dash === 'dashed' ? [8, 4] : d.dash === 'dotted' ? [2, 3] : [];
+
+    ctx.strokeStyle = eraserHover ? '#f85149' : hexToRgba(baseColor, d.opacity ?? 100);
+    ctx.lineWidth = (d.width ?? 1.5) + (selected ? 1 : 0);
+    ctx.setLineDash(dashPattern);
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.quadraticCurveTo(c1.x, c1.y, x2, y2);
+    ctx.quadraticCurveTo(c2.x, c2.y, x3, y3);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    if (selected) {
+      ctx.fillStyle = eraserHover ? '#f85149' : baseColor;
+      for (const [hx, hy] of [[x1, y1], [x2, y2], [x3, y3]] as const) {
+        ctx.beginPath();
+        ctx.arc(hx, hy, 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
   } else if (d.type === 'path' || d.type === 'polyline' || d.type === 'brush' || d.type === 'highlighter') {
     const pts = d.points
       .map((p) => ({ x: timeToX(chart, p.time), y: priceToY(series, p.price) }))
@@ -1644,6 +1742,75 @@ function distToSegment(px: number, py: number, ax: number, ay: number, bx: numbe
   return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
 }
 
+// Shared by Triangle/Arc/Curve/Double Curve — all four store exactly 3
+// independent anchor points (price/time each), unlike Parallel Channel's
+// baseline+offset shape, so they share one screen-space projection helper.
+function get3PointScreen(
+  price1: number, time1: number, price2: number, time2: number, price3: number, time3: number,
+  chart: IChartApi, series: ISeriesApi<'Candlestick'>,
+): { x1: number; y1: number; x2: number; y2: number; x3: number; y3: number } | null {
+  const x1 = timeToX(chart, time1), y1 = priceToY(series, price1);
+  const x2 = timeToX(chart, time2), y2 = priceToY(series, price2);
+  const x3 = timeToX(chart, time3), y3 = priceToY(series, price3);
+  if (x1 == null || y1 == null || x2 == null || y2 == null || x3 == null || y3 == null) return null;
+  return { x1, y1, x2, y2, x3, y3 };
+}
+
+// Shared by Arc/Curve (identical math — start p1, end p2, control p3) and by
+// Double Curve's two segments. `t` in [0,1].
+function quadraticPoint(
+  x1: number, y1: number, cx: number, cy: number, x2: number, y2: number, t: number,
+): { x: number; y: number } {
+  const mt = 1 - t;
+  return {
+    x: mt * mt * x1 + 2 * mt * t * cx + t * t * x2,
+    y: mt * mt * y1 + 2 * mt * t * cy + t * t * y2,
+  };
+}
+
+function sampleQuadratic(
+  x1: number, y1: number, cx: number, cy: number, x2: number, y2: number, steps = 20,
+): { x: number; y: number }[] {
+  const pts: { x: number; y: number }[] = [];
+  for (let i = 0; i <= steps; i++) pts.push(quadraticPoint(x1, y1, cx, cy, x2, y2, i / steps));
+  return pts;
+}
+
+// Hit-test a quadratic curve by sampling it into short segments and testing
+// distance to each one — used by both Arc and Curve (and twice by Double Curve).
+function hitTestQuadratic(
+  mx: number, my: number, x1: number, y1: number, cx: number, cy: number, x2: number, y2: number, tol: number,
+): boolean {
+  const pts = sampleQuadratic(x1, y1, cx, cy, x2, y2);
+  for (let i = 0; i < pts.length - 1; i++) {
+    if (distToSegment(mx, my, pts[i].x, pts[i].y, pts[i + 1].x, pts[i + 1].y) < tol) return true;
+  }
+  return false;
+}
+
+// Double Curve's S-shape: two quadratic segments (p1->p2, p2->p3) whose
+// control points aren't stored — they're derived here as perpendicular
+// offsets from each segment's midpoint, in OPPOSITE directions, so the curve
+// bulges one way then the other instead of bowing symmetrically like a single
+// arc. Recomputed from the current p1/p2/p3 screen positions on every call,
+// so dragging any anchor updates the S-shape live without extra state.
+function doubleCurveControls(
+  x1: number, y1: number, x2: number, y2: number, x3: number, y3: number,
+): { c1: { x: number; y: number }; c2: { x: number; y: number } } {
+  const perpOffset = (ax: number, ay: number, bx: number, by: number, magnitude: number) => {
+    const dx = bx - ax, dy = by - ay;
+    const len = Math.hypot(dx, dy) || 1;
+    const px = -dy / len, py = dx / len;
+    return { x: (ax + bx) / 2 + px * magnitude, y: (ay + by) / 2 + py * magnitude };
+  };
+  const len1 = Math.hypot(x2 - x1, y2 - y1);
+  const len2 = Math.hypot(x3 - x2, y3 - y2);
+  return {
+    c1: perpOffset(x1, y1, x2, y2, len1 * 0.25),
+    c2: perpOffset(x2, y2, x3, y3, -(len2 * 0.25)),
+  };
+}
+
 // ── hit-test a drawing (returns true if mouse is close enough to select) ─────
 
 function hitTest(
@@ -1766,6 +1933,32 @@ function hitTest(
     const theta = Math.atan2(my - cy, mx - cx);
     const bx = cx + rx * Math.cos(theta), by = cy + ry * Math.sin(theta);
     return Math.hypot(mx - bx, my - by) < TOL;
+  }
+
+  if (d.type === 'triangle') {
+    const pts3 = get3PointScreen(d.price1, d.time1, d.price2, d.time2, d.price3, d.time3, chart, series);
+    if (!pts3) return false;
+    const { x1, y1, x2, y2, x3, y3 } = pts3;
+    return distToSegment(mx, my, x1, y1, x2, y2) < TOL ||
+      distToSegment(mx, my, x2, y2, x3, y3) < TOL ||
+      distToSegment(mx, my, x3, y3, x1, y1) < TOL ||
+      pointInPolygon(mx, my, [{ x: x1, y: y1 }, { x: x2, y: y2 }, { x: x3, y: y3 }]);
+  }
+
+  if (d.type === 'arc' || d.type === 'curve') {
+    const pts3 = get3PointScreen(d.price1, d.time1, d.price2, d.time2, d.price3, d.time3, chart, series);
+    if (!pts3) return false;
+    const { x1, y1, x2, y2, x3: cx, y3: cy } = pts3;
+    return hitTestQuadratic(mx, my, x1, y1, cx, cy, x2, y2, TOL);
+  }
+
+  if (d.type === 'doubleCurve') {
+    const pts3 = get3PointScreen(d.price1, d.time1, d.price2, d.time2, d.price3, d.time3, chart, series);
+    if (!pts3) return false;
+    const { x1, y1, x2, y2, x3, y3 } = pts3;
+    const { c1, c2 } = doubleCurveControls(x1, y1, x2, y2, x3, y3);
+    return hitTestQuadratic(mx, my, x1, y1, c1.x, c1.y, x2, y2, TOL) ||
+      hitTestQuadratic(mx, my, x2, y2, c2.x, c2.y, x3, y3, TOL);
   }
 
   if (d.type === 'path' || d.type === 'polyline' || d.type === 'brush' || d.type === 'highlighter') {
@@ -2012,6 +2205,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
   const dragRef = useRef<{
     active: boolean;
     kind: 'trendline' | 'channel' | 'flatChannel' | 'disjointChannel' | 'fibonacci' | 'box' | 'path' | 'brush'
+      | 'triangle' | 'arc' | 'curve' | 'doubleCurve'
       | 'arrowMark' | 'note' | 'position' | 'hline' | 'vline' | 'hray';
     id: string;
     mode: 'move' | 'p1' | 'p2' | 'p3' | 'c2' | 'c3' | 'vertex' | 'target' | 'stop' | 'width'
@@ -2032,6 +2226,8 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
         priceB1: number; timeB1: number; priceB2: number; timeB2: number }
     | { kind: 'fibonacci'; id: string; priceHigh: number; timeHigh: number; priceLow: number; timeLow: number }
     | { kind: 'box'; id: string; price1: number; time1: number; price2: number; time2: number }
+    | { kind: 'triangle' | 'arc' | 'curve' | 'doubleCurve'; id: string;
+        price1: number; time1: number; price2: number; time2: number; price3: number; time3: number }
     | { kind: 'path' | 'brush'; id: string; points: { price: number; time: number }[] }
     | { kind: 'arrowMark'; id: string; price: number; time: number }
     | { kind: 'note'; id: string; price: number; time: number }
@@ -2122,6 +2318,14 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
             dd = { ...d, priceHigh: drag.priceHigh, timeHigh: drag.timeHigh, priceLow: drag.priceLow, timeLow: drag.timeLow };
           } else if (drag.kind === 'box' && (d.type === 'rectangle' || d.type === 'circle' || d.type === 'ellipse' || d.type === 'priceRange' || d.type === 'dateRange')) {
             dd = { ...d, price1: drag.price1, time1: drag.time1, price2: drag.price2, time2: drag.time2 };
+          } else if (drag.kind === 'triangle' && d.type === 'triangle') {
+            dd = { ...d, price1: drag.price1, time1: drag.time1, price2: drag.price2, time2: drag.time2, price3: drag.price3, time3: drag.time3 };
+          } else if (drag.kind === 'arc' && d.type === 'arc') {
+            dd = { ...d, price1: drag.price1, time1: drag.time1, price2: drag.price2, time2: drag.time2, price3: drag.price3, time3: drag.time3 };
+          } else if (drag.kind === 'curve' && d.type === 'curve') {
+            dd = { ...d, price1: drag.price1, time1: drag.time1, price2: drag.price2, time2: drag.time2, price3: drag.price3, time3: drag.time3 };
+          } else if (drag.kind === 'doubleCurve' && d.type === 'doubleCurve') {
+            dd = { ...d, price1: drag.price1, time1: drag.time1, price2: drag.price2, time2: drag.time2, price3: drag.price3, time3: drag.time3 };
           } else if (drag.kind === 'path' && (d.type === 'path' || d.type === 'polyline')) {
             dd = { ...d, points: drag.points };
           } else if (drag.kind === 'brush' && (d.type === 'brush' || d.type === 'highlighter')) {
@@ -2204,6 +2408,18 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
             preview = { id: '__preview', type: 'circle', price1, time1, price2, time2 };
           else if (tool === 'ellipse' && price2 != null && time2 != null)
             preview = { id: '__preview', type: 'ellipse', price1, time1, price2, time2 };
+          else if (tool === 'triangle' && price2 != null && time2 != null)
+            preview = { id: '__preview', type: 'triangle', price1, time1, price2, time2,
+              price3: price3 ?? price2, time3: time3 ?? time2 };
+          else if (tool === 'arc' && price2 != null && time2 != null)
+            preview = { id: '__preview', type: 'arc', price1, time1, price2, time2,
+              price3: price3 ?? price2, time3: time3 ?? time2 };
+          else if (tool === 'curve' && price2 != null && time2 != null)
+            preview = { id: '__preview', type: 'curve', price1, time1, price2, time2,
+              price3: price3 ?? price2, time3: time3 ?? time2 };
+          else if (tool === 'doubleCurve' && price2 != null && time2 != null)
+            preview = { id: '__preview', type: 'doubleCurve', price1, time1, price2, time2,
+              price3: price3 ?? price2, time3: time3 ?? time2 };
           else if ((tool === 'arrowTool' || tool === 'arrowMarker') && price2 != null && time2 != null)
             preview = { id: '__preview', type: 'arrow', price1, time1, price2, time2,
               variant: tool === 'arrowMarker' ? 'marker' : 'plain' };
@@ -2645,6 +2861,18 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
     } else if (tool === 'ellipse') {
       if (price2 == null || time2 == null) return;
       addDrawing({ id, type: 'ellipse', price1, time1, price2, time2 });
+    } else if (tool === 'triangle') {
+      if (price2 == null || time2 == null || price3 == null || time3 == null) return;
+      addDrawing({ id, type: 'triangle', price1, time1, price2, time2, price3, time3 });
+    } else if (tool === 'arc') {
+      if (price2 == null || time2 == null || price3 == null || time3 == null) return;
+      addDrawing({ id, type: 'arc', price1, time1, price2, time2, price3, time3 });
+    } else if (tool === 'curve') {
+      if (price2 == null || time2 == null || price3 == null || time3 == null) return;
+      addDrawing({ id, type: 'curve', price1, time1, price2, time2, price3, time3 });
+    } else if (tool === 'doubleCurve') {
+      if (price2 == null || time2 == null || price3 == null || time3 == null) return;
+      addDrawing({ id, type: 'doubleCurve', price1, time1, price2, time2, price3, time3 });
     } else if (tool === 'arrowTool' || tool === 'arrowMarker') {
       if (price2 == null || time2 == null) return;
       addDrawing({
@@ -2892,6 +3120,34 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           return;
         }
 
+        if (drag.kind === 'triangle' || drag.kind === 'arc' || drag.kind === 'curve' || drag.kind === 'doubleCurve') {
+          // All 4 store 3 independent anchor points with identical move/p1/p2/p3
+          // semantics — a single drag application covers all of them.
+          let nx1 = drag.origX1, ny1 = drag.origY1;
+          let nx2 = drag.origX2, ny2 = drag.origY2;
+          let nx3 = drag.origX3, ny3 = drag.origY3;
+          if (drag.mode === 'move') {
+            nx1 += dx; ny1 += dy; nx2 += dx; ny2 += dy; nx3 += dx; ny3 += dy;
+          } else if (drag.mode === 'p1') {
+            nx1 = x; ny1 = y;
+          } else if (drag.mode === 'p2') {
+            nx2 = x; ny2 = y;
+          } else if (drag.mode === 'p3') {
+            nx3 = x; ny3 = y;
+          }
+          const price1 = yToPrice(series, ny1);
+          const time1  = xToTime(chart, nx1);
+          const price2 = yToPrice(series, ny2);
+          const time2  = xToTime(chart, nx2);
+          const price3 = yToPrice(series, ny3);
+          const time3  = xToTime(chart, nx3);
+          if (price1 != null && time1 != null && price2 != null && time2 != null && price3 != null && time3 != null) {
+            dragPreviewRef.current = { kind: drag.kind, id: drag.id, price1, time1, price2, time2, price3, time3 };
+            scheduleRender();
+          }
+          return;
+        }
+
         if (drag.kind === 'path' || drag.kind === 'brush') {
           const orig = drag.origPoints ?? [];
           const newScreenPoints = drag.mode === 'vertex' && drag.vertexIndex != null
@@ -3121,6 +3377,13 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
             .some(([hx, hy]) => Math.hypot(x - hx, y - hy) < 8);
           if (nearAny) { hoverCursor = 'grab'; break; }
           if (hitTest(d, x, y, chart, series, candlesRef.current)) { hoverCursor = 'move'; break; }
+        } else if (d.type === 'triangle' || d.type === 'arc' || d.type === 'curve' || d.type === 'doubleCurve') {
+          const pts3 = get3PointScreen(d.price1, d.time1, d.price2, d.time2, d.price3, d.time3, chart, series);
+          if (!pts3) continue;
+          const { x1, y1, x2, y2, x3, y3 } = pts3;
+          const nearAny = Math.hypot(x - x1, y - y1) < 8 || Math.hypot(x - x2, y - y2) < 8 || Math.hypot(x - x3, y - y3) < 8;
+          if (nearAny) { hoverCursor = 'grab'; break; }
+          if (hitTest(d, x, y, chart, series, candlesRef.current)) { hoverCursor = 'move'; break; }
         } else if (d.type === 'rectangle' || d.type === 'circle' || d.type === 'ellipse' || d.type === 'priceRange' || d.type === 'dateRange') {
           const x1 = timeToX(chart, d.time1), y1 = priceToY(series, d.price1);
           const x2 = timeToX(chart, d.time2), y2 = priceToY(series, d.price2);
@@ -3339,6 +3602,30 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           return;
         }
 
+        if (d.type === 'triangle' || d.type === 'arc' || d.type === 'curve' || d.type === 'doubleCurve') {
+          const pts3 = get3PointScreen(d.price1, d.time1, d.price2, d.time2, d.price3, d.time3, chart, series);
+          if (!pts3) continue;
+          const { x1, y1, x2, y2, x3, y3 } = pts3;
+
+          const nearP1 = Math.hypot(x - x1, y - y1) < 8;
+          const nearP2 = Math.hypot(x - x2, y - y2) < 8;
+          const nearP3 = Math.hypot(x - x3, y - y3) < 8;
+          if (!nearP1 && !nearP2 && !nearP3 && !hitTest(d, x, y, chart, series, candlesRef.current)) continue;
+
+          dragRef.current = {
+            active: true, kind: d.type, id: d.id,
+            mode: nearP1 ? 'p1' : nearP2 ? 'p2' : nearP3 ? 'p3' : 'move',
+            startX: x, startY: y,
+            origX1: x1, origY1: y1, origX2: x2, origY2: y2, origX3: x3, origY3: y3,
+          };
+          selectDrawing(d.id);
+          applyCursorValue(nearP1 || nearP2 || nearP3 ? 'grabbing' : 'move');
+          e.preventDefault();
+          e.stopPropagation();
+          scheduleRender();
+          return;
+        }
+
         if (d.type === 'rectangle' || d.type === 'circle' || d.type === 'ellipse' || d.type === 'priceRange' || d.type === 'dateRange') {
           const x1 = timeToX(chart, d.time1), y1 = priceToY(series, d.price1);
           const x2 = timeToX(chart, d.time2), y2 = priceToY(series, d.price2);
@@ -3505,7 +3792,8 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
             price1: preview.price1, time1: preview.time1,
             price2: preview.price2, time2: preview.time2,
           });
-        } else if (preview.kind === 'channel') {
+        } else if (preview.kind === 'channel' || preview.kind === 'triangle' || preview.kind === 'arc' ||
+            preview.kind === 'curve' || preview.kind === 'doubleCurve') {
           updateDrawing(drag.id, {
             price1: preview.price1, time1: preview.time1,
             price2: preview.price2, time2: preview.time2,

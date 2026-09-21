@@ -26,9 +26,11 @@ export const TREND_TOOLS: readonly TrendTool[] = [
 // so reusing the name would make `activeTool === 'arrow'` ambiguous.
 export type ShapeTool =
   | 'rectangle' | 'rotatedRectangle' | 'circle' | 'ellipse' | 'path' | 'polyline'
+  | 'triangle' | 'arc' | 'curve' | 'doubleCurve'
   | 'arrowMarker' | 'arrowTool' | 'arrowMarkUp' | 'arrowMarkDown' | 'brush' | 'highlighter';
 export const SHAPE_TOOLS: readonly ShapeTool[] = [
   'rectangle', 'rotatedRectangle', 'circle', 'ellipse', 'path', 'polyline',
+  'triangle', 'arc', 'curve', 'doubleCurve',
   'arrowMarker', 'arrowTool', 'arrowMarkUp', 'arrowMarkDown', 'brush', 'highlighter',
 ];
 
@@ -211,6 +213,50 @@ export interface HighlighterDrawing extends LineStyle {
   points: { price: number; time: number }[];
 }
 
+// Triangle: a closed 3-vertex filled polygon — 3 independent clicks (unlike
+// Rotated Rectangle's baseline+offset), each vertex independently draggable.
+export interface TriangleDrawing extends LineStyle, FillStyle {
+  id: string;
+  type: 'triangle';
+  price1: number; time1: number;
+  price2: number; time2: number;
+  price3: number; time3: number;
+}
+
+// Arc: a single quadratic curve from p1 (start) to p2 (end), bulging toward
+// p3 (control point). Same 3-point shape as Curve — kept as a separate
+// type/label per the toolbar spec even though the math is identical.
+export interface ArcDrawing extends LineStyle {
+  id: string;
+  type: 'arc';
+  price1: number; time1: number; // start
+  price2: number; time2: number; // end
+  price3: number; time3: number; // control/bulge
+}
+
+// Curve: functionally identical to Arc (quadratic curve, p3 is the control
+// point) — see the shared quadratic sample/render helper in DrawingCanvas.tsx.
+export interface CurveDrawing extends LineStyle {
+  id: string;
+  type: 'curve';
+  price1: number; time1: number; // start
+  price2: number; time2: number; // end
+  price3: number; time3: number; // control
+}
+
+// Double Curve: an S-curve — two joined quadratic segments through p1
+// (start), p2 (mid/join), p3 (end). The two segment control points aren't
+// stored; they're derived on the fly (perpendicular offsets from each
+// segment's midpoint, in opposite directions) from p1/p2/p3 at render/
+// hitTest/drag time, so only the 3 anchors need to be draggable.
+export interface DoubleCurveDrawing extends LineStyle {
+  id: string;
+  type: 'doubleCurve';
+  price1: number; time1: number;
+  price2: number; time2: number;
+  price3: number; time3: number;
+}
+
 // 'plain' is the ordinary Arrow tool (blue by default); 'marker' is the Arrow
 // Marker tool — same 2-point line-plus-arrowhead shape, just a neutral default
 // color. (Arrow Mark Up/Down are a different, single-click shape — see
@@ -389,6 +435,10 @@ export type Drawing =
   | PolylineDrawing
   | BrushDrawing
   | HighlighterDrawing
+  | TriangleDrawing
+  | ArcDrawing
+  | CurveDrawing
+  | DoubleCurveDrawing
   | ArrowDrawing
   | ArrowMarkDrawing
   | TextDrawing

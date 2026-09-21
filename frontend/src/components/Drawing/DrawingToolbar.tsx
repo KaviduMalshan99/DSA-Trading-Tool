@@ -241,6 +241,43 @@ function PolylineIcon() {
   );
 }
 
+function TriangleIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" fill="none" strokeLinejoin="round">
+      <polygon points="12,4 21,19 3,19" />
+    </svg>
+  );
+}
+
+// Arc: a single quadratic curve bulging one way — distinct from Curve's
+// icon only by not being labeled "smooth curve"; kept visually near-identical
+// since the two tools share the same underlying math.
+function ArcIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round">
+      <path d="M4 18Q12 4 20 10" />
+    </svg>
+  );
+}
+
+function CurveIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round">
+      <path d="M4 16Q10 4 12 12T20 8" />
+    </svg>
+  );
+}
+
+// Double Curve: an S-shape — two opposing bulges, visually distinct from
+// Arc/Curve's single bulge.
+function DoubleCurveIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round">
+      <path d="M4 6Q12 6 12 12T20 18" />
+    </svg>
+  );
+}
+
 function ArrowMarkerIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
@@ -536,6 +573,10 @@ const SHAPE_ICON: Record<ShapeTool, React.ReactNode> = {
   ellipse: <EllipseIcon />,
   path: <PathIcon />,
   polyline: <PolylineIcon />,
+  triangle: <TriangleIcon />,
+  arc: <ArcIcon />,
+  curve: <CurveIcon />,
+  doubleCurve: <DoubleCurveIcon />,
   arrowMarker: <ArrowMarkerIcon />,
   arrowTool: <ArrowToolIcon />,
   arrowMarkUp: <ArrowMarkUpIcon />,
@@ -549,7 +590,6 @@ const SHAPE_ICON: Record<ShapeTool, React.ReactNode> = {
 // single-click arrow variants). SHAPE_ITEMS below is the flat concatenation,
 // kept for ALL_TOOL_ICON/ALL_TOOL_LABEL/Favorites (same pattern as
 // TREND_ITEMS = [...TREND_LINE_ITEMS, ...TREND_CHANNEL_ITEMS]).
-// Triangle/Arc/Curve/Double Curve are spec'd but not yet built — omitted here.
 const SHAPE_SHAPES_ITEMS: { tool: ShapeTool; label: string }[] = [
   { tool: 'rectangle',        label: 'Rectangle' },
   { tool: 'rotatedRectangle', label: 'Rotated Rectangle' },
@@ -557,6 +597,10 @@ const SHAPE_SHAPES_ITEMS: { tool: ShapeTool; label: string }[] = [
   { tool: 'circle',           label: 'Circle' },
   { tool: 'ellipse',          label: 'Ellipse' },
   { tool: 'polyline',         label: 'Polyline' },
+  { tool: 'triangle',         label: 'Triangle' },
+  { tool: 'arc',              label: 'Arc' },
+  { tool: 'curve',            label: 'Curve' },
+  { tool: 'doubleCurve',      label: 'Double Curve' },
 ];
 
 const SHAPE_BRUSH_ITEMS: { tool: ShapeTool; label: string }[] = [
