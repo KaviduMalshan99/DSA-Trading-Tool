@@ -10,7 +10,8 @@ import type { Candle } from '../../types/market';
 // deliberately do NOT capture, so the chart stays pannable by default.
 const CAPTURE_TOOLS = new Set<DrawingTool>([
   'trendline', 'ray', 'extendedLine', 'infoLine', 'trendAngle',
-  'hline', 'hray', 'vline', 'crossline', 'rectangle', 'fibonacci', 'channel', 'regression', 'eraser',
+  'hline', 'hray', 'vline', 'crossline', 'rectangle', 'fibonacci', 'channel', 'regression',
+  'flatChannel', 'disjointChannel', 'eraser',
   'rotatedRectangle', 'circle', 'path', 'arrowMarker', 'arrowTool', 'arrowMarkUp', 'arrowMarkDown', 'brush',
   'text', 'priceNote', 'measure', 'zoomIn',
   'longPosition', 'shortPosition', 'priceRange', 'dateRange',
@@ -37,6 +38,8 @@ const CLICKS_REQUIRED: Partial<Record<DrawingTool, number>> = {
   fibonacci: 2,
   channel: 3,
   regression: 2,
+  flatChannel: 3,
+  disjointChannel: 4,
   rotatedRectangle: 3,
   circle: 2,
   arrowTool: 2,
@@ -770,6 +773,99 @@ function renderDrawing(
       ctx.fillRect(wx - 4, wy - 4, 8, 8);
     }
 
+  } else if (d.type === 'flatChannel') {
+    const lines = getFlatChannelLines(d, chart, series);
+    if (!lines) { ctx.restore(); return; }
+    const { x1, y1, x2, y2, y1b, y2b } = lines;
+
+    ctx.strokeStyle = pick('#2196F3', '#64B5F6');
+    ctx.lineWidth = selected ? 2 : 1.5;
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x1, y1b);
+    ctx.lineTo(x2, y2b);
+    ctx.stroke();
+
+    ctx.fillStyle = eraserHover ? 'rgba(248,81,73,0.08)' : 'rgba(33,150,243,0.08)';
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.lineTo(x2, y2b);
+    ctx.lineTo(x1, y1b);
+    ctx.closePath();
+    ctx.fill();
+
+    // median line, like Parallel Channel
+    ctx.strokeStyle = pick('#2196F3', '#64B5F6');
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    ctx.moveTo(x1, (y1 + y1b) / 2);
+    ctx.lineTo(x2, (y2 + y2b) / 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    if (selected) {
+      const handleColor = eraserHover ? '#f85149' : '#2196F3';
+      ctx.fillStyle = handleColor;
+      // p1 (top price), p2 (right time edge)
+      for (const [hx, hy] of [[x1, y1], [x2, y2]] as const) {
+        ctx.beginPath();
+        ctx.arc(hx, hy, 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // p3 width handle — drag to change the bottom price
+      const wx = (x1 + x2) / 2, wy = (y1b + y2b) / 2;
+      ctx.fillRect(wx - 4, wy - 4, 8, 8);
+    }
+
+  } else if (d.type === 'disjointChannel') {
+    const xA1 = timeToX(chart, d.timeA1), yA1 = priceToY(series, d.priceA1);
+    const xA2 = timeToX(chart, d.timeA2), yA2 = priceToY(series, d.priceA2);
+    const xB1 = timeToX(chart, d.timeB1), yB1 = priceToY(series, d.priceB1);
+    const xB2 = timeToX(chart, d.timeB2), yB2 = priceToY(series, d.priceB2);
+    if (xA1 == null || yA1 == null || xA2 == null || yA2 == null ||
+        xB1 == null || yB1 == null || xB2 == null || yB2 == null) { ctx.restore(); return; }
+
+    const baseColor = d.color ?? '#2196F3';
+    const lineColor = hexToRgba(baseColor, d.opacity ?? 100);
+    const dashPattern: number[] = d.dash === 'dashed' ? [8, 4] : d.dash === 'dotted' ? [2, 3] : [];
+
+    ctx.fillStyle = eraserHover ? 'rgba(248,81,73,0.08)' : hexToRgba(baseColor, 8);
+    ctx.beginPath();
+    ctx.moveTo(xA1, yA1);
+    ctx.lineTo(xA2, yA2);
+    ctx.lineTo(xB2, yB2);
+    ctx.lineTo(xB1, yB1);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.strokeStyle = eraserHover ? '#f85149' : lineColor;
+    ctx.lineWidth = (d.width ?? 1.5) + (selected ? 1 : 0);
+    ctx.setLineDash(dashPattern);
+    ctx.beginPath();
+    ctx.moveTo(xA1, yA1);
+    ctx.lineTo(xA2, yA2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(xB1, yB1);
+    ctx.lineTo(xB2, yB2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    if (selected) {
+      ctx.fillStyle = eraserHover ? '#f85149' : baseColor;
+      for (const [hx, hy] of [[xA1, yA1], [xA2, yA2], [xB1, yB1], [xB2, yB2]] as const) {
+        ctx.beginPath();
+        ctx.arc(hx, hy, 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
   } else if (d.type === 'regression') {
     const reg = computeRegression(candles, d.time1, d.time2);
     if (!reg) { ctx.restore(); return; }
@@ -1473,6 +1569,24 @@ function getChannelLines(
   return computeParallelOffset(d.price1, d.time1, d.price2, d.time2, d.price3, d.time3, chart, series);
 }
 
+// Flat Top/Bottom: unlike Parallel Channel's offset baseline, both lines are
+// flat — Line A at price1, Line B at price3, both spanning [time1, time2].
+// Returns the same {x1,y1,x2,y2,y1b,y2b} shape as computeParallelOffset (with
+// y2===y1 and y2b===y1b) so rendering/hitTest can share the same fill/stroke
+// code path as Parallel Channel.
+function getFlatChannelLines(
+  d: Extract<Drawing, { type: 'flatChannel' }>,
+  chart: IChartApi,
+  series: ISeriesApi<'Candlestick'>,
+): { x1: number; y1: number; x2: number; y2: number; y1b: number; y2b: number } | null {
+  const x1 = timeToX(chart, d.time1);
+  const x2 = timeToX(chart, d.time2);
+  const y1 = priceToY(series, d.price1);
+  const y1b = priceToY(series, d.price3);
+  if (x1 == null || x2 == null || y1 == null || y1b == null) return null;
+  return { x1, y1, x2, y2: y1, y1b, y2b: y1b };
+}
+
 // Arrow Marker's solid shape: a thin tapered shaft from the tail (a sharp
 // point) up to a "shoulder" ~70% of the way to the head, where it flares
 // abruptly out to a wide arrowhead base, then sweeps back in to a sharp point
@@ -1577,6 +1691,23 @@ function hitTest(
     if (!lines) return false;
     const { x1, y1, x2, y2, y1b, y2b } = lines;
     return distToSegment(mx, my, x1, y1, x2, y2) < TOL || distToSegment(mx, my, x1, y1b, x2, y2b) < TOL;
+  }
+
+  if (d.type === 'flatChannel') {
+    const lines = getFlatChannelLines(d, chart, series);
+    if (!lines) return false;
+    const { x1, y1, x2, y2, y1b, y2b } = lines;
+    return distToSegment(mx, my, x1, y1, x2, y2) < TOL || distToSegment(mx, my, x1, y1b, x2, y2b) < TOL;
+  }
+
+  if (d.type === 'disjointChannel') {
+    const xA1 = timeToX(chart, d.timeA1), yA1 = priceToY(series, d.priceA1);
+    const xA2 = timeToX(chart, d.timeA2), yA2 = priceToY(series, d.priceA2);
+    const xB1 = timeToX(chart, d.timeB1), yB1 = priceToY(series, d.priceB1);
+    const xB2 = timeToX(chart, d.timeB2), yB2 = priceToY(series, d.priceB2);
+    if (xA1 == null || yA1 == null || xA2 == null || yA2 == null ||
+        xB1 == null || yB1 == null || xB2 == null || yB2 == null) return false;
+    return distToSegment(mx, my, xA1, yA1, xA2, yA2) < TOL || distToSegment(mx, my, xB1, yB1, xB2, yB2) < TOL;
   }
 
   if (d.type === 'regression') {
@@ -1801,14 +1932,16 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
   const rafRef       = useRef(0);
 
   // drawing-in-progress state stored in refs so we don't re-render mid-draw.
-  // Up to 3 anchor points are tracked — most tools use 1-2, Parallel Channel uses all 3.
+  // Up to 4 anchor points are tracked — most tools use 1-2, Parallel Channel/
+  // Flat Top-Bottom use 3, Disjoint Channel uses all 4.
   const drawingRef = useRef<{
     active: boolean;
     step: number;
     x1: number; y1: number;
     x2: number; y2: number;
     x3: number; y3: number;
-  }>({ active: false, step: 0, x1: 0, y1: 0, x2: 0, y2: 0, x3: 0, y3: 0 });
+    x4: number; y4: number;
+  }>({ active: false, step: 0, x1: 0, y1: 0, x2: 0, y2: 0, x3: 0, y3: 0, x4: 0, y4: 0 });
 
   // Path/Brush use a variable-length point list instead of the fixed 1-3 point
   // scheme above. Path grows one point per click and finishes on double-click;
@@ -1870,10 +2003,11 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
   // is applied to, so one drag implementation legitimately serves both pairs.
   const dragRef = useRef<{
     active: boolean;
-    kind: 'trendline' | 'channel' | 'fibonacci' | 'box' | 'path' | 'brush' | 'arrowMark' | 'note' | 'position'
-      | 'hline' | 'vline' | 'hray';
+    kind: 'trendline' | 'channel' | 'flatChannel' | 'disjointChannel' | 'fibonacci' | 'box' | 'path' | 'brush'
+      | 'arrowMark' | 'note' | 'position' | 'hline' | 'vline' | 'hray';
     id: string;
-    mode: 'move' | 'p1' | 'p2' | 'p3' | 'c2' | 'c3' | 'vertex' | 'target' | 'stop' | 'width';
+    mode: 'move' | 'p1' | 'p2' | 'p3' | 'c2' | 'c3' | 'vertex' | 'target' | 'stop' | 'width'
+      | 'a1' | 'a2' | 'b1' | 'b2';
     vertexIndex?: number;
     startX: number; startY: number;
     origX1: number; origY1: number;
@@ -1884,6 +2018,10 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
   const dragPreviewRef = useRef<
     | { kind: 'trendline'; id: string; price1: number; time1: number; price2: number; time2: number }
     | { kind: 'channel'; id: string; price1: number; time1: number; price2: number; time2: number; price3: number; time3: number }
+    | { kind: 'flatChannel'; id: string; price1: number; time1: number; time2: number; price3: number }
+    | { kind: 'disjointChannel'; id: string;
+        priceA1: number; timeA1: number; priceA2: number; timeA2: number;
+        priceB1: number; timeB1: number; priceB2: number; timeB2: number }
     | { kind: 'fibonacci'; id: string; priceHigh: number; timeHigh: number; priceLow: number; timeLow: number }
     | { kind: 'box'; id: string; price1: number; time1: number; price2: number; time2: number }
     | { kind: 'path' | 'brush'; id: string; points: { price: number; time: number }[] }
@@ -1964,6 +2102,14 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           } else if (drag.kind === 'channel' && (d.type === 'channel' || d.type === 'rotatedRectangle')) {
             dd = { ...d, price1: drag.price1, time1: drag.time1, price2: drag.price2, time2: drag.time2,
               price3: drag.price3, time3: drag.time3 };
+          } else if (drag.kind === 'flatChannel' && d.type === 'flatChannel') {
+            dd = { ...d, price1: drag.price1, time1: drag.time1, time2: drag.time2, price3: drag.price3 };
+          } else if (drag.kind === 'disjointChannel' && d.type === 'disjointChannel') {
+            dd = {
+              ...d,
+              priceA1: drag.priceA1, timeA1: drag.timeA1, priceA2: drag.priceA2, timeA2: drag.timeA2,
+              priceB1: drag.priceB1, timeB1: drag.timeB1, priceB2: drag.priceB2, timeB2: drag.timeB2,
+            };
           } else if (drag.kind === 'fibonacci' && d.type === 'fibonacci') {
             dd = { ...d, priceHigh: drag.priceHigh, timeHigh: drag.timeHigh, priceLow: drag.priceLow, timeLow: drag.timeLow };
           } else if (drag.kind === 'box' && (d.type === 'rectangle' || d.type === 'circle' || d.type === 'priceRange' || d.type === 'dateRange')) {
@@ -2004,6 +2150,8 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
         const time2  = xToTime(chart, ds.x2);
         const price3 = yToPrice(series, ds.y3);
         const time3  = xToTime(chart, ds.x3);
+        const price4 = yToPrice(series, ds.y4);
+        const time4  = xToTime(chart, ds.x4);
         if (price1 != null && time1 != null) {
           let preview: Drawing | null = null;
           if (tool === 'trendline' && price2 != null && time2 != null)
@@ -2031,6 +2179,16 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           else if (tool === 'channel' && price2 != null && time2 != null)
             preview = { id: '__preview', type: 'channel', price1, time1, price2, time2,
               price3: price3 ?? price2, time3: time3 ?? time2 };
+          else if (tool === 'flatChannel' && price2 != null && time2 != null)
+            preview = { id: '__preview', type: 'flatChannel', price1, time1, price2, time2,
+              price3: price3 ?? price2, time3: time3 ?? time2 };
+          else if (tool === 'disjointChannel' && price2 != null && time2 != null)
+            preview = {
+              id: '__preview', type: 'disjointChannel',
+              priceA1: price1, timeA1: time1, priceA2: price2, timeA2: time2,
+              priceB1: price3 ?? price2, timeB1: time3 ?? time2,
+              priceB2: price4 ?? price3 ?? price2, timeB2: time4 ?? time3 ?? time2,
+            };
           else if (tool === 'rotatedRectangle' && price2 != null && time2 != null)
             preview = { id: '__preview', type: 'rotatedRectangle', price1, time1, price2, time2,
               price3: price3 ?? price2, time3: time3 ?? time2 };
@@ -2376,12 +2534,13 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
       // can finalize immediately below)
       ds.active = true;
       ds.step   = 1;
-      ds.x1 = ds.x2 = ds.x3 = px;
-      ds.y1 = ds.y2 = ds.y3 = py;
+      ds.x1 = ds.x2 = ds.x3 = ds.x4 = px;
+      ds.y1 = ds.y2 = ds.y3 = ds.y4 = py;
     } else {
       ds.step += 1;
       if (ds.step === 2) { ds.x2 = px; ds.y2 = py; }
       else if (ds.step === 3) { ds.x3 = px; ds.y3 = py; }
+      else if (ds.step === 4) { ds.x4 = px; ds.y4 = py; }
     }
 
     if (ds.step < required) {
@@ -2399,6 +2558,8 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
     const time2  = xToTime(chart, ds.x2);
     const price3 = yToPrice(series, ds.y3);
     const time3  = xToTime(chart, ds.x3);
+    const price4 = yToPrice(series, ds.y4);
+    const time4  = xToTime(chart, ds.x4);
 
     if (price1 == null || time1 == null) return;
 
@@ -2428,6 +2589,16 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
     } else if (tool === 'channel') {
       if (price2 == null || time2 == null || price3 == null || time3 == null) return;
       addDrawing({ id, type: 'channel', price1, time1, price2, time2, price3, time3 });
+    } else if (tool === 'flatChannel') {
+      if (price2 == null || time2 == null || price3 == null || time3 == null) return;
+      addDrawing({ id, type: 'flatChannel', price1, time1, price2, time2, price3, time3 });
+    } else if (tool === 'disjointChannel') {
+      if (price2 == null || time2 == null || price3 == null || time3 == null || price4 == null || time4 == null) return;
+      addDrawing({
+        id, type: 'disjointChannel',
+        priceA1: price1, timeA1: time1, priceA2: price2, timeA2: time2,
+        priceB1: price3, timeB1: time3, priceB2: price4, timeB2: time4,
+      });
     } else if (tool === 'regression') {
       if (time2 == null) return;
       addDrawing({ id, type: 'regression', time1, time2 });
@@ -2544,6 +2715,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
       const nextStep = ds.step + 1;
       if (nextStep === 2) { ds.x2 = nx; ds.y2 = ny; }
       else if (nextStep === 3) { ds.x3 = nx; ds.y3 = ny; }
+      else if (nextStep === 4) { ds.x4 = nx; ds.y4 = ny; }
     }
     scheduleRender();
 
@@ -2772,6 +2944,53 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           return;
         }
 
+        if (drag.kind === 'flatChannel') {
+          // p1: top price only, p2: right time edge only, p3 (width handle):
+          // bottom price only, move: translate everything.
+          let nx1 = drag.origX1, ny1 = drag.origY1, nx2 = drag.origX2;
+          let widthY = drag.origY3;
+          if (drag.mode === 'move') {
+            nx1 += dx; ny1 += dy; nx2 += dx; widthY += dy;
+          } else if (drag.mode === 'p1') {
+            ny1 = y;
+          } else if (drag.mode === 'p2') {
+            nx2 = x;
+          } else {
+            widthY = y;
+          }
+          const price1 = yToPrice(series, ny1);
+          const time1  = xToTime(chart, nx1);
+          const time2  = xToTime(chart, nx2);
+          const price3 = yToPrice(series, widthY);
+          if (price1 != null && time1 != null && time2 != null && price3 != null) {
+            dragPreviewRef.current = { kind: 'flatChannel', id: drag.id, price1, time1, time2, price3 };
+            scheduleRender();
+          }
+          return;
+        }
+
+        if (drag.kind === 'disjointChannel') {
+          const orig = drag.origPoints ?? [];
+          if (orig.length !== 4) return;
+          const idx = drag.mode === 'a1' ? 0 : drag.mode === 'a2' ? 1 : drag.mode === 'b1' ? 2 : drag.mode === 'b2' ? 3 : -1;
+          const pts = orig.map((p, i) =>
+            drag.mode === 'move' ? { x: p.x + dx, y: p.y + dy } : i === idx ? { x, y } : p);
+          const [pA1, pA2, pB1, pB2] = pts;
+          const priceA1 = yToPrice(series, pA1.y), timeA1 = xToTime(chart, pA1.x);
+          const priceA2 = yToPrice(series, pA2.y), timeA2 = xToTime(chart, pA2.x);
+          const priceB1 = yToPrice(series, pB1.y), timeB1 = xToTime(chart, pB1.x);
+          const priceB2 = yToPrice(series, pB2.y), timeB2 = xToTime(chart, pB2.x);
+          if (priceA1 != null && timeA1 != null && priceA2 != null && timeA2 != null &&
+              priceB1 != null && timeB1 != null && priceB2 != null && timeB2 != null) {
+            dragPreviewRef.current = {
+              kind: 'disjointChannel', id: drag.id,
+              priceA1, timeA1, priceA2, timeA2, priceB1, timeB1, priceB2, timeB2,
+            };
+            scheduleRender();
+          }
+          return;
+        }
+
         // channel: 'p1'/'p2' reshape the baseline (length/angle), 'move' translates
         // everything, 'p3' (width handle) only changes the channel's height/offset
         let nx1 = drag.origX1, ny1 = drag.origY1, nx2 = drag.origX2, ny2 = drag.origY2;
@@ -2844,6 +3063,26 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           const wx = (x1 + x2) / 2, wy = (y1b + y2b) / 2;
           if (Math.hypot(x - x1, y - y1) < 8 || Math.hypot(x - x2, y - y2) < 8) { hoverCursor = 'grab'; break; }
           if (Math.hypot(x - wx, y - wy) < 8) { hoverCursor = 'ns-resize'; break; }
+          if (hitTest(d, x, y, chart, series, candlesRef.current)) { hoverCursor = 'move'; break; }
+        } else if (d.type === 'flatChannel') {
+          const lines = getFlatChannelLines(d, chart, series);
+          if (!lines) continue;
+          const { x1, y1, x2, y2, y1b, y2b } = lines;
+          const wx = (x1 + x2) / 2, wy = (y1b + y2b) / 2;
+          if (Math.hypot(x - x1, y - y1) < 8) { hoverCursor = 'ns-resize'; break; }
+          if (Math.hypot(x - x2, y - y2) < 8) { hoverCursor = 'ew-resize'; break; }
+          if (Math.hypot(x - wx, y - wy) < 8) { hoverCursor = 'ns-resize'; break; }
+          if (hitTest(d, x, y, chart, series, candlesRef.current)) { hoverCursor = 'move'; break; }
+        } else if (d.type === 'disjointChannel') {
+          const xA1 = timeToX(chart, d.timeA1), yA1 = priceToY(series, d.priceA1);
+          const xA2 = timeToX(chart, d.timeA2), yA2 = priceToY(series, d.priceA2);
+          const xB1 = timeToX(chart, d.timeB1), yB1 = priceToY(series, d.priceB1);
+          const xB2 = timeToX(chart, d.timeB2), yB2 = priceToY(series, d.priceB2);
+          if (xA1 == null || yA1 == null || xA2 == null || yA2 == null ||
+              xB1 == null || yB1 == null || xB2 == null || yB2 == null) continue;
+          const nearAny = ([[xA1, yA1], [xA2, yA2], [xB1, yB1], [xB2, yB2]] as const)
+            .some(([hx, hy]) => Math.hypot(x - hx, y - hy) < 8);
+          if (nearAny) { hoverCursor = 'grab'; break; }
           if (hitTest(d, x, y, chart, series, candlesRef.current)) { hoverCursor = 'move'; break; }
         } else if (d.type === 'rectangle' || d.type === 'circle' || d.type === 'priceRange' || d.type === 'dateRange') {
           const x1 = timeToX(chart, d.time1), y1 = priceToY(series, d.price1);
@@ -3003,6 +3242,60 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           };
           selectDrawing(d.id);
           applyCursorValue(nearWidth ? 'ns-resize' : 'grabbing');
+          e.preventDefault();
+          e.stopPropagation();
+          scheduleRender();
+          return;
+        }
+
+        if (d.type === 'flatChannel') {
+          const lines = getFlatChannelLines(d, chart, series);
+          if (!lines) continue;
+          const { x1, y1, x2, y2, y1b } = lines;
+          const wx = (x1 + x2) / 2, wy = y1b;
+
+          const nearP1 = Math.hypot(x - x1, y - y1) < 8;
+          const nearP2 = Math.hypot(x - x2, y - y2) < 8;
+          const nearWidth = Math.hypot(x - wx, y - wy) < 8;
+          if (!nearP1 && !nearP2 && !nearWidth && !hitTest(d, x, y, chart, series, candlesRef.current)) continue;
+
+          dragRef.current = {
+            active: true, kind: 'flatChannel', id: d.id,
+            mode: nearP1 ? 'p1' : nearP2 ? 'p2' : nearWidth ? 'p3' : 'move',
+            startX: x, startY: y,
+            origX1: x1, origY1: y1, origX2: x2, origY2: y2, origX3: wx, origY3: wy,
+          };
+          selectDrawing(d.id);
+          applyCursorValue(nearP1 ? 'ns-resize' : nearP2 ? 'ew-resize' : nearWidth ? 'ns-resize' : 'move');
+          e.preventDefault();
+          e.stopPropagation();
+          scheduleRender();
+          return;
+        }
+
+        if (d.type === 'disjointChannel') {
+          const xA1 = timeToX(chart, d.timeA1), yA1 = priceToY(series, d.priceA1);
+          const xA2 = timeToX(chart, d.timeA2), yA2 = priceToY(series, d.priceA2);
+          const xB1 = timeToX(chart, d.timeB1), yB1 = priceToY(series, d.priceB1);
+          const xB2 = timeToX(chart, d.timeB2), yB2 = priceToY(series, d.priceB2);
+          if (xA1 == null || yA1 == null || xA2 == null || yA2 == null ||
+              xB1 == null || yB1 == null || xB2 == null || yB2 == null) continue;
+
+          const nearA1 = Math.hypot(x - xA1, y - yA1) < 8;
+          const nearA2 = Math.hypot(x - xA2, y - yA2) < 8;
+          const nearB1 = Math.hypot(x - xB1, y - yB1) < 8;
+          const nearB2 = Math.hypot(x - xB2, y - yB2) < 8;
+          if (!nearA1 && !nearA2 && !nearB1 && !nearB2 && !hitTest(d, x, y, chart, series, candlesRef.current)) continue;
+
+          dragRef.current = {
+            active: true, kind: 'disjointChannel', id: d.id,
+            mode: nearA1 ? 'a1' : nearA2 ? 'a2' : nearB1 ? 'b1' : nearB2 ? 'b2' : 'move',
+            startX: x, startY: y,
+            origX1: 0, origY1: 0, origX2: 0, origY2: 0, origX3: 0, origY3: 0,
+            origPoints: [{ x: xA1, y: yA1 }, { x: xA2, y: yA2 }, { x: xB1, y: yB1 }, { x: xB2, y: yB2 }],
+          };
+          selectDrawing(d.id);
+          applyCursorValue(nearA1 || nearA2 || nearB1 || nearB2 ? 'grabbing' : 'move');
           e.preventDefault();
           e.stopPropagation();
           scheduleRender();
@@ -3176,6 +3469,18 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
             price1: preview.price1, time1: preview.time1,
             price2: preview.price2, time2: preview.time2,
             price3: preview.price3, time3: preview.time3,
+          });
+        } else if (preview.kind === 'flatChannel') {
+          updateDrawing(drag.id, {
+            price1: preview.price1, time1: preview.time1,
+            time2: preview.time2, price3: preview.price3,
+          });
+        } else if (preview.kind === 'disjointChannel') {
+          updateDrawing(drag.id, {
+            priceA1: preview.priceA1, timeA1: preview.timeA1,
+            priceA2: preview.priceA2, timeA2: preview.timeA2,
+            priceB1: preview.priceB1, timeB1: preview.timeB1,
+            priceB2: preview.priceB2, timeB2: preview.timeB2,
           });
         } else if (preview.kind === 'path' || preview.kind === 'brush') {
           updateDrawing(drag.id, { points: preview.points });

@@ -11,10 +11,12 @@ export const CURSOR_MODES: readonly CursorMode[] = ['cross', 'dot', 'arrow', 'de
 // tag and renderer differ from the plain Trend Line.
 export type TrendTool =
   | 'trendline' | 'ray' | 'extendedLine' | 'infoLine' | 'trendAngle'
-  | 'hline' | 'hray' | 'vline' | 'crossline' | 'channel' | 'regression';
+  | 'hline' | 'hray' | 'vline' | 'crossline' | 'channel' | 'regression'
+  | 'flatChannel' | 'disjointChannel';
 export const TREND_TOOLS: readonly TrendTool[] = [
   'trendline', 'ray', 'extendedLine', 'infoLine', 'trendAngle',
   'hline', 'hray', 'vline', 'crossline', 'channel', 'regression',
+  'flatChannel', 'disjointChannel',
 ];
 
 // The "Shapes" group — geometric shapes, arrows, and freehand tools, grouped
@@ -315,6 +317,34 @@ export interface RegressionDrawing {
   time2: number;
 }
 
+// Flat Top/Bottom: same 3-click shape as ChannelDrawing (baseline p1/p2 plus a
+// 3rd-click offset point p3), but the two channel lines are HORIZONTAL rather
+// than parallel to the baseline — Line A is flat at price1 spanning
+// [time1, time2], Line B is flat at price3 spanning the same time window.
+// price2 is captured (same click sequence as Parallel Channel) but unused for
+// geometry — only its time2 matters, as the right edge of the band.
+export interface FlatChannelDrawing {
+  id: string;
+  type: 'flatChannel';
+  price1: number; time1: number;
+  price2: number; time2: number;
+  price3: number; time3: number;
+}
+
+// Disjoint Channel: two independent line segments (not forced parallel like
+// Parallel Channel) — line A (a1->a2) and line B (b1->b2), placed with 4
+// clicks. Extends LineStyle so both segments share one configurable color/
+// width/dash/opacity, unlike Parallel Channel/Flat Top-Bottom which render
+// with a fixed color.
+export interface DisjointChannelDrawing extends LineStyle {
+  id: string;
+  type: 'disjointChannel';
+  priceA1: number; timeA1: number;
+  priceA2: number; timeA2: number;
+  priceB1: number; timeB1: number;
+  priceB2: number; timeB2: number;
+}
+
 export type Drawing =
   | TrendLineDrawing
   | RayDrawing
@@ -339,7 +369,9 @@ export type Drawing =
   | DateRangeDrawing
   | FibonacciDrawing
   | ChannelDrawing
-  | RegressionDrawing;
+  | RegressionDrawing
+  | FlatChannelDrawing
+  | DisjointChannelDrawing;
 
 interface DrawingState {
   activeTool: DrawingTool;

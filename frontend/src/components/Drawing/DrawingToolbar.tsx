@@ -167,6 +167,24 @@ function RegressionIcon() {
   );
 }
 
+function FlatChannelIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" fill="none">
+      <line x1="3" y1="6" x2="21" y2="6" />
+      <line x1="3" y1="18" x2="21" y2="18" />
+    </svg>
+  );
+}
+
+function DisjointChannelIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" fill="none">
+      <line x1="3" y1="16" x2="21" y2="8" />
+      <line x1="4" y1="21" x2="14" y2="4" />
+    </svg>
+  );
+}
+
 function RectIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" fill="none">
@@ -447,6 +465,8 @@ const TREND_ICON: Record<TrendTool, React.ReactNode> = {
   crossline: <CrosslineIcon />,
   channel: <ChannelIcon />,
   regression: <RegressionIcon />,
+  flatChannel: <FlatChannelIcon />,
+  disjointChannel: <DisjointChannelIcon />,
 };
 
 // The flyout's two labeled sections — "Lines" (2-point/anchor line variants)
@@ -466,8 +486,10 @@ const TREND_LINE_ITEMS: { tool: TrendTool; label: string }[] = [
 ];
 
 const TREND_CHANNEL_ITEMS: { tool: TrendTool; label: string }[] = [
-  { tool: 'channel',    label: 'Parallel Channel' },
-  { tool: 'regression', label: 'Regression Trend' },
+  { tool: 'channel',         label: 'Parallel Channel' },
+  { tool: 'regression',      label: 'Regression Trend' },
+  { tool: 'flatChannel',     label: 'Flat Top/Bottom' },
+  { tool: 'disjointChannel', label: 'Disjoint Channel' },
 ];
 
 const TREND_ITEMS: { tool: TrendTool; label: string }[] = [...TREND_LINE_ITEMS, ...TREND_CHANNEL_ITEMS];
