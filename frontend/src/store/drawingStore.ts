@@ -50,9 +50,9 @@ export const ACTION_TOOLS: readonly ActionTool[] = ['measure', 'zoomIn'];
 
 // The "Prediction & measurement" group — Long/Short Position projections and
 // Price/Date Range brackets, grouped under one dropdown just like the others.
-export type PositionRangeTool = 'longPosition' | 'shortPosition' | 'priceRange' | 'dateRange';
+export type PositionRangeTool = 'longPosition' | 'shortPosition' | 'priceRange' | 'dateRange' | 'datePriceRange';
 export const POSITION_RANGE_TOOLS: readonly PositionRangeTool[] = [
-  'longPosition', 'shortPosition', 'priceRange', 'dateRange',
+  'longPosition', 'shortPosition', 'priceRange', 'dateRange', 'datePriceRange',
 ];
 
 export type DrawingTool =
@@ -391,6 +391,16 @@ export interface DateRangeDrawing extends LineStyle {
   price2: number; time2: number;
 }
 
+// Date & Price Range: same box shape as Price Range/Date Range — combines
+// both readouts (price delta/%/ticks AND bar count/elapsed time) in one
+// two-line label instead of picking just one axis.
+export interface DatePriceRangeDrawing extends LineStyle {
+  id: string;
+  type: 'datePriceRange';
+  price1: number; time1: number;
+  price2: number; time2: number;
+}
+
 /** one row of the "Levels" list in the Fib settings dialog — enabled toggle,
  * editable ratio, and its own color. Width/dash are shared across all levels. */
 export interface FibLevelConfig {
@@ -499,6 +509,7 @@ export type Drawing =
   | PositionDrawing
   | PriceRangeDrawing
   | DateRangeDrawing
+  | DatePriceRangeDrawing
   | FibonacciDrawing
   | ChannelDrawing
   | RegressionDrawing

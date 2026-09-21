@@ -91,12 +91,14 @@ export const DrawingStyleToolbar = memo(function DrawingStyleToolbar({ sharedCha
       return;
     }
 
-    if (selected.type === 'priceRange' || selected.type === 'dateRange') {
+    if (selected.type === 'priceRange' || selected.type === 'dateRange' || selected.type === 'datePriceRange') {
       const x1 = timeToX(chart, selected.time1), y1 = priceToY(series, selected.price1);
       const x2 = timeToX(chart, selected.time2), y2 = priceToY(series, selected.price2);
       if (x1 == null || y1 == null || x2 == null || y2 == null) { setPos(null); return; }
       // clear the range label bubble rendered just above the box's top edge
-      setPos({ x: (x1 + x2) / 2, y: Math.min(y1, y2) - 76 });
+      // (Date & Price Range's label is two lines tall, so it needs more clearance)
+      const labelClearance = selected.type === 'datePriceRange' ? 88 : 76;
+      setPos({ x: (x1 + x2) / 2, y: Math.min(y1, y2) - labelClearance });
       return;
     }
 
@@ -186,7 +188,7 @@ export const DrawingStyleToolbar = memo(function DrawingStyleToolbar({ sharedCha
       selected.type !== 'rotatedRectangle' && selected.type !== 'circle' && selected.type !== 'path' &&
       selected.type !== 'brush' && selected.type !== 'arrow' && selected.type !== 'arrowMark' &&
       selected.type !== 'text' && selected.type !== 'priceNote' && selected.type !== 'priceRange' &&
-      selected.type !== 'dateRange' && !isPositionDrawing(selected)) return null;
+      selected.type !== 'dateRange' && selected.type !== 'datePriceRange' && !isPositionDrawing(selected)) return null;
 
   const toolbarStyle: React.CSSProperties = {
     left: Math.max(4, pos.x),
@@ -347,7 +349,7 @@ export const DrawingStyleToolbar = memo(function DrawingStyleToolbar({ sharedCha
     );
   }
 
-  // trendline / hline / hray / vline / path / brush / arrow / priceRange / dateRange — plain line style
+  // trendline / hline / hray / vline / path / brush / arrow / priceRange / dateRange / datePriceRange — plain line style
   const defaultColor = '#2196F3';
   const color   = selected.color   ?? defaultColor;
   const width   = selected.width   ?? 1.5;

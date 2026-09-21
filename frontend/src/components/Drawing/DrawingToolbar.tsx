@@ -443,6 +443,18 @@ function DateRangeIcon() {
   );
 }
 
+// Date & Price Range: combines Price Range's vertical arrow-in-box and Date
+// Range's horizontal arrow-in-box into one icon.
+function DatePriceRangeIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round">
+      <rect x="5" y="5" width="14" height="14" rx="1.5" strokeDasharray="2 2" strokeWidth="1.5" />
+      <line x1="12" y1="7" x2="12" y2="17" strokeWidth="1.5" />
+      <line x1="7" y1="12" x2="17" y2="12" strokeWidth="1.5" />
+    </svg>
+  );
+}
+
 function MeasureIcon() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
@@ -679,13 +691,27 @@ const POSITION_RANGE_ICON: Record<PositionRangeTool, React.ReactNode> = {
   shortPosition: <ShortPositionIcon />,
   priceRange: <PriceRangeIcon />,
   dateRange: <DateRangeIcon />,
+  datePriceRange: <DatePriceRangeIcon />,
 };
 
-const POSITION_RANGE_ITEMS: { tool: PositionRangeTool; label: string }[] = [
+// The flyout's two labeled sections (this batch) — "Forecasting" (position
+// projections) and "Measures" (price/date brackets). A "Volume Based"
+// section is planned but left out until it has tools to hold.
+// POSITION_RANGE_ITEMS below is the flat concatenation, kept for
+// ALL_TOOL_ICON/ALL_TOOL_LABEL/Favorites (same pattern as TREND_ITEMS).
+const POSITION_RANGE_FORECASTING_ITEMS: { tool: PositionRangeTool; label: string }[] = [
   { tool: 'longPosition',  label: 'Long Position' },
   { tool: 'shortPosition', label: 'Short Position' },
-  { tool: 'priceRange',    label: 'Price Range' },
-  { tool: 'dateRange',     label: 'Date Range' },
+];
+
+const POSITION_RANGE_MEASURES_ITEMS: { tool: PositionRangeTool; label: string }[] = [
+  { tool: 'priceRange',     label: 'Price Range' },
+  { tool: 'dateRange',      label: 'Date Range' },
+  { tool: 'datePriceRange', label: 'Date & Price Range' },
+];
+
+const POSITION_RANGE_ITEMS: { tool: PositionRangeTool; label: string }[] = [
+  ...POSITION_RANGE_FORECASTING_ITEMS, ...POSITION_RANGE_MEASURES_ITEMS,
 ];
 
 const FIB_TOOL: ToolBtn = { tool: 'fibonacci', label: 'Fibonacci Retracement', icon: <FibIcon /> };
@@ -1115,7 +1141,25 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
               boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
             }}
           >
-            {POSITION_RANGE_ITEMS.map(({ tool, label }) => (
+            <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)] select-none">
+              Forecasting
+            </div>
+            {POSITION_RANGE_FORECASTING_ITEMS.map(({ tool, label }) => (
+              <FavoritableMenuItem
+                key={tool}
+                tool={tool}
+                label={label}
+                icon={POSITION_RANGE_ICON[tool]}
+                active={activeTool === tool}
+                favorite={favoriteTools.includes(tool)}
+                onToggleFavorite={() => toggleFavorite(tool)}
+                onSelect={() => { setTool(tool); setPositionRangeDropdownOpen(false); }}
+              />
+            ))}
+            <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)] select-none">
+              Measures
+            </div>
+            {POSITION_RANGE_MEASURES_ITEMS.map(({ tool, label }) => (
               <FavoritableMenuItem
                 key={tool}
                 tool={tool}

@@ -16,7 +16,7 @@ const CAPTURE_TOOLS = new Set<DrawingTool>([
   'triangle', 'arc', 'curve', 'doubleCurve',
   'arrowMarker', 'arrowTool', 'arrowMarkUp', 'arrowMarkDown', 'brush', 'highlighter',
   'text', 'priceNote', 'pin', 'flagMark', 'priceLabel', 'signpost', 'measure', 'zoomIn',
-  'longPosition', 'shortPosition', 'priceRange', 'dateRange',
+  'longPosition', 'shortPosition', 'priceRange', 'dateRange', 'datePriceRange',
 ]);
 
 // Number of clicks each drawing tool needs before it's finalized. Horizontal
@@ -65,6 +65,7 @@ const CLICKS_REQUIRED: Partial<Record<DrawingTool, number>> = {
   shortPosition: 1,
   priceRange: 2,
   dateRange: 2,
+  datePriceRange: 2,
 };
 
 const DOT_CURSOR = `url("data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5" fill="#111827"/><circle cx="12" cy="12" r="2.5" fill="#ffffff"/></svg>')}" ) 12 12, pointer`;
@@ -261,10 +262,12 @@ function computeMeasureStats(price1: number, time1: number, price2: number, time
 
 // Rounded dark label bubble shared by Price Range / Date Range — `y` is the
 // bubble's top edge, horizontally centered on `cx`.
-function drawRangeLabel(ctx: CanvasRenderingContext2D, cx: number, y: number, text: string) {
+function drawRangeLabel(ctx: CanvasRenderingContext2D, cx: number, y: number, text: string | string[]) {
+  const lines = Array.isArray(text) ? text : [text];
   ctx.font = 'bold 12px sans-serif';
-  const textW = ctx.measureText(text).width;
-  const padX = 8, h = 22;
+  const padX = 8, lineH = 16;
+  const h = lines.length > 1 ? lines.length * lineH + 6 : 22;
+  const textW = Math.max(...lines.map((l) => ctx.measureText(l).width));
   const w = textW + padX * 2;
   const x = cx - w / 2;
   const r = 4;
@@ -282,7 +285,13 @@ function drawRangeLabel(ctx: CanvasRenderingContext2D, cx: number, y: number, te
   ctx.stroke();
   ctx.fillStyle = '#d1d4dc';
   ctx.textBaseline = 'middle';
-  ctx.fillText(text, x + padX, y + h / 2 + 1);
+  if (lines.length > 1) {
+    lines.forEach((line, i) => {
+      ctx.fillText(line, x + padX, y + 3 + lineH * (i + 0.5) + 1);
+    });
+  } else {
+    ctx.fillText(lines[0], x + padX, y + h / 2 + 1);
+  }
   ctx.textBaseline = 'alphabetic';
 }
 
@@ -1660,6 +1669,69 @@ function renderDrawing(
       }
     }
 
+  } else if (d.type === 'datePriceRange') {
+    const x1 = timeToX(chart, d.time1);
+    const y1 = priceToY(series, d.price1);
+    const x2 = timeToX(chart, d.time2);
+    const y2 = priceToY(series, d.price2);
+    if (x1 == null || y1 == null || x2 == null || y2 == null) { ctx.restore(); return; }
+
+    const lx = Math.min(x1, x2), rx = Math.max(x1, x2);
+    const topY = Math.min(y1, y2), botY = Math.max(y1, y2);
+    const baseColor = d.color ?? '#2196F3';
+    const lineColor = eraserHover ? '#f85149' : hexToRgba(baseColor, d.opacity ?? 100);
+
+    ctx.fillStyle = eraserHover ? 'rgba(248,81,73,0.12)' : hexToRgba(baseColor, 15);
+    ctx.fillRect(lx, topY, rx - lx, botY - topY);
+
+    ctx.strokeStyle = lineColor;
+    ctx.lineWidth = (d.width ?? 1.5) + (selected ? 0.5 : 0);
+    ctx.setLineDash(d.dash === 'dotted' ? [2, 3] : d.dash === 'dashed' ? [6, 4] : []);
+    ctx.strokeRect(lx, topY, rx - lx, botY - topY);
+    ctx.setLineDash([]);
+
+    // both readouts get an arrow: vertical (price) through the midpoint of
+    // the drag direction, horizontal (date) through the box's vertical center
+    const midX = (lx + rx) / 2;
+    const midY = (topY + botY) / 2;
+    ctx.strokeStyle = lineColor;
+    ctx.fillStyle = lineColor;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(midX, y1);
+    ctx.lineTo(midX, y2);
+    ctx.stroke();
+    drawArrowhead(ctx, midX, y2, y2 >= y1 ? Math.PI / 2 : -Math.PI / 2, 8);
+    ctx.beginPath();
+    ctx.moveTo(x1, midY);
+    ctx.lineTo(x2, midY);
+    ctx.stroke();
+    drawArrowhead(ctx, x2, midY, x2 >= x1 ? 0 : Math.PI, 8);
+
+    const priceDiff = d.price2 - d.price1;
+    const pct = d.price1 !== 0 ? (priceDiff / d.price1) * 100 : 0;
+    const ticks = Math.round(Math.abs(priceDiff) / 0.01);
+    const priceLabel = `${priceDiff >= 0 ? '+' : ''}${priceDiff.toFixed(2)} (${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%) ${ticks} ticks`;
+
+    const lo = Math.min(d.time1, d.time2), hi = Math.max(d.time1, d.time2);
+    const bars = candles.filter((c) => { const t = toChartTimeSeconds(c.t); return t >= lo && t <= hi; }).length;
+    const totalSec = hi - lo;
+    const days = Math.floor(totalSec / 86400);
+    const hours = Math.floor((totalSec % 86400) / 3600);
+    const timeStr = days > 0 ? `${days}d ${hours}h` : `${Math.floor(totalSec / 3600)}h ${Math.floor((totalSec % 3600) / 60)}m`;
+    const dateLabel = `${bars} bar${bars === 1 ? '' : 's'}, ${timeStr}`;
+
+    drawRangeLabel(ctx, midX, topY - 42, [priceLabel, dateLabel]);
+
+    if (selected) {
+      ctx.fillStyle = eraserHover ? '#f85149' : baseColor;
+      for (const [hx, hy] of [[x1, y1], [x2, y2]] as const) {
+        ctx.beginPath();
+        ctx.arc(hx, hy, 3.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
   } else if (d.type === 'longPosition' || d.type === 'shortPosition') {
     const x1 = timeToX(chart, d.time1);
     const x2 = timeToX(chart, d.time2);
@@ -2220,7 +2292,7 @@ function hitTest(
     return distToSegment(mx, my, x1, y1, x2, y2) < TOL;
   }
 
-  if (d.type === 'priceRange' || d.type === 'dateRange') {
+  if (d.type === 'priceRange' || d.type === 'dateRange' || d.type === 'datePriceRange') {
     const x1 = timeToX(chart, d.time1);
     const y1 = priceToY(series, d.price1);
     const x2 = timeToX(chart, d.time2);
@@ -2517,7 +2589,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
             };
           } else if (drag.kind === 'fibonacci' && d.type === 'fibonacci') {
             dd = { ...d, priceHigh: drag.priceHigh, timeHigh: drag.timeHigh, priceLow: drag.priceLow, timeLow: drag.timeLow };
-          } else if (drag.kind === 'box' && (d.type === 'rectangle' || d.type === 'circle' || d.type === 'ellipse' || d.type === 'priceRange' || d.type === 'dateRange')) {
+          } else if (drag.kind === 'box' && (d.type === 'rectangle' || d.type === 'circle' || d.type === 'ellipse' || d.type === 'priceRange' || d.type === 'dateRange' || d.type === 'datePriceRange')) {
             dd = { ...d, price1: drag.price1, time1: drag.time1, price2: drag.price2, time2: drag.time2 };
           } else if (drag.kind === 'triangle' && d.type === 'triangle') {
             dd = { ...d, price1: drag.price1, time1: drag.time1, price2: drag.price2, time2: drag.time2, price3: drag.price3, time3: drag.time3 };
@@ -2584,6 +2656,8 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
             preview = { id: '__preview', type: 'priceRange', price1, time1, price2, time2 };
           else if (tool === 'dateRange' && price2 != null && time2 != null)
             preview = { id: '__preview', type: 'dateRange', price1, time1, price2, time2 };
+          else if (tool === 'datePriceRange' && price2 != null && time2 != null)
+            preview = { id: '__preview', type: 'datePriceRange', price1, time1, price2, time2 };
           else if (tool === 'rectangle' && price2 != null && time2 != null)
             preview = { id: '__preview', type: 'rectangle', price1, time1, price2, time2 };
           else if (tool === 'fibonacci' && price2 != null && time2 != null)
@@ -3131,6 +3205,9 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
     } else if (tool === 'dateRange') {
       if (price2 == null || time2 == null) return;
       addDrawing({ id, type: 'dateRange', price1, time1, price2, time2 });
+    } else if (tool === 'datePriceRange') {
+      if (price2 == null || time2 == null) return;
+      addDrawing({ id, type: 'datePriceRange', price1, time1, price2, time2 });
     } else if (tool === 'longPosition' || tool === 'shortPosition') {
       const posBox = defaultPositionBox(tool, price1, time1, ds.y1, series, candlesRef.current);
       if (!posBox) return;
@@ -3608,7 +3685,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           const nearAny = Math.hypot(x - x1, y - y1) < 8 || Math.hypot(x - x2, y - y2) < 8 || Math.hypot(x - x3, y - y3) < 8;
           if (nearAny) { hoverCursor = 'grab'; break; }
           if (hitTest(d, x, y, chart, series, candlesRef.current)) { hoverCursor = 'move'; break; }
-        } else if (d.type === 'rectangle' || d.type === 'circle' || d.type === 'ellipse' || d.type === 'priceRange' || d.type === 'dateRange') {
+        } else if (d.type === 'rectangle' || d.type === 'circle' || d.type === 'ellipse' || d.type === 'priceRange' || d.type === 'dateRange' || d.type === 'datePriceRange') {
           const x1 = timeToX(chart, d.time1), y1 = priceToY(series, d.price1);
           const x2 = timeToX(chart, d.time2), y2 = priceToY(series, d.price2);
           if (x1 == null || y1 == null || x2 == null || y2 == null) continue;
@@ -3851,7 +3928,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           return;
         }
 
-        if (d.type === 'rectangle' || d.type === 'circle' || d.type === 'ellipse' || d.type === 'priceRange' || d.type === 'dateRange') {
+        if (d.type === 'rectangle' || d.type === 'circle' || d.type === 'ellipse' || d.type === 'priceRange' || d.type === 'dateRange' || d.type === 'datePriceRange') {
           const x1 = timeToX(chart, d.time1), y1 = priceToY(series, d.price1);
           const x2 = timeToX(chart, d.time2), y2 = priceToY(series, d.price2);
           if (x1 == null || y1 == null || x2 == null || y2 == null) continue;
