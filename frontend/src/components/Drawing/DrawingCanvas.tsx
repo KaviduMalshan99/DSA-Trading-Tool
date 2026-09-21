@@ -9,7 +9,8 @@ import type { Candle } from '../../types/market';
 // pan/zoom underneath). Cursor-group tools (cross/dot/arrow/demonstration/eraser)
 // deliberately do NOT capture, so the chart stays pannable by default.
 const CAPTURE_TOOLS = new Set<DrawingTool>([
-  'trendline', 'hline', 'hray', 'vline', 'rectangle', 'fibonacci', 'channel', 'regression', 'eraser',
+  'trendline', 'ray', 'extendedLine', 'infoLine', 'trendAngle',
+  'hline', 'hray', 'vline', 'rectangle', 'fibonacci', 'channel', 'regression', 'eraser',
   'rotatedRectangle', 'circle', 'path', 'arrowMarker', 'arrowTool', 'arrowMarkUp', 'arrowMarkDown', 'brush',
   'text', 'priceNote', 'measure', 'zoomIn',
   'longPosition', 'shortPosition', 'priceRange', 'dateRange',
@@ -24,6 +25,10 @@ const CAPTURE_TOOLS = new Set<DrawingTool>([
 // Drawing — Measure just shows a stats readout, Zoom In zooms and reverts.
 const CLICKS_REQUIRED: Partial<Record<DrawingTool, number>> = {
   trendline: 2,
+  ray: 2,
+  extendedLine: 2,
+  infoLine: 2,
+  trendAngle: 2,
   hline: 1,
   hray: 1,
   vline: 1,
@@ -325,6 +330,36 @@ function renderMeasureBox(
   ctx.restore();
 }
 
+// Extends the infinite line through (x1,y1)-(x2,y2) to the canvas rect's
+// edges. Returns both boundary crossings as (ax,ay) [the one behind p1, i.e.
+// smaller parametric t] and (bx,by) [the one beyond p2, i.e. larger t] — Ray
+// uses only the (bx,by) forward point (starting from p1 itself); Extended
+// Line uses both. Returns null for a degenerate (zero-length) input.
+function extendLineToRect(
+  x1: number, y1: number, x2: number, y2: number, W: number, H: number,
+): { ax: number; ay: number; bx: number; by: number } | null {
+  const dx = x2 - x1, dy = y2 - y1;
+  if (dx === 0 && dy === 0) return null;
+
+  const candidates: number[] = [];
+  if (dx !== 0) candidates.push((0 - x1) / dx, (W - x1) / dx);
+  if (dy !== 0) candidates.push((0 - y1) / dy, (H - y1) / dy);
+
+  const EPS = 0.5;
+  const valid = candidates.filter((t) => {
+    const px = x1 + t * dx, py = y1 + t * dy;
+    return px >= -EPS && px <= W + EPS && py >= -EPS && py <= H + EPS;
+  });
+  if (valid.length === 0) return null;
+
+  const tMin = Math.min(...valid);
+  const tMax = Math.max(...valid);
+  return {
+    ax: x1 + tMin * dx, ay: y1 + tMin * dy,
+    bx: x1 + tMax * dx, by: y1 + tMax * dy,
+  };
+}
+
 // ── draw one completed/preview drawing ───────────────────────────────────────
 
 function renderDrawing(
@@ -385,6 +420,189 @@ function renderDrawing(
     ctx.font = '11px monospace';
     ctx.fillText(fmt(d.price1), Math.min(x1 + 4, W - 70), y1 - 4);
     ctx.fillText(fmt(d.price2), Math.min(x2 + 4, W - 70), y2 - 4);
+
+  } else if (d.type === 'ray') {
+    const x1 = timeToX(chart, d.time1);
+    const y1 = priceToY(series, d.price1);
+    const x2 = timeToX(chart, d.time2);
+    const y2 = priceToY(series, d.price2);
+    if (x1 == null || y1 == null || x2 == null || y2 == null) { ctx.restore(); return; }
+
+    const baseColor = d.color ?? '#2196F3';
+    const lineColor = hexToRgba(baseColor, d.opacity ?? 100);
+    const dashPattern: number[] = d.dash === 'dashed' ? [8, 4] : d.dash === 'dotted' ? [2, 3] : [];
+
+    // Ray starts at p1 and is extended past p2 to the chart edge — (bx,by) is
+    // always the forward (larger-t) boundary crossing, i.e. beyond p2.
+    const ext = extendLineToRect(x1, y1, x2, y2, W, H);
+    const fx = ext ? ext.bx : x2;
+    const fy = ext ? ext.by : y2;
+
+    ctx.strokeStyle = eraserHover ? '#f85149' : lineColor;
+    ctx.lineWidth = (d.width ?? 1.5) + (selected ? 1 : 0);
+    ctx.setLineDash(dashPattern);
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(fx, fy);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    if (selected) {
+      ctx.fillStyle = eraserHover ? '#f85149' : baseColor;
+      ctx.beginPath();
+      ctx.arc(x1, y1, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(x2, y2, 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    const fmtRay = (p: number) => p.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    ctx.fillStyle = eraserHover ? '#f85149' : baseColor;
+    ctx.font = '11px monospace';
+    ctx.fillText(fmtRay(d.price1), Math.min(x1 + 4, W - 70), y1 - 4);
+    ctx.fillText(fmtRay(d.price2), Math.min(x2 + 4, W - 70), y2 - 4);
+
+  } else if (d.type === 'extendedLine') {
+    const x1 = timeToX(chart, d.time1);
+    const y1 = priceToY(series, d.price1);
+    const x2 = timeToX(chart, d.time2);
+    const y2 = priceToY(series, d.price2);
+    if (x1 == null || y1 == null || x2 == null || y2 == null) { ctx.restore(); return; }
+
+    const baseColor = d.color ?? '#2196F3';
+    const lineColor = hexToRgba(baseColor, d.opacity ?? 100);
+    const dashPattern: number[] = d.dash === 'dashed' ? [8, 4] : d.dash === 'dotted' ? [2, 3] : [];
+
+    const ext = extendLineToRect(x1, y1, x2, y2, W, H);
+    const ax = ext ? ext.ax : x1, ay = ext ? ext.ay : y1;
+    const bx = ext ? ext.bx : x2, by = ext ? ext.by : y2;
+
+    ctx.strokeStyle = eraserHover ? '#f85149' : lineColor;
+    ctx.lineWidth = (d.width ?? 1.5) + (selected ? 1 : 0);
+    ctx.setLineDash(dashPattern);
+    ctx.beginPath();
+    ctx.moveTo(ax, ay);
+    ctx.lineTo(bx, by);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    if (selected) {
+      ctx.fillStyle = eraserHover ? '#f85149' : baseColor;
+      ctx.beginPath();
+      ctx.arc(x1, y1, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(x2, y2, 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    const fmtExt = (p: number) => p.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    ctx.fillStyle = eraserHover ? '#f85149' : baseColor;
+    ctx.font = '11px monospace';
+    ctx.fillText(fmtExt(d.price1), Math.min(x1 + 4, W - 70), y1 - 4);
+    ctx.fillText(fmtExt(d.price2), Math.min(x2 + 4, W - 70), y2 - 4);
+
+  } else if (d.type === 'infoLine') {
+    const x1 = timeToX(chart, d.time1);
+    const y1 = priceToY(series, d.price1);
+    const x2 = timeToX(chart, d.time2);
+    const y2 = priceToY(series, d.price2);
+    if (x1 == null || y1 == null || x2 == null || y2 == null) { ctx.restore(); return; }
+
+    const baseColor = d.color ?? '#2196F3';
+    const lineColor = hexToRgba(baseColor, d.opacity ?? 100);
+    const dashPattern: number[] = d.dash === 'dashed' ? [8, 4] : d.dash === 'dotted' ? [2, 3] : [];
+
+    ctx.strokeStyle = eraserHover ? '#f85149' : lineColor;
+    ctx.lineWidth = (d.width ?? 1.5) + (selected ? 1 : 0);
+    ctx.setLineDash(dashPattern);
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    if (selected) {
+      ctx.fillStyle = eraserHover ? '#f85149' : baseColor;
+      ctx.beginPath();
+      ctx.arc(x1, y1, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(x2, y2, 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // label near the midpoint: price change, % change, bar count
+    const priceDiff = d.price2 - d.price1;
+    const pricePct = d.price1 !== 0 ? (priceDiff / d.price1) * 100 : 0;
+    const intervalSec = estimateBarIntervalSec(candles) ?? 60;
+    const bars = Math.round((d.time2 - d.time1) / intervalSec);
+    const sign = priceDiff >= 0 ? '+' : '';
+    const infoLabel = `${sign}${priceDiff.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${sign}${pricePct.toFixed(2)}%)  ${Math.abs(bars)} bar${Math.abs(bars) === 1 ? '' : 's'}`;
+
+    ctx.font = 'bold 11px sans-serif';
+    const midX = (x1 + x2) / 2, midY = (y1 + y2) / 2;
+    const textW = ctx.measureText(infoLabel).width;
+    const boxW = textW + 12, boxH = 18;
+    const bx2 = Math.min(Math.max(midX - boxW / 2, 4), W - boxW - 4);
+    const by2 = midY - boxH - 6;
+    ctx.fillStyle = eraserHover ? '#f85149' : baseColor;
+    ctx.fillRect(bx2, by2, boxW, boxH);
+    ctx.fillStyle = '#ffffff';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(infoLabel, bx2 + 6, by2 + boxH / 2 + 1);
+    ctx.textBaseline = 'alphabetic';
+
+  } else if (d.type === 'trendAngle') {
+    const x1 = timeToX(chart, d.time1);
+    const y1 = priceToY(series, d.price1);
+    const x2 = timeToX(chart, d.time2);
+    const y2 = priceToY(series, d.price2);
+    if (x1 == null || y1 == null || x2 == null || y2 == null) { ctx.restore(); return; }
+
+    const baseColor = d.color ?? '#2196F3';
+    const lineColor = hexToRgba(baseColor, d.opacity ?? 100);
+    const dashPattern: number[] = d.dash === 'dashed' ? [8, 4] : d.dash === 'dotted' ? [2, 3] : [];
+
+    ctx.strokeStyle = eraserHover ? '#f85149' : lineColor;
+    ctx.lineWidth = (d.width ?? 1.5) + (selected ? 1 : 0);
+    ctx.setLineDash(dashPattern);
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // short horizontal reference line at p1, so the angle reads visually
+    // against the horizontal
+    ctx.setLineDash([2, 3]);
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = eraserHover ? '#f85149' : lineColor;
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x1 + (x2 >= x1 ? 30 : -30), y1);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    if (selected) {
+      ctx.fillStyle = eraserHover ? '#f85149' : baseColor;
+      ctx.beginPath();
+      ctx.arc(x1, y1, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(x2, y2, 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // angle from horizontal, in pixel space (y grows downward, so y1-y2 flips
+    // it back to the usual "up is positive" convention)
+    const deg = Math.atan2(y1 - y2, x2 - x1) * 180 / Math.PI;
+    const angleLabel = `${deg.toFixed(1)}°`;
+    ctx.font = 'bold 11px sans-serif';
+    ctx.fillStyle = eraserHover ? '#f85149' : baseColor;
+    const midX = (x1 + x2) / 2, midY = (y1 + y2) / 2;
+    ctx.fillText(angleLabel, Math.min(midX + 4, W - 50), midY - 8);
 
   } else if (d.type === 'hline') {
     const y = priceToY(series, d.price);
@@ -1300,12 +1518,15 @@ function hitTest(
     return x != null && Math.abs(mx - x) < TOL;
   }
 
-  if (d.type === 'trendline') {
+  if (d.type === 'trendline' || d.type === 'ray' || d.type === 'extendedLine' ||
+      d.type === 'infoLine' || d.type === 'trendAngle') {
     const x1 = timeToX(chart, d.time1);
     const y1 = priceToY(series, d.price1);
     const x2 = timeToX(chart, d.time2);
     const y2 = priceToY(series, d.price2);
     if (x1 == null || y1 == null || x2 == null || y2 == null) return false;
+    // Testing the core p1-p2 segment (not the extended portion) is enough for
+    // selection/erase — matches Trend Line's own hit-test.
     return distToSegment(mx, my, x1, y1, x2, y2) < TOL;
   }
 
@@ -1691,7 +1912,8 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
       for (const d of (drawingsHiddenRef.current ? [] : drawingsRef.current)) {
         let dd: Drawing = d;
         if (drag && drag.id === d.id) {
-          if (drag.kind === 'trendline' && (d.type === 'trendline' || d.type === 'arrow' || d.type === 'priceNote')) {
+          if (drag.kind === 'trendline' && (d.type === 'trendline' || d.type === 'arrow' || d.type === 'priceNote' ||
+              d.type === 'ray' || d.type === 'extendedLine' || d.type === 'infoLine' || d.type === 'trendAngle')) {
             dd = { ...d, price1: drag.price1, time1: drag.time1, price2: drag.price2, time2: drag.time2 };
           } else if (drag.kind === 'channel' && (d.type === 'channel' || d.type === 'rotatedRectangle')) {
             dd = { ...d, price1: drag.price1, time1: drag.time1, price2: drag.price2, time2: drag.time2,
@@ -1734,6 +1956,14 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           let preview: Drawing | null = null;
           if (tool === 'trendline' && price2 != null && time2 != null)
             preview = { id: '__preview', type: 'trendline', price1, time1, price2, time2 };
+          else if (tool === 'ray' && price2 != null && time2 != null)
+            preview = { id: '__preview', type: 'ray', price1, time1, price2, time2 };
+          else if (tool === 'extendedLine' && price2 != null && time2 != null)
+            preview = { id: '__preview', type: 'extendedLine', price1, time1, price2, time2 };
+          else if (tool === 'infoLine' && price2 != null && time2 != null)
+            preview = { id: '__preview', type: 'infoLine', price1, time1, price2, time2 };
+          else if (tool === 'trendAngle' && price2 != null && time2 != null)
+            preview = { id: '__preview', type: 'trendAngle', price1, time1, price2, time2 };
           else if (tool === 'priceNote' && price2 != null && time2 != null)
             preview = { id: '__preview', type: 'priceNote', price1, time1, price2, time2 };
           else if (tool === 'priceRange' && price2 != null && time2 != null)
@@ -2123,6 +2353,9 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
     if (tool === 'trendline') {
       if (price2 == null || time2 == null) return;
       addDrawing({ id, type: 'trendline', price1, time1, price2, time2 });
+    } else if (tool === 'ray' || tool === 'extendedLine' || tool === 'infoLine' || tool === 'trendAngle') {
+      if (price2 == null || time2 == null) return;
+      addDrawing({ id, type: tool, price1, time1, price2, time2 });
     } else if (tool === 'hline') {
       addDrawing({ id, type: 'hline', price: price1 });
     } else if (tool === 'hray') {
@@ -2504,7 +2737,8 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
       let hoverCursor: string | null = null;
       for (let i = drawingsRef.current.length - 1; i >= 0 && !drawingsHiddenRef.current && !drawingsLockedRef.current; i--) {
         const d = drawingsRef.current[i];
-        if (d.type === 'trendline' || d.type === 'arrow' || d.type === 'priceNote') {
+        if (d.type === 'trendline' || d.type === 'arrow' || d.type === 'priceNote' ||
+            d.type === 'ray' || d.type === 'extendedLine' || d.type === 'infoLine' || d.type === 'trendAngle') {
           const x1 = timeToX(chart, d.time1), y1 = priceToY(series, d.price1);
           const x2 = timeToX(chart, d.time2), y2 = priceToY(series, d.price2);
           if (x1 == null || y1 == null || x2 == null || y2 == null) continue;
@@ -2578,7 +2812,8 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
       for (let i = drawingsRef.current.length - 1; i >= 0; i--) {
         const d = drawingsRef.current[i];
 
-        if (d.type === 'trendline' || d.type === 'arrow' || d.type === 'priceNote') {
+        if (d.type === 'trendline' || d.type === 'arrow' || d.type === 'priceNote' ||
+            d.type === 'ray' || d.type === 'extendedLine' || d.type === 'infoLine' || d.type === 'trendAngle') {
           const x1 = timeToX(chart, d.time1), y1 = priceToY(series, d.price1);
           const x2 = timeToX(chart, d.time2), y2 = priceToY(series, d.price2);
           if (x1 == null || y1 == null || x2 == null || y2 == null) continue;
@@ -2587,8 +2822,9 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           const nearP2 = Math.hypot(x - x2, y - y2) < 8;
           if (!nearP1 && !nearP2 && !hitTest(d, x, y, chart, series, candlesRef.current)) continue;
 
-          // grabbed a trend line/arrow/price note: block the chart from
-          // starting a pan on this mousedown and take over the gesture as a drag instead
+          // grabbed a trend line/arrow/price note (or one of the new line
+          // variants): block the chart from starting a pan on this mousedown
+          // and take over the gesture as a drag instead
           dragRef.current = {
             active: true, kind: 'trendline', id: d.id,
             mode: nearP1 ? 'p1' : nearP2 ? 'p2' : 'move',

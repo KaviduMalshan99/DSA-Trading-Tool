@@ -73,6 +73,44 @@ function TrendLineIcon() {
   );
 }
 
+function RayIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" fill="none">
+      <circle cx="4" cy="20" r="2" fill="currentColor" stroke="none" />
+      <line x1="4" y1="20" x2="22" y2="2" />
+    </svg>
+  );
+}
+
+function ExtendedLineIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" fill="none">
+      <line x1="1" y1="23" x2="23" y2="1" />
+    </svg>
+  );
+}
+
+function InfoLineIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" fill="none">
+      <line x1="4" y1="20" x2="20" y2="4" />
+      <circle cx="16" cy="16" r="4" />
+      <line x1="16" y1="15" x2="16" y2="18" strokeWidth="1.5" strokeLinecap="round" />
+      <circle cx="16" cy="13" r="0.5" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+function TrendAngleIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" fill="none">
+      <line x1="4" y1="20" x2="20" y2="4" />
+      <line x1="4" y1="20" x2="16" y2="20" strokeDasharray="2 2" strokeWidth="1" />
+      <path d="M 10 20 A 6 6 0 0 1 8.5 15.5" strokeWidth="1" />
+    </svg>
+  );
+}
+
 function HLineIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" fill="none">
@@ -389,6 +427,10 @@ const CURSOR_ITEMS: { mode: CursorMode; label: string }[] = [
 
 const TREND_ICON: Record<TrendTool, React.ReactNode> = {
   trendline: <TrendLineIcon />,
+  ray: <RayIcon />,
+  extendedLine: <ExtendedLineIcon />,
+  infoLine: <InfoLineIcon />,
+  trendAngle: <TrendAngleIcon />,
   hline: <HLineIcon />,
   hray: <HRayIcon />,
   vline: <VLineIcon />,
@@ -396,14 +438,27 @@ const TREND_ICON: Record<TrendTool, React.ReactNode> = {
   regression: <RegressionIcon />,
 };
 
-const TREND_ITEMS: { tool: TrendTool; label: string }[] = [
-  { tool: 'trendline',  label: 'Trend Line' },
-  { tool: 'hline',      label: 'Horizontal Line' },
-  { tool: 'hray',       label: 'Horizontal Ray' },
-  { tool: 'vline',      label: 'Vertical Line' },
+// The flyout's two labeled sections — "Lines" (2-point/anchor line variants)
+// and "Channels" (baseline + offset). TREND_ITEMS below is the flat
+// concatenation, kept for ALL_TOOL_ICON/ALL_TOOL_LABEL (the Favorites bar
+// doesn't care about section grouping).
+const TREND_LINE_ITEMS: { tool: TrendTool; label: string }[] = [
+  { tool: 'trendline',    label: 'Trend Line' },
+  { tool: 'ray',          label: 'Ray' },
+  { tool: 'infoLine',     label: 'Info Line' },
+  { tool: 'extendedLine', label: 'Extended Line' },
+  { tool: 'trendAngle',   label: 'Trend Angle' },
+  { tool: 'hline',        label: 'Horizontal Line' },
+  { tool: 'hray',         label: 'Horizontal Ray' },
+  { tool: 'vline',        label: 'Vertical Line' },
+];
+
+const TREND_CHANNEL_ITEMS: { tool: TrendTool; label: string }[] = [
   { tool: 'channel',    label: 'Parallel Channel' },
   { tool: 'regression', label: 'Regression Trend' },
 ];
+
+const TREND_ITEMS: { tool: TrendTool; label: string }[] = [...TREND_LINE_ITEMS, ...TREND_CHANNEL_ITEMS];
 
 const SHAPE_ICON: Record<ShapeTool, React.ReactNode> = {
   rectangle: <RectIcon />,
@@ -497,6 +552,7 @@ function FavoritableMenuItem({
   return (
     <div key={tool} className="w-full flex items-center gap-1 pl-3 pr-1 group/item hover:bg-[var(--accent)]">
       <button
+        title={label}
         onClick={onSelect}
         className={`flex-1 flex items-center gap-2 py-2 text-sm text-left transition-colors group-hover/item:text-white ${active ? 'text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}
       >
@@ -654,7 +710,25 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
               boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
             }}
           >
-            {TREND_ITEMS.map(({ tool, label }) => (
+            <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)] select-none">
+              Lines
+            </div>
+            {TREND_LINE_ITEMS.map(({ tool, label }) => (
+              <FavoritableMenuItem
+                key={tool}
+                tool={tool}
+                label={label}
+                icon={TREND_ICON[tool]}
+                active={activeTool === tool}
+                favorite={favoriteTools.includes(tool)}
+                onToggleFavorite={() => toggleFavorite(tool)}
+                onSelect={() => { setTool(tool); setTrendDropdownOpen(false); }}
+              />
+            ))}
+            <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)] select-none">
+              Channels
+            </div>
+            {TREND_CHANNEL_ITEMS.map(({ tool, label }) => (
               <FavoritableMenuItem
                 key={tool}
                 tool={tool}

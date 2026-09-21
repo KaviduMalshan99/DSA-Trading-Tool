@@ -5,9 +5,17 @@ export type CursorMode = 'cross' | 'dot' | 'arrow' | 'demonstration' | 'eraser';
 export const CURSOR_MODES: readonly CursorMode[] = ['cross', 'dot', 'arrow', 'demonstration', 'eraser'];
 
 // The "Trend Line" group in TradingView's toolbar — grouped under one dropdown,
-// same pattern as the cursor group.
-export type TrendTool = 'trendline' | 'hline' | 'hray' | 'vline' | 'channel' | 'regression';
-export const TREND_TOOLS: readonly TrendTool[] = ['trendline', 'hline', 'hray', 'vline', 'channel', 'regression'];
+// same pattern as the cursor group. 'ray'/'extendedLine'/'infoLine'/'trendAngle'
+// are line-variant tools that reuse TrendLineDrawing's exact price1/time1/
+// price2/time2 shape (see the drawing interfaces below) — only their `type`
+// tag and renderer differ from the plain Trend Line.
+export type TrendTool =
+  | 'trendline' | 'ray' | 'extendedLine' | 'infoLine' | 'trendAngle'
+  | 'hline' | 'hray' | 'vline' | 'channel' | 'regression';
+export const TREND_TOOLS: readonly TrendTool[] = [
+  'trendline', 'ray', 'extendedLine', 'infoLine', 'trendAngle',
+  'hline', 'hray', 'vline', 'channel', 'regression',
+];
 
 // The "Shapes" group — geometric shapes, arrows, and freehand tools, grouped
 // under one dropdown just like Cursor and Trend Line.
@@ -67,6 +75,43 @@ export interface FillStyle {
 export interface TrendLineDrawing extends LineStyle {
   id: string;
   type: 'trendline';
+  price1: number; time1: number;
+  price2: number; time2: number;
+}
+
+// Ray: identical 2-point shape to Trend Line — rendered extended past point 2
+// to the chart edge (still anchored/starting at point 1).
+export interface RayDrawing extends LineStyle {
+  id: string;
+  type: 'ray';
+  price1: number; time1: number;
+  price2: number; time2: number;
+}
+
+// Extended Line: identical 2-point shape to Trend Line — rendered extended
+// past both points to the chart edges.
+export interface ExtendedLineDrawing extends LineStyle {
+  id: string;
+  type: 'extendedLine';
+  price1: number; time1: number;
+  price2: number; time2: number;
+}
+
+// Info Line: identical 2-point shape to Trend Line — rendered as the plain
+// segment plus a label (price change / % change / bar count).
+export interface InfoLineDrawing extends LineStyle {
+  id: string;
+  type: 'infoLine';
+  price1: number; time1: number;
+  price2: number; time2: number;
+}
+
+// Trend Angle: identical 2-point shape to Trend Line — rendered as the plain
+// segment plus a label showing the angle from horizontal (computed in pixel
+// space at render time, so it isn't stored here).
+export interface TrendAngleDrawing extends LineStyle {
+  id: string;
+  type: 'trendAngle';
   price1: number; time1: number;
   price2: number; time2: number;
 }
@@ -262,6 +307,10 @@ export interface RegressionDrawing {
 
 export type Drawing =
   | TrendLineDrawing
+  | RayDrawing
+  | ExtendedLineDrawing
+  | InfoLineDrawing
+  | TrendAngleDrawing
   | HLineDrawing
   | HRayDrawing
   | VLineDrawing
