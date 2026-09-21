@@ -7,12 +7,14 @@ import {
   ANNOTATION_TOOLS,
   POSITION_RANGE_TOOLS,
   FIB_TOOLS,
+  GANN_TOOLS,
   type CursorMode,
   type TrendTool,
   type ShapeTool,
   type AnnotationTool,
   type PositionRangeTool,
   type FibTool,
+  type GannTool,
   type DrawingTool,
 } from '../../store/drawingStore';
 
@@ -387,6 +389,21 @@ function FibChannelIcon() {
       <line x1="3" y1="20" x2="15" y2="5" />
       <line x1="7" y1="20" x2="19" y2="5" />
       <line x1="11" y1="20" x2="21" y2="7" strokeDasharray="2 2" strokeWidth="1" />
+    </svg>
+  );
+}
+
+// Gann Fan: several rays fanning out from one corner point (the apex),
+// echoing the tool's own anchor+direction shape.
+function GannFanIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5" fill="none">
+      <line x1="3" y1="21" x2="21" y2="3" />
+      <line x1="3" y1="21" x2="21" y2="11" strokeWidth="1" />
+      <line x1="3" y1="21" x2="21" y2="17" strokeWidth="1" />
+      <line x1="3" y1="21" x2="13" y2="21" strokeWidth="1" />
+      <line x1="3" y1="21" x2="19" y2="21" strokeWidth="1" strokeDasharray="2 2" />
+      <circle cx="3" cy="21" r="1.5" fill="currentColor" stroke="none" />
     </svg>
   );
 }
@@ -789,6 +806,16 @@ const FIB_ITEMS: { tool: FibTool; label: string }[] = [
   { tool: 'fibChannel',        label: 'Fib Channel' },
 ];
 
+const GANN_ICON: Record<GannTool, React.ReactNode> = {
+  gannFan: <GannFanIcon />,
+};
+
+// The Gann group's flyout — single entry for now (more angle-fan/box tools
+// may join later), same flat-list pattern as Fibonacci/Annotation.
+const GANN_ITEMS: { tool: GannTool; label: string }[] = [
+  { tool: 'gannFan', label: 'Gann Fan' },
+];
+
 const MEASURE_TOOLS: ToolBtn[] = [
   { tool: 'measure', label: 'Measure', icon: <MeasureIcon /> },
   { tool: 'zoomIn',  label: 'Zoom In', icon: <ZoomInIcon /> },
@@ -803,6 +830,7 @@ export const ALL_TOOL_ICON: Partial<Record<DrawingTool, React.ReactNode>> = {
   ...ANNOTATION_ICON,
   ...POSITION_RANGE_ICON,
   ...FIB_ICON,
+  ...GANN_ICON,
 };
 
 export const ALL_TOOL_LABEL: Partial<Record<DrawingTool, string>> = {
@@ -811,6 +839,7 @@ export const ALL_TOOL_LABEL: Partial<Record<DrawingTool, string>> = {
   ...Object.fromEntries(ANNOTATION_ITEMS.map(({ tool, label }) => [tool, label])),
   ...Object.fromEntries(POSITION_RANGE_ITEMS.map(({ tool, label }) => [tool, label])),
   ...Object.fromEntries(FIB_ITEMS.map(({ tool, label }) => [tool, label])),
+  ...Object.fromEntries(GANN_ITEMS.map(({ tool, label }) => [tool, label])),
 };
 
 // One row in a dropdown flyout (Trend Line / Shapes / Annotation / Prediction
@@ -853,6 +882,7 @@ function FavoritableMenuItem({
 export const DrawingToolbar = memo(function DrawingToolbar() {
   const {
     activeTool, lastCursorMode, lastTrendTool, lastShapeTool, lastAnnotationTool, lastPositionRangeTool, lastFibTool,
+    lastGannTool,
     drawings, setTool, selectedId, deleteDrawing, clearAll,
     keepToolActive, drawingsLocked, drawingsHidden, toggleKeepToolActive, toggleDrawingsLocked, toggleDrawingsHidden,
     favoriteTools, favoritesBarOpen, toggleFavorite, toggleFavoritesBar,
@@ -863,6 +893,7 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
   const [annotationDropdownOpen, setAnnotationDropdownOpen] = useState(false);
   const [positionRangeDropdownOpen, setPositionRangeDropdownOpen] = useState(false);
   const [fibDropdownOpen, setFibDropdownOpen] = useState(false);
+  const [gannDropdownOpen, setGannDropdownOpen] = useState(false);
   const [deleteMenuOpen, setDeleteMenuOpen] = useState(false);
   const cursorGroupRef = useRef<HTMLDivElement>(null);
   const trendGroupRef = useRef<HTMLDivElement>(null);
@@ -870,6 +901,7 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
   const annotationGroupRef = useRef<HTMLDivElement>(null);
   const positionRangeGroupRef = useRef<HTMLDivElement>(null);
   const fibGroupRef = useRef<HTMLDivElement>(null);
+  const gannGroupRef = useRef<HTMLDivElement>(null);
   const deleteGroupRef = useRef<HTMLDivElement>(null);
 
   const isCursorGroupActive = (CURSOR_MODES as readonly string[]).includes(activeTool);
@@ -878,10 +910,11 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
   const isAnnotationGroupActive = (ANNOTATION_TOOLS as readonly string[]).includes(activeTool);
   const isPositionRangeGroupActive = (POSITION_RANGE_TOOLS as readonly string[]).includes(activeTool);
   const isFibGroupActive = (FIB_TOOLS as readonly string[]).includes(activeTool);
+  const isGannGroupActive = (GANN_TOOLS as readonly string[]).includes(activeTool);
 
   useEffect(() => {
     if (!cursorDropdownOpen && !trendDropdownOpen && !shapeDropdownOpen && !annotationDropdownOpen &&
-        !positionRangeDropdownOpen && !fibDropdownOpen && !deleteMenuOpen) return;
+        !positionRangeDropdownOpen && !fibDropdownOpen && !gannDropdownOpen && !deleteMenuOpen) return;
     const onOutsideMouseDown = (e: MouseEvent) => {
       const target = e.target as Node;
       if (cursorGroupRef.current && !cursorGroupRef.current.contains(target)) setCursorDropdownOpen(false);
@@ -890,11 +923,12 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
       if (annotationGroupRef.current && !annotationGroupRef.current.contains(target)) setAnnotationDropdownOpen(false);
       if (positionRangeGroupRef.current && !positionRangeGroupRef.current.contains(target)) setPositionRangeDropdownOpen(false);
       if (fibGroupRef.current && !fibGroupRef.current.contains(target)) setFibDropdownOpen(false);
+      if (gannGroupRef.current && !gannGroupRef.current.contains(target)) setGannDropdownOpen(false);
       if (deleteGroupRef.current && !deleteGroupRef.current.contains(target)) setDeleteMenuOpen(false);
     };
     document.addEventListener('mousedown', onOutsideMouseDown);
     return () => document.removeEventListener('mousedown', onOutsideMouseDown);
-  }, [cursorDropdownOpen, trendDropdownOpen, shapeDropdownOpen, annotationDropdownOpen, positionRangeDropdownOpen, fibDropdownOpen, deleteMenuOpen]);
+  }, [cursorDropdownOpen, trendDropdownOpen, shapeDropdownOpen, annotationDropdownOpen, positionRangeDropdownOpen, fibDropdownOpen, gannDropdownOpen, deleteMenuOpen]);
 
   return (
     <div className="flex flex-col items-center gap-1 py-2 px-1 bg-[var(--bg-panel)] border-r border-[var(--border-color-soft)] select-none"
@@ -1215,6 +1249,59 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
                 favorite={favoriteTools.includes(tool)}
                 onToggleFavorite={() => toggleFavorite(tool)}
                 onSelect={() => { setTool(tool); setFibDropdownOpen(false); }}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="relative group" ref={gannGroupRef}>
+        <button
+          title="Gann tools"
+          onClick={() => { setTool(lastGannTool); setGannDropdownOpen(false); }}
+          className={`
+            relative w-9 h-9 flex items-center justify-center rounded transition-colors [&_svg]:w-5 [&_svg]:h-5
+            ${isGannGroupActive
+              ? 'bg-[var(--accent)] text-white'
+              : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'}
+          `}
+        >
+          {GANN_ICON[lastGannTool]}
+        </button>
+        <button
+          aria-label="Gann tool options"
+          title="Gann tool options"
+          onClick={() => setGannDropdownOpen((v) => !v)}
+          className={`
+            absolute bottom-0 right-0 w-3 h-3 flex items-center justify-center
+            opacity-0 group-hover:opacity-100 transition-opacity
+            ${isGannGroupActive ? 'text-white' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'}
+          `}
+        >
+          <CornerArrow />
+        </button>
+
+        {gannDropdownOpen && (
+          <div
+            className="absolute left-full top-0 ml-1 py-1 overflow-hidden"
+            style={{
+              zIndex: 100,
+              width: 240,
+              background: 'var(--bg-panel-alt)',
+              borderRadius: 4,
+              boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
+            }}
+          >
+            {GANN_ITEMS.map(({ tool, label }) => (
+              <FavoritableMenuItem
+                key={tool}
+                tool={tool}
+                label={label}
+                icon={GANN_ICON[tool]}
+                active={activeTool === tool}
+                favorite={favoriteTools.includes(tool)}
+                onToggleFavorite={() => toggleFavorite(tool)}
+                onSelect={() => { setTool(tool); setGannDropdownOpen(false); }}
               />
             ))}
           </div>

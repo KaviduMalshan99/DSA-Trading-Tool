@@ -20,6 +20,7 @@ const CAPTURE_TOOLS = new Set<DrawingTool>([
   'arrowMarker', 'arrowTool', 'arrowMarkUp', 'arrowMarkDown', 'brush', 'highlighter',
   'text', 'priceNote', 'pin', 'flagMark', 'priceLabel', 'signpost', 'measure', 'zoomIn',
   'longPosition', 'shortPosition', 'anchoredVwap', 'priceRange', 'dateRange', 'datePriceRange',
+  'gannFan',
 ]);
 
 // Number of clicks each drawing tool needs before it's finalized. Horizontal
@@ -73,6 +74,7 @@ const CLICKS_REQUIRED: Partial<Record<DrawingTool, number>> = {
   priceRange: 2,
   dateRange: 2,
   datePriceRange: 2,
+  gannFan: 2,
 };
 
 const DOT_CURSOR = `url("data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5" fill="#111827"/><circle cx="12" cy="12" r="2.5" fill="#ffffff"/></svg>')}" ) 12 12, pointer`;
@@ -596,6 +598,67 @@ function renderDrawing(
     ctx.font = '11px monospace';
     ctx.fillText(fmtRay(d.price1), Math.min(x1 + 4, W - 70), y1 - 4);
     ctx.fillText(fmtRay(d.price2), Math.min(x2 + 4, W - 70), y2 - 4);
+
+  } else if (d.type === 'gannFan') {
+    // Anchor (apex) and the point that sets the 1x1 ray's direction.
+    const x0 = timeToX(chart, d.time1);
+    const y0 = priceToY(series, d.price1);
+    const x1 = timeToX(chart, d.time2);
+    const y1 = priceToY(series, d.price2);
+    if (x0 == null || y0 == null || x1 == null || y1 == null) { ctx.restore(); return; }
+
+    const dx = x1 - x0, dy = y1 - y0;
+    if (Math.abs(dx) < 0.01 && Math.abs(dy) < 0.01) { ctx.restore(); return; }
+
+    const baseColor = d.color ?? '#2196F3';
+    const baseOpacity = d.opacity ?? 100;
+    const baseWidth = d.width ?? 1.5;
+    const dashPattern: number[] = d.dash === 'dashed' ? [8, 4] : d.dash === 'dotted' ? [2, 3] : [];
+
+    // The 7 classic Gann angles, each sharing the 1x1 vector's dx and only
+    // scaling dy — a proper angle fan pivoting from the anchor. 1x1 (the
+    // actual anchor->direction vector) is drawn emphasized; the rest lighter.
+    const GANN_RAYS: { label: string; yScale: number; emphasize: boolean }[] = [
+      { label: '1x1', yScale: 1,     emphasize: true },
+      { label: '2x1', yScale: 0.5,   emphasize: false },
+      { label: '3x1', yScale: 1 / 3, emphasize: false },
+      { label: '4x1', yScale: 0.25,  emphasize: false },
+      { label: '1x2', yScale: 2,     emphasize: false },
+      { label: '1x3', yScale: 3,     emphasize: false },
+      { label: '1x4', yScale: 4,     emphasize: false },
+    ];
+
+    for (const ray of GANN_RAYS) {
+      const rdx = dx, rdy = dy * ray.yScale;
+      const ext = extendLineToRect(x0, y0, x0 + rdx, y0 + rdy, W, H);
+      const fx = ext ? ext.bx : x0 + rdx;
+      const fy = ext ? ext.by : y0 + rdy;
+
+      const lineColor = hexToRgba(baseColor, ray.emphasize ? baseOpacity : Math.max(baseOpacity * 0.5, 15));
+      ctx.strokeStyle = eraserHover ? '#f85149' : lineColor;
+      ctx.lineWidth = (ray.emphasize ? baseWidth + 0.5 : Math.max(baseWidth - 0.5, 1)) + (selected ? 1 : 0);
+      ctx.setLineDash(dashPattern);
+      ctx.beginPath();
+      ctx.moveTo(x0, y0);
+      ctx.lineTo(fx, fy);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      ctx.fillStyle = eraserHover ? '#f85149' : hexToRgba(baseColor, ray.emphasize ? baseOpacity : Math.max(baseOpacity * 0.7, 30));
+      ctx.font = '10px monospace';
+      ctx.fillText(ray.label, Math.min(Math.max(fx - 12, 2), W - 24), Math.min(Math.max(fy, 10), H - 4));
+    }
+
+    ctx.fillStyle = eraserHover ? '#f85149' : baseColor;
+    ctx.beginPath();
+    ctx.arc(x0, y0, 4, 0, Math.PI * 2);
+    ctx.fill();
+
+    if (selected) {
+      ctx.beginPath();
+      ctx.arc(x1, y1, 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
 
   } else if (d.type === 'extendedLine') {
     const x1 = timeToX(chart, d.time1);
@@ -2318,6 +2381,33 @@ function hitTest(
     return Math.abs(my - y) < TOL || Math.abs(mx - x) < TOL;
   }
 
+  if (d.type === 'gannFan') {
+    const x0 = timeToX(chart, d.time1);
+    const y0 = priceToY(series, d.price1);
+    const x1 = timeToX(chart, d.time2);
+    const y1 = priceToY(series, d.price2);
+    if (x0 == null || y0 == null || x1 == null || y1 == null) return false;
+    if (Math.hypot(mx - x0, my - y0) < TOL || Math.hypot(mx - x1, my - y1) < TOL) return true;
+
+    const dx = x1 - x0, dy = y1 - y0;
+    if (Math.abs(dx) < 0.01 && Math.abs(dy) < 0.01) return false;
+
+    // Same 7 ray dy-scalings as the render branch — test the mouse against
+    // each one's on-screen segment (extended far past the visible area; mx/my
+    // are always within the canvas, so this matches the exact edge-crossing
+    // segment the renderer draws, without needing W/H here).
+    const yScales = [1, 0.5, 1 / 3, 0.25, 2, 3, 4];
+    const FAR = 1e6;
+    for (const yScale of yScales) {
+      const rdx = dx, rdy = dy * yScale;
+      const len = Math.hypot(rdx, rdy) || 1;
+      const fx = x0 + (rdx / len) * FAR;
+      const fy = y0 + (rdy / len) * FAR;
+      if (distToSegment(mx, my, x0, y0, fx, fy) < TOL) return true;
+    }
+    return false;
+  }
+
   if (d.type === 'trendline' || d.type === 'ray' || d.type === 'extendedLine' ||
       d.type === 'infoLine' || d.type === 'trendAngle') {
     const x1 = timeToX(chart, d.time1);
@@ -2866,7 +2956,8 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
         let dd: Drawing = d;
         if (drag && drag.id === d.id) {
           if (drag.kind === 'trendline' && (d.type === 'trendline' || d.type === 'arrow' || d.type === 'priceNote' ||
-              d.type === 'ray' || d.type === 'extendedLine' || d.type === 'infoLine' || d.type === 'trendAngle')) {
+              d.type === 'ray' || d.type === 'extendedLine' || d.type === 'infoLine' || d.type === 'trendAngle' ||
+              d.type === 'gannFan')) {
             dd = { ...d, price1: drag.price1, time1: drag.time1, price2: drag.price2, time2: drag.time2 };
           } else if (drag.kind === 'channel' && (d.type === 'channel' || d.type === 'rotatedRectangle' || d.type === 'fibChannel')) {
             dd = { ...d, price1: drag.price1, time1: drag.time1, price2: drag.price2, time2: drag.time2,
@@ -2938,6 +3029,8 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
             preview = { id: '__preview', type: 'trendline', price1, time1, price2, time2 };
           else if (tool === 'ray' && price2 != null && time2 != null)
             preview = { id: '__preview', type: 'ray', price1, time1, price2, time2 };
+          else if (tool === 'gannFan' && price2 != null && time2 != null)
+            preview = { id: '__preview', type: 'gannFan', price1, time1, price2, time2 };
           else if (tool === 'extendedLine' && price2 != null && time2 != null)
             preview = { id: '__preview', type: 'extendedLine', price1, time1, price2, time2 };
           else if (tool === 'infoLine' && price2 != null && time2 != null)
@@ -3404,7 +3497,8 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
     if (tool === 'trendline') {
       if (price2 == null || time2 == null) return;
       addDrawing({ id, type: 'trendline', price1, time1, price2, time2 });
-    } else if (tool === 'ray' || tool === 'extendedLine' || tool === 'infoLine' || tool === 'trendAngle') {
+    } else if (tool === 'ray' || tool === 'extendedLine' || tool === 'infoLine' || tool === 'trendAngle' ||
+        tool === 'gannFan') {
       if (price2 == null || time2 == null) return;
       addDrawing({ id, type: tool, price1, time1, price2, time2 });
     } else if (tool === 'hline') {
@@ -3956,7 +4050,8 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
       for (let i = drawingsRef.current.length - 1; i >= 0 && !drawingsHiddenRef.current && !drawingsLockedRef.current; i--) {
         const d = drawingsRef.current[i];
         if (d.type === 'trendline' || d.type === 'arrow' || d.type === 'priceNote' ||
-            d.type === 'ray' || d.type === 'extendedLine' || d.type === 'infoLine' || d.type === 'trendAngle') {
+            d.type === 'ray' || d.type === 'extendedLine' || d.type === 'infoLine' || d.type === 'trendAngle' ||
+            d.type === 'gannFan') {
           const x1 = timeToX(chart, d.time1), y1 = priceToY(series, d.price1);
           const x2 = timeToX(chart, d.time2), y2 = priceToY(series, d.price2);
           if (x1 == null || y1 == null || x2 == null || y2 == null) continue;
@@ -4066,7 +4161,8 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
         const d = drawingsRef.current[i];
 
         if (d.type === 'trendline' || d.type === 'arrow' || d.type === 'priceNote' ||
-            d.type === 'ray' || d.type === 'extendedLine' || d.type === 'infoLine' || d.type === 'trendAngle') {
+            d.type === 'ray' || d.type === 'extendedLine' || d.type === 'infoLine' || d.type === 'trendAngle' ||
+            d.type === 'gannFan') {
           const x1 = timeToX(chart, d.time1), y1 = priceToY(series, d.price1);
           const x2 = timeToX(chart, d.time2), y2 = priceToY(series, d.price2);
           if (x1 == null || y1 == null || x2 == null || y2 == null) continue;

@@ -62,8 +62,13 @@ export const POSITION_RANGE_TOOLS: readonly PositionRangeTool[] = [
 export type FibTool = 'fibonacci' | 'fibExtension' | 'trendFibExtension' | 'fibChannel';
 export const FIB_TOOLS: readonly FibTool[] = ['fibonacci', 'fibExtension', 'trendFibExtension', 'fibChannel'];
 
+// The "Gann" group — Gann Fan (more angle-fan/box tools may join later),
+// grouped under one dropdown just like Trend Line/Shapes/.../Fibonacci.
+export type GannTool = 'gannFan';
+export const GANN_TOOLS: readonly GannTool[] = ['gannFan'];
+
 export type DrawingTool =
-  | CursorMode | TrendTool | ShapeTool | AnnotationTool | ActionTool | PositionRangeTool | FibTool;
+  | CursorMode | TrendTool | ShapeTool | AnnotationTool | ActionTool | PositionRangeTool | FibTool | GannTool;
 
 export type LineDash = 'solid' | 'dashed' | 'dotted';
 
@@ -502,6 +507,18 @@ export interface FibChannelDrawing {
 // they resolve to.
 export type FibLikeDrawing = FibonacciDrawing | FibExtensionDrawing | TrendFibExtensionDrawing | FibChannelDrawing;
 
+// Gann Fan: identical 2-point shape to Ray — price1/time1 is the anchor
+// (apex), price2/time2 is the point that sets the 1x1 ray's direction. The
+// other 6 angle rays (2x1, 3x1, 4x1, 1x2, 1x3, 1x4) are derived at render
+// time as pixel-space dy-scalings of the 1x1 vector (see the 'gannFan'
+// render branch in DrawingCanvas.tsx) rather than stored.
+export interface GannFanDrawing extends LineStyle {
+  id: string;
+  type: 'gannFan';
+  price1: number; time1: number;
+  price2: number; time2: number;
+}
+
 export interface ChannelDrawing {
   id: string;
   type: 'channel';
@@ -587,6 +604,7 @@ export type Drawing =
   | FibExtensionDrawing
   | TrendFibExtensionDrawing
   | FibChannelDrawing
+  | GannFanDrawing
   | ChannelDrawing
   | RegressionDrawing
   | FlatChannelDrawing
@@ -607,6 +625,8 @@ interface DrawingState {
   lastPositionRangeTool: PositionRangeTool;
   // Same idea for the Fibonacci group's dropdown button icon.
   lastFibTool: FibTool;
+  // Same idea for the Gann group's dropdown button icon.
+  lastGannTool: GannTool;
   // Cursor-group tools keep the chart interactive; the legacy magic snap mode is not exposed.
   magnetEnabled: boolean;
   // "Stay in Drawing Mode" — off (default) matches TradingView: finishing a
@@ -675,6 +695,10 @@ function isFibTool(tool: DrawingTool): tool is FibTool {
   return (FIB_TOOLS as readonly string[]).includes(tool);
 }
 
+function isGannTool(tool: DrawingTool): tool is GannTool {
+  return (GANN_TOOLS as readonly string[]).includes(tool);
+}
+
 // Capped so a long session doesn't grow this unboundedly.
 const MAX_HISTORY = 50;
 
@@ -707,6 +731,7 @@ export const useDrawingStore = create<DrawingState>((set) => ({
   lastAnnotationTool: 'text',
   lastPositionRangeTool: 'longPosition',
   lastFibTool: 'fibonacci',
+  lastGannTool: 'gannFan',
   magnetEnabled: false,
   keepToolActive: false,
   drawingsLocked: false,
@@ -726,6 +751,7 @@ export const useDrawingStore = create<DrawingState>((set) => ({
       const annotationGroup = isAnnotationTool(tool);
       const positionRangeGroup = isPositionRangeTool(tool);
       const fibGroup = isFibTool(tool);
+      const gannGroup = isGannTool(tool);
       // Re-clicking the active drawing tool deselects it back to the last cursor mode.
       const activeTool = !cursorGroup && s.activeTool === tool ? s.lastCursorMode : tool;
       return {
@@ -736,6 +762,7 @@ export const useDrawingStore = create<DrawingState>((set) => ({
         lastAnnotationTool: annotationGroup ? tool : s.lastAnnotationTool,
         lastPositionRangeTool: positionRangeGroup ? tool : s.lastPositionRangeTool,
         lastFibTool: fibGroup ? tool : s.lastFibTool,
+        lastGannTool: gannGroup ? tool : s.lastGannTool,
         magnetEnabled: cursorGroup ? false : s.magnetEnabled,
       };
     }),
