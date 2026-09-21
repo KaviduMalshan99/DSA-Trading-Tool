@@ -423,6 +423,17 @@ function ShortPositionIcon() {
   );
 }
 
+// Anchored VWAP: a small filled anchor dot with a VWAP-like line trailing
+// forward from it.
+function AnchoredVwapIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="5" cy="6" r="2.5" fill="currentColor" stroke="none" />
+      <path d="M5 8.5C9 13 9 17 13 17S17 11 21 11" />
+    </svg>
+  );
+}
+
 function PriceRangeIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round">
@@ -689,19 +700,23 @@ const ANNOTATION_ITEMS: { tool: AnnotationTool; label: string }[] = [
 const POSITION_RANGE_ICON: Record<PositionRangeTool, React.ReactNode> = {
   longPosition: <LongPositionIcon />,
   shortPosition: <ShortPositionIcon />,
+  anchoredVwap: <AnchoredVwapIcon />,
   priceRange: <PriceRangeIcon />,
   dateRange: <DateRangeIcon />,
   datePriceRange: <DatePriceRangeIcon />,
 };
 
-// The flyout's two labeled sections (this batch) — "Forecasting" (position
-// projections) and "Measures" (price/date brackets). A "Volume Based"
-// section is planned but left out until it has tools to hold.
-// POSITION_RANGE_ITEMS below is the flat concatenation, kept for
+// The flyout's three labeled sections — "Forecasting" (position projections),
+// "Volume Based" (anchored volume tools), and "Measures" (price/date
+// brackets). POSITION_RANGE_ITEMS below is the flat concatenation, kept for
 // ALL_TOOL_ICON/ALL_TOOL_LABEL/Favorites (same pattern as TREND_ITEMS).
 const POSITION_RANGE_FORECASTING_ITEMS: { tool: PositionRangeTool; label: string }[] = [
   { tool: 'longPosition',  label: 'Long Position' },
   { tool: 'shortPosition', label: 'Short Position' },
+];
+
+const POSITION_RANGE_VOLUME_ITEMS: { tool: PositionRangeTool; label: string }[] = [
+  { tool: 'anchoredVwap', label: 'Anchored VWAP' },
 ];
 
 const POSITION_RANGE_MEASURES_ITEMS: { tool: PositionRangeTool; label: string }[] = [
@@ -711,7 +726,7 @@ const POSITION_RANGE_MEASURES_ITEMS: { tool: PositionRangeTool; label: string }[
 ];
 
 const POSITION_RANGE_ITEMS: { tool: PositionRangeTool; label: string }[] = [
-  ...POSITION_RANGE_FORECASTING_ITEMS, ...POSITION_RANGE_MEASURES_ITEMS,
+  ...POSITION_RANGE_FORECASTING_ITEMS, ...POSITION_RANGE_VOLUME_ITEMS, ...POSITION_RANGE_MEASURES_ITEMS,
 ];
 
 const FIB_TOOL: ToolBtn = { tool: 'fibonacci', label: 'Fibonacci Retracement', icon: <FibIcon /> };
@@ -1145,6 +1160,21 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
               Forecasting
             </div>
             {POSITION_RANGE_FORECASTING_ITEMS.map(({ tool, label }) => (
+              <FavoritableMenuItem
+                key={tool}
+                tool={tool}
+                label={label}
+                icon={POSITION_RANGE_ICON[tool]}
+                active={activeTool === tool}
+                favorite={favoriteTools.includes(tool)}
+                onToggleFavorite={() => toggleFavorite(tool)}
+                onSelect={() => { setTool(tool); setPositionRangeDropdownOpen(false); }}
+              />
+            ))}
+            <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)] select-none">
+              Volume Based
+            </div>
+            {POSITION_RANGE_VOLUME_ITEMS.map(({ tool, label }) => (
               <FavoritableMenuItem
                 key={tool}
                 tool={tool}

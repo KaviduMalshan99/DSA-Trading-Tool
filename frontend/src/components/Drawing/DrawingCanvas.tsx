@@ -3,6 +3,8 @@ import type { IChartApi, ISeriesApi } from 'lightweight-charts';
 import { useDrawingStore, type Drawing, type DrawingTool } from '../../store/drawingStore';
 import { useMarketStore } from '../../store/marketStore';
 import { toChartTimeSeconds } from '../../utils/chartTime';
+import { computeSessionVWAPFromCandles } from '../../utils/klineAnalytics';
+import { decimalsForPrice } from '../../utils/priceFormat';
 import type { Candle } from '../../types/market';
 
 // Tools that should own mouse events on the overlay canvas (blocking chart
@@ -16,7 +18,7 @@ const CAPTURE_TOOLS = new Set<DrawingTool>([
   'triangle', 'arc', 'curve', 'doubleCurve',
   'arrowMarker', 'arrowTool', 'arrowMarkUp', 'arrowMarkDown', 'brush', 'highlighter',
   'text', 'priceNote', 'pin', 'flagMark', 'priceLabel', 'signpost', 'measure', 'zoomIn',
-  'longPosition', 'shortPosition', 'priceRange', 'dateRange', 'datePriceRange',
+  'longPosition', 'shortPosition', 'anchoredVwap', 'priceRange', 'dateRange', 'datePriceRange',
 ]);
 
 // Number of clicks each drawing tool needs before it's finalized. Horizontal
@@ -63,6 +65,7 @@ const CLICKS_REQUIRED: Partial<Record<DrawingTool, number>> = {
   zoomIn: 2,
   longPosition: 1,
   shortPosition: 1,
+  anchoredVwap: 1,
   priceRange: 2,
   dateRange: 2,
   datePriceRange: 2,
@@ -244,6 +247,25 @@ function computeRegression(candles: Candle[], time1: number, time2: number): Reg
     upperStart: midStart + 2 * stddev, upperEnd: midEnd + 2 * stddev,
     lowerStart: midStart - 2 * stddev, lowerEnd: midEnd - 2 * stddev,
   };
+}
+
+// ── Anchored VWAP: derived from live candle data at render time (like
+// Regression above), not stored — so it auto-extends as new candles stream
+// in. `d.time` is chart-time seconds (shifted, see toChartTimeSeconds), but
+// computeSessionVWAPFromCandles compares its sessionStart directly against
+// each candle's own RAW epoch-ms `c.t` — so the anchor is resolved to the
+// nearest candle's raw `c.t` first, rather than passing d.time through
+// directly (which would silently compare shifted seconds against raw ms).
+function computeAnchoredVwapData(d: Extract<Drawing, { type: 'anchoredVwap' }>, candles: Candle[]) {
+  if (candles.length === 0) return null;
+  let nearest = candles[0];
+  let bestDiff = Math.abs(toChartTimeSeconds(nearest.t) - d.time);
+  for (const c of candles) {
+    const diff = Math.abs(toChartTimeSeconds(c.t) - d.time);
+    if (diff < bestDiff) { bestDiff = diff; nearest = c; }
+  }
+  const decimals = decimalsForPrice(candles[candles.length - 1].c);
+  return computeSessionVWAPFromCandles(candles, decimals, nearest.t);
 }
 
 // ── Measure tool: a transient (non-persisted) stats readout between two
@@ -1866,6 +1888,47 @@ function renderDrawing(
       ctx.arc(xL, yL, 4, 0, Math.PI * 2);
       ctx.fill();
     }
+
+  } else if (d.type === 'anchoredVwap') {
+    const baseColor = d.color ?? '#f0b90b';
+    const anchorX = timeToX(chart, d.time);
+    const anchorY = priceToY(series, d.price);
+    if (anchorX == null || anchorY == null) { ctx.restore(); return; }
+
+    const data = computeAnchoredVwapData(d, candles);
+    const pts = (data?.points ?? [])
+      .map((p) => ({ x: timeToX(chart, toChartTimeSeconds(p.time)), y: priceToY(series, p.vwap) }))
+      .filter((p): p is { x: number; y: number } => p.x != null && p.y != null);
+
+    if (pts.length < 2) {
+      // not enough candle data at the anchor yet — just show the anchor dot
+      ctx.fillStyle = eraserHover ? '#f85149' : baseColor;
+      ctx.beginPath();
+      ctx.arc(anchorX, anchorY, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+      return;
+    }
+
+    ctx.strokeStyle = eraserHover ? '#f85149' : baseColor;
+    ctx.lineWidth = (d.width ?? 2) + (selected ? 0.5 : 0);
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+    ctx.stroke();
+
+    ctx.fillStyle = eraserHover ? '#f85149' : baseColor;
+    ctx.beginPath();
+    ctx.arc(anchorX, anchorY, 4, 0, Math.PI * 2);
+    ctx.fill();
+
+    if (selected) {
+      ctx.font = 'bold 10px sans-serif';
+      ctx.fillStyle = eraserHover ? '#f85149' : baseColor;
+      ctx.fillText('Anchored VWAP', anchorX + 8, anchorY - 8);
+    }
   }
 
   ctx.restore();
@@ -2195,6 +2258,21 @@ function hitTest(
   if (d.type === 'path' || d.type === 'polyline' || d.type === 'brush' || d.type === 'highlighter') {
     const pts = d.points
       .map((p) => ({ x: timeToX(chart, p.time), y: priceToY(series, p.price) }))
+      .filter((p): p is { x: number; y: number } => p.x != null && p.y != null);
+    for (let i = 0; i < pts.length - 1; i++) {
+      if (distToSegment(mx, my, pts[i].x, pts[i].y, pts[i + 1].x, pts[i + 1].y) < TOL) return true;
+    }
+    return false;
+  }
+
+  if (d.type === 'anchoredVwap') {
+    const anchorX = timeToX(chart, d.time);
+    const anchorY = priceToY(series, d.price);
+    if (anchorX != null && anchorY != null && Math.hypot(mx - anchorX, my - anchorY) < TOL + 4) return true;
+
+    const data = computeAnchoredVwapData(d, candles);
+    const pts = (data?.points ?? [])
+      .map((p) => ({ x: timeToX(chart, toChartTimeSeconds(p.time)), y: priceToY(series, p.vwap) }))
       .filter((p): p is { x: number; y: number } => p.x != null && p.y != null);
     for (let i = 0; i < pts.length - 1; i++) {
       if (distToSegment(mx, my, pts[i].x, pts[i].y, pts[i + 1].x, pts[i + 1].y) < TOL) return true;
@@ -2604,7 +2682,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           } else if (drag.kind === 'brush' && (d.type === 'brush' || d.type === 'highlighter')) {
             dd = { ...d, points: drag.points };
           } else if (drag.kind === 'arrowMark' && (d.type === 'arrowMark' || d.type === 'pin' ||
-              d.type === 'flagMark' || d.type === 'priceLabel' || d.type === 'signpost')) {
+              d.type === 'flagMark' || d.type === 'priceLabel' || d.type === 'signpost' || d.type === 'anchoredVwap')) {
             dd = { ...d, price: drag.price, time: drag.time };
           } else if (drag.kind === 'note' && d.type === 'text') {
             dd = { ...d, price: drag.price, time: drag.time };
@@ -3175,6 +3253,8 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
       addDrawing({ id, type: 'priceNote', price1, time1, price2, time2 });
     } else if (tool === 'pin') {
       addDrawing({ id, type: 'pin', price: price1, time: time1 });
+    } else if (tool === 'anchoredVwap') {
+      addDrawing({ id, type: 'anchoredVwap', price: price1, time: time1 });
     } else if (tool === 'flagMark') {
       addDrawing({ id, type: 'flagMark', price: price1, time: time1 });
     } else if (tool === 'priceLabel') {
@@ -3707,7 +3787,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           if (Math.hypot(x - xH, y - yH) < 8 || Math.hypot(x - xL, y - yL) < 8) { hoverCursor = 'grab'; break; }
           if (hitTest(d, x, y, chart, series, candlesRef.current)) { hoverCursor = 'move'; break; }
         } else if (d.type === 'arrowMark' || d.type === 'text' || d.type === 'pin' ||
-            d.type === 'flagMark' || d.type === 'priceLabel' || d.type === 'signpost') {
+            d.type === 'flagMark' || d.type === 'priceLabel' || d.type === 'signpost' || d.type === 'anchoredVwap') {
           if (hitTest(d, x, y, chart, series, candlesRef.current)) { hoverCursor = 'move'; break; }
         } else if (d.type === 'longPosition' || d.type === 'shortPosition') {
           const x1 = timeToX(chart, d.time1), x2 = timeToX(chart, d.time2);
@@ -4013,7 +4093,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
         }
 
         if (d.type === 'arrowMark' || d.type === 'pin' || d.type === 'flagMark' ||
-            d.type === 'priceLabel' || d.type === 'signpost') {
+            d.type === 'priceLabel' || d.type === 'signpost' || d.type === 'anchoredVwap') {
           const x1 = timeToX(chart, d.time), y1 = priceToY(series, d.price);
           if (x1 == null || y1 == null) continue;
           if (!hitTest(d, x, y, chart, series, candlesRef.current)) continue;

@@ -50,9 +50,10 @@ export const ACTION_TOOLS: readonly ActionTool[] = ['measure', 'zoomIn'];
 
 // The "Prediction & measurement" group — Long/Short Position projections and
 // Price/Date Range brackets, grouped under one dropdown just like the others.
-export type PositionRangeTool = 'longPosition' | 'shortPosition' | 'priceRange' | 'dateRange' | 'datePriceRange';
+export type PositionRangeTool =
+  | 'longPosition' | 'shortPosition' | 'anchoredVwap' | 'priceRange' | 'dateRange' | 'datePriceRange';
 export const POSITION_RANGE_TOOLS: readonly PositionRangeTool[] = [
-  'longPosition', 'shortPosition', 'priceRange', 'dateRange', 'datePriceRange',
+  'longPosition', 'shortPosition', 'anchoredVwap', 'priceRange', 'dateRange', 'datePriceRange',
 ];
 
 export type DrawingTool =
@@ -401,6 +402,21 @@ export interface DatePriceRangeDrawing extends LineStyle {
   price2: number; time2: number;
 }
 
+// Anchored VWAP: single-click anchor, modeled on PinDrawing — one anchor
+// (price/time), no second point, moved as a whole. Unlike a stamp marker it
+// isn't just a static icon: renderDrawing recomputes a VWAP line forward from
+// the anchor out of live candle data on every render (see computeRegression
+// for the analogous "derived from candles, not stored" pattern), so it
+// auto-extends as new candles stream in.
+export interface AnchoredVwapDrawing {
+  id: string;
+  type: 'anchoredVwap';
+  price: number;
+  time: number;
+  color?: string;
+  width?: number;
+}
+
 /** one row of the "Levels" list in the Fib settings dialog — enabled toggle,
  * editable ratio, and its own color. Width/dash are shared across all levels. */
 export interface FibLevelConfig {
@@ -510,6 +526,7 @@ export type Drawing =
   | PriceRangeDrawing
   | DateRangeDrawing
   | DatePriceRangeDrawing
+  | AnchoredVwapDrawing
   | FibonacciDrawing
   | ChannelDrawing
   | RegressionDrawing
