@@ -37,9 +37,14 @@ export const SHAPE_TOOLS: readonly ShapeTool[] = [
 // The "Annotation" group — Text and Price Note, grouped under one dropdown
 // just like Cursor/Trend Line/Shapes. 'pin'/'flagMark'/'priceLabel'/'signpost'
 // are single-click stamp markers modeled on ArrowMarkDrawing (see that type).
-export type AnnotationTool = 'text' | 'priceNote' | 'pin' | 'flagMark' | 'priceLabel' | 'signpost';
+// 'note'/'callout'/'comment' are text-box markers that reuse Text/Signpost's
+// shared inline-editing machinery (see the generalized editing handlers in
+// DrawingCanvas.tsx) — same single-anchor + user-typed text shape as Signpost.
+export type AnnotationTool =
+  | 'text' | 'priceNote' | 'pin' | 'flagMark' | 'priceLabel' | 'signpost'
+  | 'note' | 'callout' | 'comment';
 export const ANNOTATION_TOOLS: readonly AnnotationTool[] =
-  ['text', 'priceNote', 'pin', 'flagMark', 'priceLabel', 'signpost'];
+  ['text', 'priceNote', 'pin', 'flagMark', 'priceLabel', 'signpost', 'note', 'callout', 'comment'];
 
 // Standalone action tools: Measure doesn't leave a persisted drawing behind
 // (it's a transient readout cleared on tool change), and Zoom In performs an
@@ -390,6 +395,41 @@ export interface SignpostDrawing {
   color?: string;
 }
 
+// Note/Callout/Comment: three more text-box annotation stamps, all modeled
+// on SignpostDrawing above — one anchor, optional user-typed text (absent
+// only between placement and first commit; empty commit deletes it), same
+// shared text-editing machinery. Only their rendering differs (see the
+// 'note'/'callout'/'comment' render branches in DrawingCanvas.tsx):
+// Note draws a sticky-note icon with the text beside it; Callout draws a
+// filled text box offset from the anchor with a leader line back to it;
+// Comment draws a speech bubble with a tail pointing at the anchor.
+export interface NoteDrawing {
+  id: string;
+  type: 'note';
+  price: number;
+  time: number;
+  text?: string;
+  color?: string;
+}
+
+export interface CalloutDrawing {
+  id: string;
+  type: 'callout';
+  price: number;
+  time: number;
+  text?: string;
+  color?: string;
+}
+
+export interface CommentDrawing {
+  id: string;
+  type: 'comment';
+  price: number;
+  time: number;
+  text?: string;
+  color?: string;
+}
+
 // Long/Short Position: single-click projection tool — entry line splits a
 // profit zone (toward targetPrice) from a loss zone (toward stopPrice); the
 // box spans time1..time2. For 'longPosition' targetPrice > entryPrice >
@@ -703,6 +743,9 @@ export type Drawing =
   | FlagMarkDrawing
   | PriceLabelDrawing
   | SignpostDrawing
+  | NoteDrawing
+  | CalloutDrawing
+  | CommentDrawing
   | PositionDrawing
   | PriceRangeDrawing
   | DateRangeDrawing

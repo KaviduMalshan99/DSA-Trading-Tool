@@ -607,6 +607,34 @@ function SignpostIcon() {
   );
 }
 
+function NoteIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M5 3h10l4 4v14H5z" />
+      <path d="M15 3v4h4" />
+      <line x1="8" y1="12" x2="16" y2="12" />
+      <line x1="8" y1="16" x2="14" y2="16" />
+    </svg>
+  );
+}
+
+function CalloutIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="8" y="3" width="13" height="8" rx="2" />
+      <line x1="3" y1="21" x2="9" y2="11" />
+    </svg>
+  );
+}
+
+function CommentIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" fill="none" strokeLinejoin="round">
+      <path d="M4 4h16v11H10l-4 4v-4H4z" />
+    </svg>
+  );
+}
+
 function LongPositionIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round">
@@ -890,15 +918,33 @@ const ANNOTATION_ICON: Record<AnnotationTool, React.ReactNode> = {
   flagMark: <FlagMarkIcon />,
   priceLabel: <PriceLabelIcon />,
   signpost: <SignpostIcon />,
+  note: <NoteIcon />,
+  callout: <CalloutIcon />,
+  comment: <CommentIcon />,
 };
 
-const ANNOTATION_ITEMS: { tool: AnnotationTool; label: string }[] = [
+// The flyout's two labeled sections — "Markers" (single-icon stamps, some
+// with user-typed text) and "Notes" (text-box annotations). ANNOTATION_ITEMS
+// below is the flat concatenation, kept for ALL_TOOL_ICON/ALL_TOOL_LABEL/
+// Favorites (same pattern as TREND_ITEMS/SHAPE_ITEMS). Table is deferred to
+// the coming-soon pass, so it's intentionally left out of both sections.
+const ANNOTATION_MARKER_ITEMS: { tool: AnnotationTool; label: string }[] = [
   { tool: 'text',       label: 'Text' },
   { tool: 'priceNote',  label: 'Price Note' },
   { tool: 'pin',        label: 'Pin' },
   { tool: 'flagMark',   label: 'Flag Mark' },
   { tool: 'priceLabel', label: 'Price Label' },
   { tool: 'signpost',   label: 'Signpost' },
+];
+
+const ANNOTATION_NOTE_ITEMS: { tool: AnnotationTool; label: string }[] = [
+  { tool: 'note',    label: 'Note' },
+  { tool: 'callout', label: 'Callout' },
+  { tool: 'comment', label: 'Comment' },
+];
+
+const ANNOTATION_ITEMS: { tool: AnnotationTool; label: string }[] = [
+  ...ANNOTATION_MARKER_ITEMS, ...ANNOTATION_NOTE_ITEMS,
 ];
 
 const POSITION_RANGE_ICON: Record<PositionRangeTool, React.ReactNode> = {
@@ -1384,7 +1430,25 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
               boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
             }}
           >
-            {ANNOTATION_ITEMS.map(({ tool, label }) => (
+            <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)] select-none">
+              Markers
+            </div>
+            {ANNOTATION_MARKER_ITEMS.map(({ tool, label }) => (
+              <FavoritableMenuItem
+                key={tool}
+                tool={tool}
+                label={label}
+                icon={ANNOTATION_ICON[tool]}
+                active={activeTool === tool}
+                favorite={favoriteTools.includes(tool)}
+                onToggleFavorite={() => toggleFavorite(tool)}
+                onSelect={() => { setTool(tool); setAnnotationDropdownOpen(false); }}
+              />
+            ))}
+            <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)] select-none">
+              Notes
+            </div>
+            {ANNOTATION_NOTE_ITEMS.map(({ tool, label }) => (
               <FavoritableMenuItem
                 key={tool}
                 tool={tool}

@@ -18,7 +18,7 @@ const CAPTURE_TOOLS = new Set<DrawingTool>([
   'rotatedRectangle', 'circle', 'ellipse', 'path', 'polyline',
   'triangle', 'arc', 'curve', 'doubleCurve',
   'arrowMarker', 'arrowTool', 'arrowMarkUp', 'arrowMarkDown', 'brush', 'highlighter',
-  'text', 'priceNote', 'pin', 'flagMark', 'priceLabel', 'signpost', 'measure', 'zoomIn',
+  'text', 'priceNote', 'pin', 'flagMark', 'priceLabel', 'signpost', 'note', 'callout', 'comment', 'measure', 'zoomIn',
   'longPosition', 'shortPosition', 'anchoredVwap', 'priceRange', 'dateRange', 'datePriceRange',
   'gannFan', 'gannBox', 'gannSquare',
   'abcd', 'xabcd', 'cypher', 'threeDrives', 'headShoulders',
@@ -68,6 +68,9 @@ const CLICKS_REQUIRED: Partial<Record<DrawingTool, number>> = {
   flagMark: 1,
   priceLabel: 1,
   signpost: 1,
+  note: 1,
+  callout: 1,
+  comment: 1,
   measure: 2,
   zoomIn: 2,
   longPosition: 1,
@@ -2034,6 +2037,163 @@ function renderDrawing(
       ctx.setLineDash([]);
     }
 
+  } else if (d.type === 'note') {
+    const x = timeToX(chart, d.time);
+    const y = priceToY(series, d.price);
+    if (x == null || y == null) { ctx.restore(); return; }
+
+    // Sticky-note icon (filled rounded-ish square with a folded top-right
+    // corner) marking the anchor, with the user-typed text drawn beside it.
+    const baseColor = d.color ?? '#F4B400';
+    const text = d.text ?? '';
+    const iconSize = 16;
+    const iconX = x - iconSize / 2;
+    const iconY = y - iconSize / 2;
+    const fold = 5;
+
+    ctx.fillStyle = eraserHover ? '#f85149' : baseColor;
+    ctx.beginPath();
+    ctx.moveTo(iconX, iconY);
+    ctx.lineTo(iconX + iconSize - fold, iconY);
+    ctx.lineTo(iconX + iconSize, iconY + fold);
+    ctx.lineTo(iconX + iconSize, iconY + iconSize);
+    ctx.lineTo(iconX, iconY + iconSize);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.beginPath();
+    ctx.moveTo(iconX + iconSize - fold, iconY);
+    ctx.lineTo(iconX + iconSize, iconY + fold);
+    ctx.lineTo(iconX + iconSize - fold, iconY + fold);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.font = '12px sans-serif';
+    const textW = text.length > 0 ? ctx.measureText(text).width : 0;
+    if (text.length > 0) {
+      ctx.fillStyle = eraserHover ? '#f85149' : '#d1d4dc';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, x + iconSize / 2 + 6, y + 1);
+      ctx.textBaseline = 'alphabetic';
+    }
+
+    if (selected) {
+      const totalW = iconSize + (text.length > 0 ? 6 + textW : 0);
+      ctx.strokeStyle = eraserHover ? '#f85149' : '#2196F3';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 3]);
+      ctx.strokeRect(iconX - 3, iconY - 3, totalW + 6, iconSize + 6);
+      ctx.setLineDash([]);
+    }
+
+  } else if (d.type === 'callout') {
+    const x = timeToX(chart, d.time);
+    const y = priceToY(series, d.price);
+    if (x == null || y == null) { ctx.restore(); return; }
+
+    // Text box offset up-and-right from the anchor, plus a leader line back
+    // to the anchor point.
+    const baseColor = d.color ?? '#2196F3';
+    const text = d.text ?? '';
+    ctx.font = '12px sans-serif';
+    const lines = text.length > 0 ? text.split('\n') : [''];
+    const padX = 8, padY = 6, lineH = 16;
+    const textW = Math.max(10, ...lines.map((l) => ctx.measureText(l).width));
+    const boxW = textW + padX * 2;
+    const boxH = lines.length * lineH + padY * 2;
+    const boxLeft = x + 24;
+    const boxBottom = y - 40;
+    const boxTop = boxBottom - boxH;
+
+    ctx.strokeStyle = eraserHover ? '#f85149' : baseColor;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(boxLeft, boxBottom);
+    ctx.stroke();
+
+    const r = 4;
+    ctx.beginPath();
+    ctx.moveTo(boxLeft + r, boxTop);
+    ctx.arcTo(boxLeft + boxW, boxTop, boxLeft + boxW, boxTop + boxH, r);
+    ctx.arcTo(boxLeft + boxW, boxTop + boxH, boxLeft, boxTop + boxH, r);
+    ctx.arcTo(boxLeft, boxTop + boxH, boxLeft, boxTop, r);
+    ctx.arcTo(boxLeft, boxTop, boxLeft + boxW, boxTop, r);
+    ctx.closePath();
+    ctx.fillStyle = eraserHover ? '#f85149' : baseColor;
+    ctx.fill();
+
+    if (text.length > 0) {
+      ctx.fillStyle = '#ffffff';
+      ctx.textBaseline = 'top';
+      lines.forEach((line, i) => ctx.fillText(line, boxLeft + padX, boxTop + padY + i * lineH));
+      ctx.textBaseline = 'alphabetic';
+    }
+
+    ctx.fillStyle = eraserHover ? '#f85149' : baseColor;
+    ctx.beginPath();
+    ctx.arc(x, y, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    if (selected) {
+      ctx.strokeStyle = eraserHover ? '#f85149' : '#2196F3';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 3]);
+      ctx.strokeRect(boxLeft - 3, boxTop - 3, boxW + 6, boxH + 6);
+      ctx.setLineDash([]);
+    }
+
+  } else if (d.type === 'comment') {
+    const x = timeToX(chart, d.time);
+    const y = priceToY(series, d.price);
+    if (x == null || y == null) { ctx.restore(); return; }
+
+    // Speech bubble — rounded-rect body plus a small triangular tail
+    // pointing down at the anchor point.
+    const baseColor = d.color ?? '#2196F3';
+    const text = d.text ?? '';
+    ctx.font = '12px sans-serif';
+    const lines = text.length > 0 ? text.split('\n') : [''];
+    const padX = 8, padY = 6, lineH = 16;
+    const textW = Math.max(10, ...lines.map((l) => ctx.measureText(l).width));
+    const boxW = textW + padX * 2;
+    const boxH = lines.length * lineH + padY * 2;
+    const tailH = 8, tailW = 10;
+    const boxBottom = y - tailH;
+    const boxTop = boxBottom - boxH;
+    const boxLeft = x - boxW / 2;
+    const r = 4;
+
+    ctx.fillStyle = eraserHover ? '#f85149' : baseColor;
+    ctx.beginPath();
+    ctx.moveTo(boxLeft + r, boxTop);
+    ctx.arcTo(boxLeft + boxW, boxTop, boxLeft + boxW, boxTop + boxH, r);
+    ctx.arcTo(boxLeft + boxW, boxTop + boxH, boxLeft, boxTop + boxH, r);
+    ctx.arcTo(boxLeft, boxTop + boxH, boxLeft, boxTop, r);
+    ctx.arcTo(boxLeft, boxTop, boxLeft + boxW, boxTop, r);
+    ctx.closePath();
+    ctx.moveTo(x - tailW / 2, boxBottom);
+    ctx.lineTo(x, boxBottom + tailH);
+    ctx.lineTo(x + tailW / 2, boxBottom);
+    ctx.closePath();
+    ctx.fill();
+
+    if (text.length > 0) {
+      ctx.fillStyle = '#ffffff';
+      ctx.textBaseline = 'top';
+      lines.forEach((line, i) => ctx.fillText(line, boxLeft + padX, boxTop + padY + i * lineH));
+      ctx.textBaseline = 'alphabetic';
+    }
+
+    if (selected) {
+      ctx.strokeStyle = eraserHover ? '#f85149' : '#2196F3';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 3]);
+      ctx.strokeRect(boxLeft - 3, boxTop - 3, boxW + 6, boxH + tailH + 6);
+      ctx.setLineDash([]);
+    }
+
   } else if (d.type === 'text') {
     const x = timeToX(chart, d.time);
     const y = priceToY(series, d.price);
@@ -3062,6 +3222,54 @@ function hitTest(
     return mx >= x - TOL && mx <= x + signW + TOL && my >= signY - TOL && my <= y + TOL;
   }
 
+  // Note/Callout/Comment's box bounds are estimated with the same
+  // char-width heuristic Text/Price Label's hitTest use below (no canvas
+  // context is threaded through hitTest to measureText for real).
+  if (d.type === 'note') {
+    const x = timeToX(chart, d.time);
+    const y = priceToY(series, d.price);
+    if (x == null || y == null) return false;
+    const text = d.text ?? '';
+    const iconSize = 16;
+    const textW = text.length > 0 ? text.length * 6.5 : 0;
+    const totalW = iconSize + (text.length > 0 ? 6 + textW : 0);
+    return mx >= x - iconSize / 2 - TOL && mx <= x - iconSize / 2 + totalW + TOL &&
+      my >= y - iconSize / 2 - TOL && my <= y + iconSize / 2 + TOL;
+  }
+
+  if (d.type === 'callout') {
+    const x = timeToX(chart, d.time);
+    const y = priceToY(series, d.price);
+    if (x == null || y == null) return false;
+    const text = d.text ?? '';
+    const lines = text.length > 0 ? text.split('\n') : [''];
+    const padX = 8, padY = 6, lineH = 16;
+    const textW = Math.max(10, ...lines.map((l) => l.length * 6.5));
+    const boxW = textW + padX * 2;
+    const boxH = lines.length * lineH + padY * 2;
+    const boxLeft = x + 24;
+    const boxBottom = y - 40;
+    const boxTop = boxBottom - boxH;
+    return mx >= boxLeft - TOL && mx <= boxLeft + boxW + TOL && my >= boxTop - TOL && my <= boxTop + boxH + TOL;
+  }
+
+  if (d.type === 'comment') {
+    const x = timeToX(chart, d.time);
+    const y = priceToY(series, d.price);
+    if (x == null || y == null) return false;
+    const text = d.text ?? '';
+    const lines = text.length > 0 ? text.split('\n') : [''];
+    const padX = 8, padY = 6, lineH = 16;
+    const textW = Math.max(10, ...lines.map((l) => l.length * 6.5));
+    const boxW = textW + padX * 2;
+    const boxH = lines.length * lineH + padY * 2;
+    const tailH = 8;
+    const boxBottom = y - tailH;
+    const boxTop = boxBottom - boxH;
+    const boxLeft = x - boxW / 2;
+    return mx >= boxLeft - TOL && mx <= boxLeft + boxW + TOL && my >= boxTop - TOL && my <= y + TOL;
+  }
+
   // Text's bounding box is estimated (no canvas context is threaded through
   // hitTest), using an average-char-width heuristic that mirrors the geometry
   // renderDrawing actually draws — close enough for hit testing given the
@@ -3446,7 +3654,8 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           } else if (drag.kind === 'brush' && (d.type === 'brush' || d.type === 'highlighter')) {
             dd = { ...d, points: drag.points };
           } else if (drag.kind === 'arrowMark' && (d.type === 'arrowMark' || d.type === 'pin' ||
-              d.type === 'flagMark' || d.type === 'priceLabel' || d.type === 'signpost' || d.type === 'anchoredVwap')) {
+              d.type === 'flagMark' || d.type === 'priceLabel' || d.type === 'signpost' || d.type === 'anchoredVwap' ||
+              d.type === 'note' || d.type === 'callout' || d.type === 'comment')) {
             dd = { ...d, price: drag.price, time: drag.time };
           } else if (drag.kind === 'note' && d.type === 'text') {
             dd = { ...d, price: drag.price, time: drag.time };
@@ -3613,7 +3822,8 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
         const tool = activeToolRef.current;
         const isSingleClickTool = tool === 'hline' || tool === 'hray' || tool === 'vline' || tool === 'crossline' ||
           tool === 'arrowMarkUp' || tool === 'arrowMarkDown' || tool === 'longPosition' || tool === 'shortPosition' ||
-          tool === 'pin' || tool === 'flagMark' || tool === 'priceLabel' || tool === 'signpost';
+          tool === 'pin' || tool === 'flagMark' || tool === 'priceLabel' || tool === 'signpost' ||
+          tool === 'note' || tool === 'callout' || tool === 'comment';
         if (isSingleClickTool && mousePosRef.current.inside) {
           const { x: mx, y: my } = mousePosRef.current;
           const price = yToPrice(series, my);
@@ -3632,6 +3842,9 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
             else if (tool === 'flagMark') preview = { id: '__preview', type: 'flagMark', price, time };
             else if (tool === 'priceLabel') preview = { id: '__preview', type: 'priceLabel', price, time };
             else if (tool === 'signpost') preview = { id: '__preview', type: 'signpost', price, time, text: '' };
+            else if (tool === 'note') preview = { id: '__preview', type: 'note', price, time, text: '' };
+            else if (tool === 'callout') preview = { id: '__preview', type: 'callout', price, time, text: '' };
+            else if (tool === 'comment') preview = { id: '__preview', type: 'comment', price, time, text: '' };
             else preview = { id: '__preview', type: 'arrowMark', variant: tool === 'arrowMarkUp' ? 'up' : 'down', price, time };
             if (preview) {
               ctx.globalAlpha = 0.6;
@@ -3764,10 +3977,12 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
     if (trimmed.length === 0) deleteDrawing(ed.id);
     else updateDrawing(ed.id, { text: trimmed });
     setEditing(null);
-    // Only auto-revert if Text/Signpost is still the active tool — if this
-    // commit was triggered by switching to a *different* tool mid-edit, that
-    // tool choice must win, not get clobbered back to the cursor.
-    if (!keepToolActiveRef.current && (activeToolRef.current === 'text' || activeToolRef.current === 'signpost')) {
+    // Only auto-revert if Text/Signpost/Note/Callout/Comment is still the
+    // active tool — if this commit was triggered by switching to a
+    // *different* tool mid-edit, that tool choice must win, not get
+    // clobbered back to the cursor.
+    if (!keepToolActiveRef.current && (activeToolRef.current === 'text' || activeToolRef.current === 'signpost' ||
+        activeToolRef.current === 'note' || activeToolRef.current === 'callout' || activeToolRef.current === 'comment')) {
       setTool(lastCursorModeRef.current);
     }
     scheduleRender();
@@ -3819,7 +4034,8 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
     hoverEraseIdRef.current = null;
     magnetPointRef.current = null;
     if (activeTool !== 'measure') measureResultRef.current = null;
-    if (activeTool !== 'text' && activeTool !== 'signpost' && editingRef.current) commitEdit();
+    if (activeTool !== 'text' && activeTool !== 'signpost' && activeTool !== 'note' &&
+        activeTool !== 'callout' && activeTool !== 'comment' && editingRef.current) commitEdit();
     applyCursor(activeTool);
     scheduleRender();
     return () => {
@@ -4108,6 +4324,30 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
       addDrawing({ id, type: 'signpost', price: price1, time: time1, text: '' });
       selectDrawing(id);
       setEditing({ id, x: ds.x1, y: ds.y1 - 48, value: '', isNew: true });
+      return;
+    } else if (tool === 'note') {
+      // place empty, then immediately open the inline-edit overlay to type
+      // into it — same flow as Text/Signpost. Offset matches renderDrawing's
+      // text start (icon half-width + gap) so the textarea lines up with
+      // where the note's text renders, vertically centered on the icon.
+      addDrawing({ id, type: 'note', price: price1, time: time1, text: '' });
+      selectDrawing(id);
+      setEditing({ id, x: ds.x1 + 20, y: ds.y1 - 10, value: '', isNew: true });
+      return;
+    } else if (tool === 'callout') {
+      // Offset matches renderDrawing's empty-text box position (offset
+      // up-and-right from the anchor) so the textarea lines up with the box.
+      addDrawing({ id, type: 'callout', price: price1, time: time1, text: '' });
+      selectDrawing(id);
+      setEditing({ id, x: ds.x1 + 24, y: ds.y1 - 68, value: '', isNew: true });
+      return;
+    } else if (tool === 'comment') {
+      // Offset matches renderDrawing's empty-text bubble position (centered
+      // above the anchor, tail pointing down) so the textarea lines up with
+      // the bubble.
+      addDrawing({ id, type: 'comment', price: price1, time: time1, text: '' });
+      selectDrawing(id);
+      setEditing({ id, x: ds.x1 - 13, y: ds.y1 - 36, value: '', isNew: true });
       return;
     } else if (tool === 'measure') {
       if (price2 == null || time2 == null) return;
@@ -4635,7 +4875,8 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           if (Math.hypot(x - xH, y - yH) < 8 || Math.hypot(x - xL, y - yL) < 8) { hoverCursor = 'grab'; break; }
           if (hitTest(d, x, y, chart, series, candlesRef.current)) { hoverCursor = 'move'; break; }
         } else if (d.type === 'arrowMark' || d.type === 'text' || d.type === 'pin' ||
-            d.type === 'flagMark' || d.type === 'priceLabel' || d.type === 'signpost' || d.type === 'anchoredVwap') {
+            d.type === 'flagMark' || d.type === 'priceLabel' || d.type === 'signpost' || d.type === 'anchoredVwap' ||
+            d.type === 'note' || d.type === 'callout' || d.type === 'comment') {
           if (hitTest(d, x, y, chart, series, candlesRef.current)) { hoverCursor = 'move'; break; }
         } else if (d.type === 'longPosition' || d.type === 'shortPosition') {
           const x1 = timeToX(chart, d.time1), x2 = timeToX(chart, d.time2);
@@ -4948,7 +5189,8 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
         }
 
         if (d.type === 'arrowMark' || d.type === 'pin' || d.type === 'flagMark' ||
-            d.type === 'priceLabel' || d.type === 'signpost' || d.type === 'anchoredVwap') {
+            d.type === 'priceLabel' || d.type === 'signpost' || d.type === 'anchoredVwap' ||
+            d.type === 'note' || d.type === 'callout' || d.type === 'comment') {
           const x1 = timeToX(chart, d.time), y1 = priceToY(series, d.price);
           if (x1 == null || y1 == null) continue;
           if (!hitTest(d, x, y, chart, series, candlesRef.current)) continue;
@@ -5121,18 +5363,28 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
 
       for (let i = drawingsRef.current.length - 1; i >= 0; i--) {
         const d = drawingsRef.current[i];
-        if (d.type !== 'text' && d.type !== 'signpost') continue;
+        if (d.type !== 'text' && d.type !== 'signpost' && d.type !== 'note' &&
+            d.type !== 'callout' && d.type !== 'comment') continue;
         if (!hitTest(d, x, y, chart, series, candlesRef.current)) continue;
         const tx = timeToX(chart, d.time), ty = priceToY(series, d.price);
         if (tx == null || ty == null) continue;
         selectDrawing(d.id);
         if (d.type === 'text') {
           setEditing({ id: d.id, x: tx, y: ty, value: d.text, isNew: false });
-        } else {
+        } else if (d.type === 'signpost') {
           // Signpost's sign box sits `poleH + signH` (26 + 22 = 48) above the
           // anchor — same offset used in renderDrawing and in the placement
           // setEditing call below, so the textarea lines up with the sign.
           setEditing({ id: d.id, x: tx, y: ty - 48, value: d.text ?? '', isNew: false });
+        } else if (d.type === 'note') {
+          // Same offset as Note's placement setEditing call — see there.
+          setEditing({ id: d.id, x: tx + 20, y: ty - 10, value: d.text ?? '', isNew: false });
+        } else if (d.type === 'callout') {
+          // Same offset as Callout's placement setEditing call — see there.
+          setEditing({ id: d.id, x: tx + 24, y: ty - 68, value: d.text ?? '', isNew: false });
+        } else {
+          // Same offset as Comment's placement setEditing call — see there.
+          setEditing({ id: d.id, x: tx - 13, y: ty - 36, value: d.text ?? '', isNew: false });
         }
         return;
       }
