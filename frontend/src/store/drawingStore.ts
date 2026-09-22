@@ -62,10 +62,10 @@ export const POSITION_RANGE_TOOLS: readonly PositionRangeTool[] = [
 export type FibTool = 'fibonacci' | 'fibExtension' | 'trendFibExtension' | 'fibChannel';
 export const FIB_TOOLS: readonly FibTool[] = ['fibonacci', 'fibExtension', 'trendFibExtension', 'fibChannel'];
 
-// The "Gann" group — Gann Fan (more angle-fan/box tools may join later),
-// grouped under one dropdown just like Trend Line/Shapes/.../Fibonacci.
-export type GannTool = 'gannFan';
-export const GANN_TOOLS: readonly GannTool[] = ['gannFan'];
+// The "Gann" group — Gann Fan, Gann Box, Gann Square — grouped under one
+// dropdown just like Trend Line/Shapes/.../Fibonacci.
+export type GannTool = 'gannFan' | 'gannBox' | 'gannSquare';
+export const GANN_TOOLS: readonly GannTool[] = ['gannFan', 'gannBox', 'gannSquare'];
 
 export type DrawingTool =
   | CursorMode | TrendTool | ShapeTool | AnnotationTool | ActionTool | PositionRangeTool | FibTool | GannTool;
@@ -519,6 +519,26 @@ export interface GannFanDrawing extends LineStyle {
   price2: number; time2: number;
 }
 
+// Gann Box: same 2-corner box shape as Rectangle — draws a proportional
+// grid (horizontal + vertical divisions at the shared Gann ratio set) inside
+// the box rather than a filled rectangle, so no FillStyle is needed.
+export interface GannBoxDrawing extends LineStyle {
+  id: string;
+  type: 'gannBox';
+  price1: number; time1: number;
+  price2: number; time2: number;
+}
+
+// Gann Square: same box shape as Gann Box, plus corner-to-corner diagonals
+// and a diagonal fan from the top-left corner to each ratio point along the
+// opposite edges (see the 'gannSquare' render branch in DrawingCanvas.tsx).
+export interface GannSquareDrawing extends LineStyle {
+  id: string;
+  type: 'gannSquare';
+  price1: number; time1: number;
+  price2: number; time2: number;
+}
+
 export interface ChannelDrawing {
   id: string;
   type: 'channel';
@@ -605,6 +625,8 @@ export type Drawing =
   | TrendFibExtensionDrawing
   | FibChannelDrawing
   | GannFanDrawing
+  | GannBoxDrawing
+  | GannSquareDrawing
   | ChannelDrawing
   | RegressionDrawing
   | FlatChannelDrawing

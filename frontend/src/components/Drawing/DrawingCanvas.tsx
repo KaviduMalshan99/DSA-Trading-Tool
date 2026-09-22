@@ -20,7 +20,7 @@ const CAPTURE_TOOLS = new Set<DrawingTool>([
   'arrowMarker', 'arrowTool', 'arrowMarkUp', 'arrowMarkDown', 'brush', 'highlighter',
   'text', 'priceNote', 'pin', 'flagMark', 'priceLabel', 'signpost', 'measure', 'zoomIn',
   'longPosition', 'shortPosition', 'anchoredVwap', 'priceRange', 'dateRange', 'datePriceRange',
-  'gannFan',
+  'gannFan', 'gannBox', 'gannSquare',
 ]);
 
 // Number of clicks each drawing tool needs before it's finalized. Horizontal
@@ -75,6 +75,8 @@ const CLICKS_REQUIRED: Partial<Record<DrawingTool, number>> = {
   dateRange: 2,
   datePriceRange: 2,
   gannFan: 2,
+  gannBox: 2,
+  gannSquare: 2,
 };
 
 const DOT_CURSOR = `url("data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5" fill="#111827"/><circle cx="12" cy="12" r="2.5" fill="#ffffff"/></svg>')}" ) 12 12, pointer`;
@@ -181,6 +183,45 @@ function drawFibLevelLine(
   ctx.fillStyle = color;
   ctx.font = '10px monospace';
   ctx.fillText(label, labelX, y - 3);
+}
+
+// Shared ratio set for Gann Box/Square grid divisions.
+const GANN_GRID_RATIOS = [0, 0.25, 0.382, 0.5, 0.618, 0.75, 1.0];
+
+// Strokes an arbitrary line from (x1,y1) to (x2,y2) with an optional label —
+// the Gann Box/Square counterpart to drawFibLevelLine above, generalized to
+// non-horizontal lines (vertical grid divisions, diagonal fans) since a fixed
+// y/spanLeft/spanRight signature can't express those.
+function drawGannGridLine(
+  ctx: CanvasRenderingContext2D,
+  color: string,
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  width: number,
+  dash: number[],
+  alpha: number,
+  label?: string,
+  labelX?: number,
+  labelY?: number,
+): void {
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  ctx.setLineDash(dash);
+  ctx.globalAlpha = alpha;
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.globalAlpha = 1;
+
+  if (label != null && labelX != null && labelY != null) {
+    ctx.fillStyle = color;
+    ctx.font = '9px monospace';
+    ctx.fillText(label, labelX, labelY);
+  }
 }
 
 interface Props {
@@ -658,6 +699,82 @@ function renderDrawing(
       ctx.beginPath();
       ctx.arc(x1, y1, 4, 0, Math.PI * 2);
       ctx.fill();
+    }
+
+  } else if (d.type === 'gannBox' || d.type === 'gannSquare') {
+    // Same 2-corner box shape as Rectangle (see the 'rectangle' branch below)
+    // — a proportional grid (and, for Gann Square, a diagonal fan) drawn
+    // inside instead of a filled rectangle.
+    const x1 = timeToX(chart, d.time1);
+    const y1 = priceToY(series, d.price1);
+    const x2 = timeToX(chart, d.time2);
+    const y2 = priceToY(series, d.price2);
+    if (x1 == null || y1 == null || x2 == null || y2 == null) { ctx.restore(); return; }
+
+    const xLeft   = Math.min(x1, x2);
+    const xRight  = Math.max(x1, x2);
+    const yTop    = Math.min(y1, y2);
+    const yBottom = Math.max(y1, y2);
+
+    const baseColor = d.color ?? '#2196F3';
+    const baseOpacity = d.opacity ?? 100;
+    const baseWidth = d.width ?? 1;
+    const dashPattern: number[] = d.dash === 'dashed' ? [8, 4] : d.dash === 'dotted' ? [2, 3] : [];
+
+    const strokeColor = eraserHover ? '#f85149' : hexToRgba(baseColor, baseOpacity);
+    const gridColor = eraserHover ? '#f85149' : hexToRgba(baseColor, Math.max(baseOpacity * 0.45, 12));
+
+    // outer border
+    ctx.strokeStyle = strokeColor;
+    ctx.lineWidth = baseWidth + (selected ? 0.5 : 0);
+    ctx.setLineDash(dashPattern);
+    ctx.strokeRect(xLeft, yTop, xRight - xLeft, yBottom - yTop);
+    ctx.setLineDash([]);
+
+    // internal grid — horizontal + vertical divisions at the shared Gann
+    // ratio set; the 0/1 ratios coincide with the border already drawn above.
+    for (const r of GANN_GRID_RATIOS) {
+      if (r <= 0 || r >= 1) continue;
+      const y = yTop + r * (yBottom - yTop);
+      drawGannGridLine(
+        ctx, gridColor, xLeft, y, xRight, y,
+        Math.max(baseWidth - 0.5, 0.75), [], 1,
+        selected ? r.toString() : undefined, xLeft + 2, y - 2,
+      );
+      const x = xLeft + r * (xRight - xLeft);
+      drawGannGridLine(
+        ctx, gridColor, x, yTop, x, yBottom,
+        Math.max(baseWidth - 0.5, 0.75), [], 1,
+        selected ? r.toString() : undefined, x + 2, yTop + 10,
+      );
+    }
+
+    if (d.type === 'gannSquare') {
+      const fanColor = eraserHover ? '#f85149' : hexToRgba(baseColor, Math.max(baseOpacity * 0.3, 10));
+      const fanWidth = Math.max(baseWidth - 0.5, 0.75);
+
+      // main corner-to-corner diagonals
+      drawGannGridLine(ctx, gridColor, xLeft, yTop, xRight, yBottom, fanWidth, [], 1);
+      drawGannGridLine(ctx, gridColor, xRight, yTop, xLeft, yBottom, fanWidth, [], 1);
+
+      // fan from the top-left corner to each ratio point along the right
+      // and bottom edges — the classic Gann Square angle-fan look.
+      for (const r of GANN_GRID_RATIOS) {
+        if (r <= 0) continue;
+        const yRight = yTop + r * (yBottom - yTop);
+        drawGannGridLine(ctx, fanColor, xLeft, yTop, xRight, yRight, fanWidth, [], 1);
+        const xBottom = xLeft + r * (xRight - xLeft);
+        drawGannGridLine(ctx, fanColor, xLeft, yTop, xBottom, yBottom, fanWidth, [], 1);
+      }
+    }
+
+    if (selected) {
+      ctx.fillStyle = strokeColor;
+      for (const [hx, hy] of [[x1, y1], [x2, y2], [x1, y2], [x2, y1]] as const) {
+        ctx.beginPath();
+        ctx.arc(hx, hy, 3.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
 
   } else if (d.type === 'extendedLine') {
@@ -2455,7 +2572,7 @@ function hitTest(
     return distToSegment(mx, my, xS, yS, xE, yE) < TOL;
   }
 
-  if (d.type === 'rectangle') {
+  if (d.type === 'rectangle' || d.type === 'gannBox' || d.type === 'gannSquare') {
     const x1 = timeToX(chart, d.time1);
     const y1 = priceToY(series, d.price1);
     const x2 = timeToX(chart, d.time2);
@@ -2463,7 +2580,8 @@ function hitTest(
     if (x1 == null || y1 == null || x2 == null || y2 == null) return false;
     const lx = Math.min(x1, x2), rx = Math.max(x1, x2);
     const ty = Math.min(y1, y2), by = Math.max(y1, y2);
-    // near any edge
+    // near any edge (outer box edges are enough for selection/erase — the
+    // internal grid/fan lines don't need their own hit-test)
     const nearLeft   = Math.abs(mx - lx) < TOL && my >= ty - TOL && my <= by + TOL;
     const nearRight  = Math.abs(mx - rx) < TOL && my >= ty - TOL && my <= by + TOL;
     const nearTop    = Math.abs(my - ty) < TOL && mx >= lx - TOL && mx <= rx + TOL;
@@ -2972,7 +3090,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
             };
           } else if (drag.kind === 'fibonacci' && (d.type === 'fibonacci' || d.type === 'fibExtension')) {
             dd = { ...d, priceHigh: drag.priceHigh, timeHigh: drag.timeHigh, priceLow: drag.priceLow, timeLow: drag.timeLow };
-          } else if (drag.kind === 'box' && (d.type === 'rectangle' || d.type === 'circle' || d.type === 'ellipse' || d.type === 'priceRange' || d.type === 'dateRange' || d.type === 'datePriceRange')) {
+          } else if (drag.kind === 'box' && (d.type === 'rectangle' || d.type === 'circle' || d.type === 'ellipse' || d.type === 'priceRange' || d.type === 'dateRange' || d.type === 'datePriceRange' || d.type === 'gannBox' || d.type === 'gannSquare')) {
             dd = { ...d, price1: drag.price1, time1: drag.time1, price2: drag.price2, time2: drag.time2 };
           } else if (drag.kind === 'triangle' && d.type === 'triangle') {
             dd = { ...d, price1: drag.price1, time1: drag.time1, price2: drag.price2, time2: drag.time2, price3: drag.price3, time3: drag.time3 };
@@ -3047,6 +3165,10 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
             preview = { id: '__preview', type: 'datePriceRange', price1, time1, price2, time2 };
           else if (tool === 'rectangle' && price2 != null && time2 != null)
             preview = { id: '__preview', type: 'rectangle', price1, time1, price2, time2 };
+          else if (tool === 'gannBox' && price2 != null && time2 != null)
+            preview = { id: '__preview', type: 'gannBox', price1, time1, price2, time2 };
+          else if (tool === 'gannSquare' && price2 != null && time2 != null)
+            preview = { id: '__preview', type: 'gannSquare', price1, time1, price2, time2 };
           else if (tool === 'fibonacci' && price2 != null && time2 != null)
             preview = { id: '__preview', type: 'fibonacci',
               priceHigh: Math.max(price1, price2), timeHigh: price1 >= price2 ? time1 : time2,
@@ -3512,6 +3634,9 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
     } else if (tool === 'rectangle') {
       if (price2 == null || time2 == null) return;
       addDrawing({ id, type: 'rectangle', price1, time1, price2, time2 });
+    } else if (tool === 'gannBox' || tool === 'gannSquare') {
+      if (price2 == null || time2 == null) return;
+      addDrawing({ id, type: tool, price1, time1, price2, time2 });
     } else if (tool === 'fibonacci') {
       if (price2 == null || time2 == null) return;
       addDrawing({ id, type: 'fibonacci',
@@ -4099,7 +4224,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           const nearAny = Math.hypot(x - x1, y - y1) < 8 || Math.hypot(x - x2, y - y2) < 8 || Math.hypot(x - x3, y - y3) < 8;
           if (nearAny) { hoverCursor = 'grab'; break; }
           if (hitTest(d, x, y, chart, series, candlesRef.current)) { hoverCursor = 'move'; break; }
-        } else if (d.type === 'rectangle' || d.type === 'circle' || d.type === 'ellipse' || d.type === 'priceRange' || d.type === 'dateRange' || d.type === 'datePriceRange') {
+        } else if (d.type === 'rectangle' || d.type === 'circle' || d.type === 'ellipse' || d.type === 'priceRange' || d.type === 'dateRange' || d.type === 'datePriceRange' || d.type === 'gannBox' || d.type === 'gannSquare') {
           const x1 = timeToX(chart, d.time1), y1 = priceToY(series, d.price1);
           const x2 = timeToX(chart, d.time2), y2 = priceToY(series, d.price2);
           if (x1 == null || y1 == null || x2 == null || y2 == null) continue;
@@ -4344,7 +4469,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           return;
         }
 
-        if (d.type === 'rectangle' || d.type === 'circle' || d.type === 'ellipse' || d.type === 'priceRange' || d.type === 'dateRange' || d.type === 'datePriceRange') {
+        if (d.type === 'rectangle' || d.type === 'circle' || d.type === 'ellipse' || d.type === 'priceRange' || d.type === 'dateRange' || d.type === 'datePriceRange' || d.type === 'gannBox' || d.type === 'gannSquare') {
           const x1 = timeToX(chart, d.time1), y1 = priceToY(series, d.price1);
           const x2 = timeToX(chart, d.time2), y2 = priceToY(series, d.price2);
           if (x1 == null || y1 == null || x2 == null || y2 == null) continue;

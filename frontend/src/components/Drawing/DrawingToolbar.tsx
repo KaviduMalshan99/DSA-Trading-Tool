@@ -408,6 +408,32 @@ function GannFanIcon() {
   );
 }
 
+// Gann Box: a rectangle with an internal cross, echoing the tool's
+// horizontal+vertical proportional grid.
+function GannBoxIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5" fill="none">
+      <rect x="4" y="5" width="16" height="14" />
+      <line x1="4" y1="12" x2="20" y2="12" strokeWidth="1" />
+      <line x1="12" y1="5" x2="12" y2="19" strokeWidth="1" />
+    </svg>
+  );
+}
+
+// Gann Square: a box with corner-to-corner diagonals, echoing the tool's
+// added angle fan.
+function GannSquareIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5" fill="none">
+      <rect x="4" y="5" width="16" height="14" />
+      <line x1="4" y1="12" x2="20" y2="12" strokeWidth="1" />
+      <line x1="12" y1="5" x2="12" y2="19" strokeWidth="1" />
+      <line x1="4" y1="5" x2="20" y2="19" strokeWidth="1" />
+      <line x1="20" y1="5" x2="4" y2="19" strokeWidth="1" />
+    </svg>
+  );
+}
+
 function TextIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round">
@@ -808,12 +834,15 @@ const FIB_ITEMS: { tool: FibTool; label: string }[] = [
 
 const GANN_ICON: Record<GannTool, React.ReactNode> = {
   gannFan: <GannFanIcon />,
+  gannBox: <GannBoxIcon />,
+  gannSquare: <GannSquareIcon />,
 };
 
-// The Gann group's flyout — single entry for now (more angle-fan/box tools
-// may join later), same flat-list pattern as Fibonacci/Annotation.
+// The Gann group's flyout — same flat-list pattern as Fibonacci/Annotation.
 const GANN_ITEMS: { tool: GannTool; label: string }[] = [
   { tool: 'gannFan', label: 'Gann Fan' },
+  { tool: 'gannBox', label: 'Gann Box' },
+  { tool: 'gannSquare', label: 'Gann Square' },
 ];
 
 const MEASURE_TOOLS: ToolBtn[] = [
