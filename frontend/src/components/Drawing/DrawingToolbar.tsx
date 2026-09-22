@@ -791,6 +791,17 @@ function TrashIcon() {
   );
 }
 
+// Neutral placeholder glyph for not-yet-built tools (see ComingSoonItem below)
+// — a dashed box, deliberately generic since these rows have no real tool
+// behind them yet.
+function ComingSoonIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5" fill="none" strokeDasharray="3 2">
+      <rect x="4" y="4" width="16" height="16" rx="2" />
+    </svg>
+  );
+}
+
 // Small folded-corner triangle — TradingView's indicator that a toolbar button
 // has a flyout list of related tools. Hidden until the button is hovered.
 function CornerArrow() {
@@ -947,6 +958,14 @@ const ANNOTATION_ITEMS: { tool: AnnotationTool; label: string }[] = [
   ...ANNOTATION_MARKER_ITEMS, ...ANNOTATION_NOTE_ITEMS,
 ];
 
+// Display-only placeholder for a tool that isn't built yet — NOT a DrawingTool
+// and never wired to setTool. Rendered as a disabled row via ComingSoonMenuItem.
+type ComingSoonItem = { label: string; icon: React.ReactNode };
+
+const ANNOTATION_COMING_SOON: ComingSoonItem[] = [
+  { label: 'Table', icon: <ComingSoonIcon /> },
+];
+
 const POSITION_RANGE_ICON: Record<PositionRangeTool, React.ReactNode> = {
   longPosition: <LongPositionIcon />,
   shortPosition: <ShortPositionIcon />,
@@ -979,6 +998,18 @@ const POSITION_RANGE_ITEMS: { tool: PositionRangeTool; label: string }[] = [
   ...POSITION_RANGE_FORECASTING_ITEMS, ...POSITION_RANGE_VOLUME_ITEMS, ...POSITION_RANGE_MEASURES_ITEMS,
 ];
 
+const FORECASTING_COMING_SOON: ComingSoonItem[] = [
+  { label: 'Position Forecast', icon: <ComingSoonIcon /> },
+  { label: 'Bars Pattern', icon: <ComingSoonIcon /> },
+  { label: 'Ghost Feed', icon: <ComingSoonIcon /> },
+  { label: 'Sector', icon: <ComingSoonIcon /> },
+];
+
+const VOLUME_COMING_SOON: ComingSoonItem[] = [
+  { label: 'Fixed Range Volume Profile', icon: <ComingSoonIcon /> },
+  { label: 'Anchored Volume Profile', icon: <ComingSoonIcon /> },
+];
+
 const FIB_ICON: Record<FibTool, React.ReactNode> = {
   fibonacci: <FibIcon />,
   fibExtension: <FibExtensionIcon />,
@@ -995,6 +1026,15 @@ const FIB_ITEMS: { tool: FibTool; label: string }[] = [
   { tool: 'trendFibExtension', label: 'Trend-based Fib Extension' },
   { tool: 'fibChannel',        label: 'Fib Channel' },
   { tool: 'fibTimeZone',       label: 'Fib Time Zone' },
+];
+
+const FIB_COMING_SOON: ComingSoonItem[] = [
+  { label: 'Fib Circles', icon: <ComingSoonIcon /> },
+  { label: 'Fib Spiral', icon: <ComingSoonIcon /> },
+  { label: 'Fib Speed/Resistance Arcs', icon: <ComingSoonIcon /> },
+  { label: 'Fib Speed/Resistance Fan', icon: <ComingSoonIcon /> },
+  { label: 'Fib Wedge', icon: <ComingSoonIcon /> },
+  { label: 'Pitchfan', icon: <ComingSoonIcon /> },
 ];
 
 const GANN_ICON: Record<GannTool, React.ReactNode> = {
@@ -1109,6 +1149,23 @@ function FavoritableMenuItem({
       >
         {favorite ? <StarFilledIcon /> : <StarIcon />}
       </button>
+    </div>
+  );
+}
+
+// A disabled, non-interactive row for a tool that isn't built yet — parallel
+// to FavoritableMenuItem but with no onClick, no star, and no active state,
+// so it can never select a tool or appear in Favorites.
+function ComingSoonMenuItem({ label, icon }: ComingSoonItem) {
+  return (
+    <div
+      title="Coming soon"
+      className="w-full flex items-center gap-2 pl-3 pr-3 py-2 text-sm opacity-40 select-none"
+      style={{ color: 'var(--text-muted)', cursor: 'not-allowed' }}
+    >
+      <span className="flex-shrink-0">{icon}</span>
+      <span className="flex-1">{label}</span>
+      <span className="text-[9px] uppercase tracking-wide flex-shrink-0">Soon</span>
     </div>
   );
 }
@@ -1460,6 +1517,9 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
                 onSelect={() => { setTool(tool); setAnnotationDropdownOpen(false); }}
               />
             ))}
+            {ANNOTATION_COMING_SOON.map((item) => (
+              <ComingSoonMenuItem key={item.label} {...item} />
+            ))}
           </div>
         )}
       </div>
@@ -1514,6 +1574,9 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
                 onToggleFavorite={() => toggleFavorite(tool)}
                 onSelect={() => { setTool(tool); setFibDropdownOpen(false); }}
               />
+            ))}
+            {FIB_COMING_SOON.map((item) => (
+              <ComingSoonMenuItem key={item.label} {...item} />
             ))}
           </div>
         )}
@@ -1730,6 +1793,9 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
                 onSelect={() => { setTool(tool); setPositionRangeDropdownOpen(false); }}
               />
             ))}
+            {FORECASTING_COMING_SOON.map((item) => (
+              <ComingSoonMenuItem key={item.label} {...item} />
+            ))}
             <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)] select-none">
               Volume Based
             </div>
@@ -1744,6 +1810,9 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
                 onToggleFavorite={() => toggleFavorite(tool)}
                 onSelect={() => { setTool(tool); setPositionRangeDropdownOpen(false); }}
               />
+            ))}
+            {VOLUME_COMING_SOON.map((item) => (
+              <ComingSoonMenuItem key={item.label} {...item} />
             ))}
             <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)] select-none">
               Measures
