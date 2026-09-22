@@ -67,8 +67,18 @@ export const FIB_TOOLS: readonly FibTool[] = ['fibonacci', 'fibExtension', 'tren
 export type GannTool = 'gannFan' | 'gannBox' | 'gannSquare';
 export const GANN_TOOLS: readonly GannTool[] = ['gannFan', 'gannBox', 'gannSquare'];
 
+// The "Patterns" group — ABCD, XABCD, Cypher, Head & Shoulders, Three Drives —
+// grouped under one dropdown just like Trend Line/Shapes/.../Gann. NOTE: the
+// Patterns flyout also surfaces a "Triangle" entry, but that reuses the
+// existing Geometric/Shapes 'triangle' tool verbatim (same ShapeTool, same
+// TriangleDrawing) rather than being its own PatternTool — see PATTERN_ITEMS
+// in DrawingToolbar.tsx.
+export type PatternTool = 'abcd' | 'xabcd' | 'cypher' | 'threeDrives' | 'headShoulders';
+export const PATTERN_TOOLS: readonly PatternTool[] = ['abcd', 'xabcd', 'cypher', 'threeDrives', 'headShoulders'];
+
 export type DrawingTool =
-  | CursorMode | TrendTool | ShapeTool | AnnotationTool | ActionTool | PositionRangeTool | FibTool | GannTool;
+  | CursorMode | TrendTool | ShapeTool | AnnotationTool | ActionTool | PositionRangeTool | FibTool | GannTool
+  | PatternTool;
 
 export type LineDash = 'solid' | 'dashed' | 'dotted';
 
@@ -585,6 +595,22 @@ export interface DisjointChannelDrawing extends LineStyle {
   priceB2: number; timeB2: number;
 }
 
+// Harmonic/chart pattern tools (ABCD, XABCD, Cypher, Three Drives, Head &
+// Shoulders): all five share one points[] shape — same geometry PathDrawing
+// uses — rather than named price1..priceN fields, so the generic Path/Polyline
+// render/hitTest/vertex-drag code in DrawingCanvas.tsx can be reused as-is for
+// any point count (4 for ABCD, 5 for XABCD/Cypher/Head & Shoulders, 6 for
+// Three Drives) instead of needing bespoke per-tool geometry handling like
+// TriangleDrawing/DisjointChannelDrawing above. Only the `type` tag varies;
+// per-type point-count/labels/ratio-legs are resolved in DrawingCanvas.tsx.
+export type PatternType = 'abcd' | 'xabcd' | 'cypher' | 'threeDrives' | 'headShoulders';
+
+export interface PatternDrawing extends LineStyle {
+  id: string;
+  type: PatternType;
+  points: { price: number; time: number }[];
+}
+
 export type Drawing =
   | TrendLineDrawing
   | RayDrawing
@@ -630,7 +656,8 @@ export type Drawing =
   | ChannelDrawing
   | RegressionDrawing
   | FlatChannelDrawing
-  | DisjointChannelDrawing;
+  | DisjointChannelDrawing
+  | PatternDrawing;
 
 interface DrawingState {
   activeTool: DrawingTool;
@@ -649,6 +676,8 @@ interface DrawingState {
   lastFibTool: FibTool;
   // Same idea for the Gann group's dropdown button icon.
   lastGannTool: GannTool;
+  // Same idea for the Patterns group's dropdown button icon.
+  lastPatternTool: PatternTool;
   // Cursor-group tools keep the chart interactive; the legacy magic snap mode is not exposed.
   magnetEnabled: boolean;
   // "Stay in Drawing Mode" — off (default) matches TradingView: finishing a
@@ -721,6 +750,10 @@ function isGannTool(tool: DrawingTool): tool is GannTool {
   return (GANN_TOOLS as readonly string[]).includes(tool);
 }
 
+function isPatternTool(tool: DrawingTool): tool is PatternTool {
+  return (PATTERN_TOOLS as readonly string[]).includes(tool);
+}
+
 // Capped so a long session doesn't grow this unboundedly.
 const MAX_HISTORY = 50;
 
@@ -754,6 +787,7 @@ export const useDrawingStore = create<DrawingState>((set) => ({
   lastPositionRangeTool: 'longPosition',
   lastFibTool: 'fibonacci',
   lastGannTool: 'gannFan',
+  lastPatternTool: 'abcd',
   magnetEnabled: false,
   keepToolActive: false,
   drawingsLocked: false,
@@ -774,6 +808,7 @@ export const useDrawingStore = create<DrawingState>((set) => ({
       const positionRangeGroup = isPositionRangeTool(tool);
       const fibGroup = isFibTool(tool);
       const gannGroup = isGannTool(tool);
+      const patternGroup = isPatternTool(tool);
       // Re-clicking the active drawing tool deselects it back to the last cursor mode.
       const activeTool = !cursorGroup && s.activeTool === tool ? s.lastCursorMode : tool;
       return {
@@ -785,6 +820,7 @@ export const useDrawingStore = create<DrawingState>((set) => ({
         lastPositionRangeTool: positionRangeGroup ? tool : s.lastPositionRangeTool,
         lastFibTool: fibGroup ? tool : s.lastFibTool,
         lastGannTool: gannGroup ? tool : s.lastGannTool,
+        lastPatternTool: patternGroup ? tool : s.lastPatternTool,
         magnetEnabled: cursorGroup ? false : s.magnetEnabled,
       };
     }),

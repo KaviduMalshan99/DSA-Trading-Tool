@@ -8,6 +8,7 @@ import {
   POSITION_RANGE_TOOLS,
   FIB_TOOLS,
   GANN_TOOLS,
+  PATTERN_TOOLS,
   type CursorMode,
   type TrendTool,
   type ShapeTool,
@@ -15,6 +16,7 @@ import {
   type PositionRangeTool,
   type FibTool,
   type GannTool,
+  type PatternTool,
   type DrawingTool,
 } from '../../store/drawingStore';
 
@@ -434,6 +436,70 @@ function GannSquareIcon() {
   );
 }
 
+// ABCD: a simple 4-point zigzag (harmonic pattern's basic leg structure) with
+// a dot at each vertex, echoing the tool's own points[] anchors.
+function ABCDIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinejoin="round">
+      <path d="M4 18 L9 6 L14 15 L20 4" />
+      {[[4, 18], [9, 6], [14, 15], [20, 4]].map(([cx, cy]) => (
+        <circle key={`${cx}-${cy}`} cx={cx} cy={cy} r="1.6" fill="currentColor" stroke="none" />
+      ))}
+    </svg>
+  );
+}
+
+// XABCD: same zigzag idea as ABCD, one extra leading point/leg (X).
+function XABCDIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinejoin="round">
+      <path d="M3 14 L8 4 L12 17 L16 7 L21 19" />
+      {[[3, 14], [8, 4], [12, 17], [16, 7], [21, 19]].map(([cx, cy]) => (
+        <circle key={`${cx}-${cy}`} cx={cx} cy={cy} r="1.6" fill="currentColor" stroke="none" />
+      ))}
+    </svg>
+  );
+}
+
+// Cypher: geometrically the same 5-point XABCD shape (see CypherDrawing's
+// reuse of the XABCD render/hitTest/drag) — a differently-proportioned
+// zigzag so the two icons are still visually distinct in the flyout.
+function CypherIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinejoin="round">
+      <path d="M3 10 L9 3 L7 16 L18 8 L21 20" />
+      {[[3, 10], [9, 3], [7, 16], [18, 8], [21, 20]].map(([cx, cy]) => (
+        <circle key={`${cx}-${cy}`} cx={cx} cy={cy} r="1.6" fill="currentColor" stroke="none" />
+      ))}
+    </svg>
+  );
+}
+
+// Three Drives: a 6-point, 3-wave zigzag — three successive "drives" up (or
+// down), each with a retracement in between.
+function ThreeDrivesIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinejoin="round">
+      <path d="M3 20 L7 6 L10 15 L14 4 L17 15 L21 3" />
+      {[[3, 20], [7, 6], [10, 15], [14, 4], [17, 15], [21, 3]].map(([cx, cy]) => (
+        <circle key={`${cx}-${cy}`} cx={cx} cy={cy} r="1.4" fill="currentColor" stroke="none" />
+      ))}
+    </svg>
+  );
+}
+
+// Head & Shoulders: the classic three-hump silhouette (left shoulder, taller
+// head, right shoulder) plus a dashed neckline through the two troughs —
+// echoing the tool's derived-at-render-time neckline.
+function HeadShouldersIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinejoin="round">
+      <path d="M2 18 L5 10 L8 16 L12 3 L16 16 L19 10 L22 18" />
+      <line x1="6" y1="16.5" x2="18" y2="15.5" strokeWidth="1" strokeDasharray="2 2" />
+    </svg>
+  );
+}
+
 function TextIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round">
@@ -845,6 +911,29 @@ const GANN_ITEMS: { tool: GannTool; label: string }[] = [
   { tool: 'gannSquare', label: 'Gann Square' },
 ];
 
+// The Patterns group's flyout — same flat-list pattern as Fibonacci/Gann,
+// plus a 'triangle' entry. NOTE: 'triangle' is NOT a PatternTool — it's the
+// existing ShapeTool/TriangleDrawing, referenced here (not re-implemented) so
+// selecting it from either flyout activates the exact same tool. PATTERN_ICON
+// therefore needs a 'triangle' key too, reusing SHAPE_ICON's TriangleIcon.
+const PATTERN_ICON: Record<PatternTool | 'triangle', React.ReactNode> = {
+  abcd: <ABCDIcon />,
+  xabcd: <XABCDIcon />,
+  cypher: <CypherIcon />,
+  headShoulders: <HeadShouldersIcon />,
+  threeDrives: <ThreeDrivesIcon />,
+  triangle: <TriangleIcon />,
+};
+
+const PATTERN_ITEMS: { tool: PatternTool | 'triangle'; label: string }[] = [
+  { tool: 'abcd', label: 'ABCD' },
+  { tool: 'xabcd', label: 'XABCD' },
+  { tool: 'cypher', label: 'Cypher' },
+  { tool: 'headShoulders', label: 'Head and Shoulders' },
+  { tool: 'threeDrives', label: 'Three Drives' },
+  { tool: 'triangle', label: 'Triangle' },
+];
+
 const MEASURE_TOOLS: ToolBtn[] = [
   { tool: 'measure', label: 'Measure', icon: <MeasureIcon /> },
   { tool: 'zoomIn',  label: 'Zoom In', icon: <ZoomInIcon /> },
@@ -860,6 +949,7 @@ export const ALL_TOOL_ICON: Partial<Record<DrawingTool, React.ReactNode>> = {
   ...POSITION_RANGE_ICON,
   ...FIB_ICON,
   ...GANN_ICON,
+  ...PATTERN_ICON,
 };
 
 export const ALL_TOOL_LABEL: Partial<Record<DrawingTool, string>> = {
@@ -869,6 +959,7 @@ export const ALL_TOOL_LABEL: Partial<Record<DrawingTool, string>> = {
   ...Object.fromEntries(POSITION_RANGE_ITEMS.map(({ tool, label }) => [tool, label])),
   ...Object.fromEntries(FIB_ITEMS.map(({ tool, label }) => [tool, label])),
   ...Object.fromEntries(GANN_ITEMS.map(({ tool, label }) => [tool, label])),
+  ...Object.fromEntries(PATTERN_ITEMS.map(({ tool, label }) => [tool, label])),
 };
 
 // One row in a dropdown flyout (Trend Line / Shapes / Annotation / Prediction
@@ -911,7 +1002,7 @@ function FavoritableMenuItem({
 export const DrawingToolbar = memo(function DrawingToolbar() {
   const {
     activeTool, lastCursorMode, lastTrendTool, lastShapeTool, lastAnnotationTool, lastPositionRangeTool, lastFibTool,
-    lastGannTool,
+    lastGannTool, lastPatternTool,
     drawings, setTool, selectedId, deleteDrawing, clearAll,
     keepToolActive, drawingsLocked, drawingsHidden, toggleKeepToolActive, toggleDrawingsLocked, toggleDrawingsHidden,
     favoriteTools, favoritesBarOpen, toggleFavorite, toggleFavoritesBar,
@@ -923,6 +1014,7 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
   const [positionRangeDropdownOpen, setPositionRangeDropdownOpen] = useState(false);
   const [fibDropdownOpen, setFibDropdownOpen] = useState(false);
   const [gannDropdownOpen, setGannDropdownOpen] = useState(false);
+  const [patternDropdownOpen, setPatternDropdownOpen] = useState(false);
   const [deleteMenuOpen, setDeleteMenuOpen] = useState(false);
   const cursorGroupRef = useRef<HTMLDivElement>(null);
   const trendGroupRef = useRef<HTMLDivElement>(null);
@@ -931,6 +1023,7 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
   const positionRangeGroupRef = useRef<HTMLDivElement>(null);
   const fibGroupRef = useRef<HTMLDivElement>(null);
   const gannGroupRef = useRef<HTMLDivElement>(null);
+  const patternGroupRef = useRef<HTMLDivElement>(null);
   const deleteGroupRef = useRef<HTMLDivElement>(null);
 
   const isCursorGroupActive = (CURSOR_MODES as readonly string[]).includes(activeTool);
@@ -940,10 +1033,14 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
   const isPositionRangeGroupActive = (POSITION_RANGE_TOOLS as readonly string[]).includes(activeTool);
   const isFibGroupActive = (FIB_TOOLS as readonly string[]).includes(activeTool);
   const isGannGroupActive = (GANN_TOOLS as readonly string[]).includes(activeTool);
+  // 'triangle' is a ShapeTool (see PATTERN_ITEMS' note above), so selecting it
+  // from the Patterns flyout highlights the Shapes group button, not this one
+  // — kept simple rather than having two group buttons light up for one tool.
+  const isPatternGroupActive = (PATTERN_TOOLS as readonly string[]).includes(activeTool);
 
   useEffect(() => {
     if (!cursorDropdownOpen && !trendDropdownOpen && !shapeDropdownOpen && !annotationDropdownOpen &&
-        !positionRangeDropdownOpen && !fibDropdownOpen && !gannDropdownOpen && !deleteMenuOpen) return;
+        !positionRangeDropdownOpen && !fibDropdownOpen && !gannDropdownOpen && !patternDropdownOpen && !deleteMenuOpen) return;
     const onOutsideMouseDown = (e: MouseEvent) => {
       const target = e.target as Node;
       if (cursorGroupRef.current && !cursorGroupRef.current.contains(target)) setCursorDropdownOpen(false);
@@ -953,11 +1050,12 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
       if (positionRangeGroupRef.current && !positionRangeGroupRef.current.contains(target)) setPositionRangeDropdownOpen(false);
       if (fibGroupRef.current && !fibGroupRef.current.contains(target)) setFibDropdownOpen(false);
       if (gannGroupRef.current && !gannGroupRef.current.contains(target)) setGannDropdownOpen(false);
+      if (patternGroupRef.current && !patternGroupRef.current.contains(target)) setPatternDropdownOpen(false);
       if (deleteGroupRef.current && !deleteGroupRef.current.contains(target)) setDeleteMenuOpen(false);
     };
     document.addEventListener('mousedown', onOutsideMouseDown);
     return () => document.removeEventListener('mousedown', onOutsideMouseDown);
-  }, [cursorDropdownOpen, trendDropdownOpen, shapeDropdownOpen, annotationDropdownOpen, positionRangeDropdownOpen, fibDropdownOpen, gannDropdownOpen, deleteMenuOpen]);
+  }, [cursorDropdownOpen, trendDropdownOpen, shapeDropdownOpen, annotationDropdownOpen, positionRangeDropdownOpen, fibDropdownOpen, gannDropdownOpen, patternDropdownOpen, deleteMenuOpen]);
 
   return (
     <div className="flex flex-col items-center gap-1 py-2 px-1 bg-[var(--bg-panel)] border-r border-[var(--border-color-soft)] select-none"
@@ -1331,6 +1429,59 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
                 favorite={favoriteTools.includes(tool)}
                 onToggleFavorite={() => toggleFavorite(tool)}
                 onSelect={() => { setTool(tool); setGannDropdownOpen(false); }}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="relative group" ref={patternGroupRef}>
+        <button
+          title="Pattern tools"
+          onClick={() => { setTool(lastPatternTool); setPatternDropdownOpen(false); }}
+          className={`
+            relative w-9 h-9 flex items-center justify-center rounded transition-colors [&_svg]:w-5 [&_svg]:h-5
+            ${isPatternGroupActive
+              ? 'bg-[var(--accent)] text-white'
+              : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'}
+          `}
+        >
+          {PATTERN_ICON[lastPatternTool]}
+        </button>
+        <button
+          aria-label="Pattern tool options"
+          title="Pattern tool options"
+          onClick={() => setPatternDropdownOpen((v) => !v)}
+          className={`
+            absolute bottom-0 right-0 w-3 h-3 flex items-center justify-center
+            opacity-0 group-hover:opacity-100 transition-opacity
+            ${isPatternGroupActive ? 'text-white' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'}
+          `}
+        >
+          <CornerArrow />
+        </button>
+
+        {patternDropdownOpen && (
+          <div
+            className="absolute left-full top-0 ml-1 py-1 overflow-hidden"
+            style={{
+              zIndex: 100,
+              width: 240,
+              background: 'var(--bg-panel-alt)',
+              borderRadius: 4,
+              boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
+            }}
+          >
+            {PATTERN_ITEMS.map(({ tool, label }) => (
+              <FavoritableMenuItem
+                key={tool}
+                tool={tool}
+                label={label}
+                icon={PATTERN_ICON[tool]}
+                active={activeTool === tool}
+                favorite={favoriteTools.includes(tool)}
+                onToggleFavorite={() => toggleFavorite(tool)}
+                onSelect={() => { setTool(tool); setPatternDropdownOpen(false); }}
               />
             ))}
           </div>

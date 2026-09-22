@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback, useState, memo } from 'react';
 import type { IChartApi, ISeriesApi } from 'lightweight-charts';
-import { useDrawingStore, type Drawing, type DrawingTool, type FibTool } from '../../store/drawingStore';
+import { useDrawingStore, type Drawing, type DrawingTool, type FibTool, type PatternType } from '../../store/drawingStore';
 import { useMarketStore } from '../../store/marketStore';
 import { toChartTimeSeconds } from '../../utils/chartTime';
 import { computeSessionVWAPFromCandles } from '../../utils/klineAnalytics';
@@ -21,6 +21,7 @@ const CAPTURE_TOOLS = new Set<DrawingTool>([
   'text', 'priceNote', 'pin', 'flagMark', 'priceLabel', 'signpost', 'measure', 'zoomIn',
   'longPosition', 'shortPosition', 'anchoredVwap', 'priceRange', 'dateRange', 'datePriceRange',
   'gannFan', 'gannBox', 'gannSquare',
+  'abcd', 'xabcd', 'cypher', 'threeDrives', 'headShoulders',
 ]);
 
 // Number of clicks each drawing tool needs before it's finalized. Horizontal
@@ -77,6 +78,24 @@ const CLICKS_REQUIRED: Partial<Record<DrawingTool, number>> = {
   gannFan: 2,
   gannBox: 2,
   gannSquare: 2,
+  abcd: 4,
+  xabcd: 5,
+  cypher: 5,
+  headShoulders: 5,
+  threeDrives: 6,
+};
+
+// Point-count and per-point letter labels for the Patterns group's connected-
+// line tools — resolves both CLICKS_REQUIRED's count and the render branch's
+// label set from one place. Head & Shoulders' troughs (indices 1/3) are
+// labeled lightly (see the render branch) so they're left as '' here rather
+// than given a letter.
+const PATTERN_POINT_LABELS: Record<PatternType, string[]> = {
+  abcd: ['A', 'B', 'C', 'D'],
+  xabcd: ['X', 'A', 'B', 'C', 'D'],
+  cypher: ['X', 'A', 'B', 'C', 'D'],
+  threeDrives: ['1', '2', '3', '4', '5', '6'],
+  headShoulders: ['LS', '', 'H', '', 'RS'],
 };
 
 const DOT_CURSOR = `url("data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5" fill="#111827"/><circle cx="12" cy="12" r="2.5" fill="#ffffff"/></svg>')}" ) 12 12, pointer`;
@@ -1484,6 +1503,94 @@ function renderDrawing(
       }
     }
 
+  } else if (d.type === 'abcd' || d.type === 'xabcd' || d.type === 'cypher' ||
+      d.type === 'threeDrives' || d.type === 'headShoulders') {
+    // Pattern tools (ABCD/XABCD/Cypher/Three Drives/Head & Shoulders): same
+    // points[] -> screen -> moveTo/lineTo connected-line approach as
+    // Path/Polyline above (see that branch), plus per-point letter labels and
+    // leg-ratio labels. Kept as its own branch (not folded into the Path
+    // branch above) so it never picks up Path's arrowhead and so the label/
+    // ratio/neckline extras stay scoped to these 5 types only.
+    const pts = d.points
+      .map((p) => ({ x: timeToX(chart, p.time), y: priceToY(series, p.price) }))
+      .filter((p): p is { x: number; y: number } => p.x != null && p.y != null);
+    if (pts.length < 2) { ctx.restore(); return; }
+
+    const baseColor = d.color ?? '#2196F3';
+    const lineColor = hexToRgba(baseColor, d.opacity ?? 100);
+    const dashPattern: number[] = d.dash === 'dashed' ? [8, 4] : d.dash === 'dotted' ? [2, 3] : [];
+
+    // Head & Shoulders' neckline: derived at render time from the two trough
+    // points (index 1 and 3), never stored — same "derive, don't store"
+    // approach Gann Fan's secondary rays and Double Curve's control points use.
+    if (d.type === 'headShoulders' && pts.length >= 4) {
+      const ext = extendLineToRect(pts[1].x, pts[1].y, pts[3].x, pts[3].y, W, H);
+      if (ext) {
+        ctx.strokeStyle = eraserHover ? '#f85149' : hexToRgba(baseColor, (d.opacity ?? 100) * 0.7);
+        ctx.lineWidth = 1;
+        ctx.setLineDash([5, 4]);
+        ctx.beginPath();
+        ctx.moveTo(ext.ax, ext.ay);
+        ctx.lineTo(ext.bx, ext.by);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    }
+
+    ctx.strokeStyle = eraserHover ? '#f85149' : lineColor;
+    ctx.lineWidth = (d.width ?? 1.5) + (selected ? 0.5 : 0);
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.setLineDash(dashPattern);
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // point dots + letter labels (A/B/C/D, X/A/B/C/D, 1..6, or LS/H/RS)
+    const letters = PATTERN_POINT_LABELS[d.type];
+    ctx.fillStyle = eraserHover ? '#f85149' : baseColor;
+    ctx.font = 'bold 11px sans-serif';
+    for (let i = 0; i < pts.length; i++) {
+      ctx.beginPath();
+      ctx.arc(pts[i].x, pts[i].y, selected ? 3.5 : 3, 0, Math.PI * 2);
+      ctx.fill();
+      const letter = letters[i];
+      if (letter) {
+        ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+        ctx.lineWidth = 3;
+        ctx.strokeText(letter, pts[i].x + 6, pts[i].y - 8);
+        ctx.fillText(letter, pts[i].x + 6, pts[i].y - 8);
+      }
+    }
+
+    // leg-ratio labels (BC/AB, CD/BC, ...) at each segment's midpoint, computed
+    // in PRICE space (same abs-price-diff approach Info Line's label uses) —
+    // the first leg has no previous leg to ratio against, so it's skipped.
+    if (d.type !== 'headShoulders') {
+      ctx.font = 'bold 11px sans-serif';
+      for (let i = 1; i < d.points.length - 1; i++) {
+        const prevLeg = Math.abs(d.points[i].price - d.points[i - 1].price);
+        const leg = Math.abs(d.points[i + 1].price - d.points[i].price);
+        if (prevLeg === 0) continue;
+        const ratio = leg / prevLeg;
+        const label = ratio.toFixed(3);
+
+        const midX = (pts[i].x + pts[i + 1].x) / 2, midY = (pts[i].y + pts[i + 1].y) / 2;
+        const textW = ctx.measureText(label).width;
+        const boxW = textW + 10, boxH = 16;
+        const bx = Math.min(Math.max(midX - boxW / 2, 4), W - boxW - 4);
+        const by = midY - boxH - 6;
+        ctx.fillStyle = eraserHover ? '#f85149' : baseColor;
+        ctx.fillRect(bx, by, boxW, boxH);
+        ctx.fillStyle = '#ffffff';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(label, bx + 5, by + boxH / 2 + 1);
+        ctx.textBaseline = 'alphabetic';
+      }
+    }
+
   } else if (d.type === 'arrow') {
     const x1 = timeToX(chart, d.time1);
     const y1 = priceToY(series, d.price1);
@@ -2640,7 +2747,8 @@ function hitTest(
       hitTestQuadratic(mx, my, x2, y2, c2.x, c2.y, x3, y3, TOL);
   }
 
-  if (d.type === 'path' || d.type === 'polyline' || d.type === 'brush' || d.type === 'highlighter') {
+  if (d.type === 'path' || d.type === 'polyline' || d.type === 'brush' || d.type === 'highlighter' ||
+      d.type === 'abcd' || d.type === 'xabcd' || d.type === 'cypher' || d.type === 'threeDrives' || d.type === 'headShoulders') {
     const pts = d.points
       .map((p) => ({ x: timeToX(chart, p.time), y: priceToY(series, p.price) }))
       .filter((p): p is { x: number; y: number } => p.x != null && p.y != null);
@@ -2904,8 +3012,9 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
   const rafRef       = useRef(0);
 
   // drawing-in-progress state stored in refs so we don't re-render mid-draw.
-  // Up to 4 anchor points are tracked — most tools use 1-2, Parallel Channel/
-  // Flat Top-Bottom use 3, Disjoint Channel uses all 4.
+  // Up to 6 anchor points are tracked — most tools use 1-2, Parallel Channel/
+  // Flat Top-Bottom use 3, Disjoint Channel uses 4, and the Patterns group's
+  // XABCD/Cypher/Head & Shoulders use 5 and Three Drives uses all 6.
   const drawingRef = useRef<{
     active: boolean;
     step: number;
@@ -2913,7 +3022,12 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
     x2: number; y2: number;
     x3: number; y3: number;
     x4: number; y4: number;
-  }>({ active: false, step: 0, x1: 0, y1: 0, x2: 0, y2: 0, x3: 0, y3: 0, x4: 0, y4: 0 });
+    x5: number; y5: number;
+    x6: number; y6: number;
+  }>({
+    active: false, step: 0, x1: 0, y1: 0, x2: 0, y2: 0, x3: 0, y3: 0, x4: 0, y4: 0,
+    x5: 0, y5: 0, x6: 0, y6: 0,
+  });
 
   // Path/Brush use a variable-length point list instead of the fixed 1-3 point
   // scheme above. Path grows one point per click and finishes on double-click;
@@ -3102,7 +3216,8 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
             dd = { ...d, price1: drag.price1, time1: drag.time1, price2: drag.price2, time2: drag.time2, price3: drag.price3, time3: drag.time3 };
           } else if (drag.kind === 'trendFibExtension' && d.type === 'trendFibExtension') {
             dd = { ...d, price1: drag.price1, time1: drag.time1, price2: drag.price2, time2: drag.time2, price3: drag.price3, time3: drag.time3 };
-          } else if (drag.kind === 'path' && (d.type === 'path' || d.type === 'polyline')) {
+          } else if (drag.kind === 'path' && (d.type === 'path' || d.type === 'polyline' ||
+              d.type === 'abcd' || d.type === 'xabcd' || d.type === 'cypher' || d.type === 'threeDrives' || d.type === 'headShoulders')) {
             dd = { ...d, points: drag.points };
           } else if (drag.kind === 'brush' && (d.type === 'brush' || d.type === 'highlighter')) {
             dd = { ...d, points: drag.points };
@@ -3141,6 +3256,10 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
         const time3  = xToTime(chart, ds.x3);
         const price4 = yToPrice(series, ds.y4);
         const time4  = xToTime(chart, ds.x4);
+        const price5 = yToPrice(series, ds.y5);
+        const time5  = xToTime(chart, ds.x5);
+        const price6 = yToPrice(series, ds.y6);
+        const time6  = xToTime(chart, ds.x6);
         if (price1 != null && time1 != null) {
           let preview: Drawing | null = null;
           if (tool === 'trendline' && price2 != null && time2 != null)
@@ -3196,6 +3315,17 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
               priceB1: price3 ?? price2, timeB1: time3 ?? time2,
               priceB2: price4 ?? price3 ?? price2, timeB2: time4 ?? time3 ?? time2,
             };
+          else if (tool === 'abcd' || tool === 'xabcd' || tool === 'cypher' || tool === 'threeDrives' || tool === 'headShoulders') {
+            const partialPrices = [price1, price2, price3, price4, price5, price6];
+            const partialTimes = [time1, time2, time3, time4, time5, time6];
+            const partialPoints: { price: number; time: number }[] = [];
+            for (let i = 0; i < partialPrices.length; i++) {
+              const p = partialPrices[i], t = partialTimes[i];
+              if (p == null || t == null) break;
+              partialPoints.push({ price: p, time: t });
+            }
+            if (partialPoints.length >= 2) preview = { id: '__preview', type: tool, points: partialPoints };
+          }
           else if (tool === 'rotatedRectangle' && price2 != null && time2 != null)
             preview = { id: '__preview', type: 'rotatedRectangle', price1, time1, price2, time2,
               price3: price3 ?? price2, time3: time3 ?? time2 };
@@ -3586,13 +3716,15 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
       // can finalize immediately below)
       ds.active = true;
       ds.step   = 1;
-      ds.x1 = ds.x2 = ds.x3 = ds.x4 = px;
-      ds.y1 = ds.y2 = ds.y3 = ds.y4 = py;
+      ds.x1 = ds.x2 = ds.x3 = ds.x4 = ds.x5 = ds.x6 = px;
+      ds.y1 = ds.y2 = ds.y3 = ds.y4 = ds.y5 = ds.y6 = py;
     } else {
       ds.step += 1;
       if (ds.step === 2) { ds.x2 = px; ds.y2 = py; }
       else if (ds.step === 3) { ds.x3 = px; ds.y3 = py; }
       else if (ds.step === 4) { ds.x4 = px; ds.y4 = py; }
+      else if (ds.step === 5) { ds.x5 = px; ds.y5 = py; }
+      else if (ds.step === 6) { ds.x6 = px; ds.y6 = py; }
     }
 
     if (ds.step < required) {
@@ -3612,6 +3744,10 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
     const time3  = xToTime(chart, ds.x3);
     const price4 = yToPrice(series, ds.y4);
     const time4  = xToTime(chart, ds.x4);
+    const price5 = yToPrice(series, ds.y5);
+    const time5  = xToTime(chart, ds.x5);
+    const price6 = yToPrice(series, ds.y6);
+    const time6  = xToTime(chart, ds.x6);
 
     if (price1 == null || time1 == null) return;
 
@@ -3666,6 +3802,22 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
         priceA1: price1, timeA1: time1, priceA2: price2, timeA2: time2,
         priceB1: price3, timeB1: time3, priceB2: price4, timeB2: time4,
       });
+    } else if (tool === 'abcd' || tool === 'xabcd' || tool === 'cypher' || tool === 'threeDrives' || tool === 'headShoulders') {
+      // Patterns group: fixed-N-click capture (mechanically the same
+      // extension of drawingRef/CLICKS_REQUIRED that took DisjointChannel
+      // from 3 to 4 points, taken further to 5/6), assembled into points[]
+      // (not named price1..priceN fields) so render/hitTest/vertex-drag can
+      // reuse the generic Path/Polyline code paths for any point count.
+      const need = CLICKS_REQUIRED[tool] ?? 4;
+      const allPrices = [price1, price2, price3, price4, price5, price6];
+      const allTimes = [time1, time2, time3, time4, time5, time6];
+      const points: { price: number; time: number }[] = [];
+      for (let i = 0; i < need; i++) {
+        const p = allPrices[i], t = allTimes[i];
+        if (p == null || t == null) return;
+        points.push({ price: p, time: t });
+      }
+      addDrawing({ id, type: tool, points });
     } else if (tool === 'regression') {
       if (time2 == null) return;
       addDrawing({ id, type: 'regression', time1, time2 });
@@ -4232,11 +4384,14 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
             Math.hypot(x - x1, y - y2) < 8 || Math.hypot(x - x2, y - y1) < 8;
           if (nearCorner) { hoverCursor = 'nwse-resize'; break; }
           if (hitTest(d, x, y, chart, series, candlesRef.current)) { hoverCursor = 'move'; break; }
-        } else if (d.type === 'path' || d.type === 'polyline' || d.type === 'brush' || d.type === 'highlighter') {
+        } else if (d.type === 'path' || d.type === 'polyline' || d.type === 'brush' || d.type === 'highlighter' ||
+            d.type === 'abcd' || d.type === 'xabcd' || d.type === 'cypher' || d.type === 'threeDrives' || d.type === 'headShoulders') {
           const pts = d.points
             .map((p) => ({ x: timeToX(chart, p.time), y: priceToY(series, p.price) }))
             .filter((p): p is { x: number; y: number } => p.x != null && p.y != null);
-          const nearVertex = (d.type === 'path' || d.type === 'polyline') && pts.some((p) => Math.hypot(x - p.x, y - p.y) < 8);
+          const isPathLikeHover = d.type === 'path' || d.type === 'polyline' ||
+            d.type === 'abcd' || d.type === 'xabcd' || d.type === 'cypher' || d.type === 'threeDrives' || d.type === 'headShoulders';
+          const nearVertex = isPathLikeHover && pts.some((p) => Math.hypot(x - p.x, y - p.y) < 8);
           if (nearVertex) { hoverCursor = 'grab'; break; }
           if (hitTest(d, x, y, chart, series, candlesRef.current)) { hoverCursor = 'move'; break; }
         } else if (d.type === 'fibonacci' || d.type === 'fibExtension') {
@@ -4494,7 +4649,8 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           return;
         }
 
-        if (d.type === 'path' || d.type === 'polyline' || d.type === 'brush' || d.type === 'highlighter') {
+        if (d.type === 'path' || d.type === 'polyline' || d.type === 'brush' || d.type === 'highlighter' ||
+            d.type === 'abcd' || d.type === 'xabcd' || d.type === 'cypher' || d.type === 'threeDrives' || d.type === 'headShoulders') {
           const screenPts = d.points
             .map((p) => ({ x: timeToX(chart, p.time), y: priceToY(series, p.price) }))
             .filter((p): p is { x: number; y: number } => p.x != null && p.y != null);
@@ -4504,8 +4660,11 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           // Brush/Highlighter are freehand and only support moving the whole
           // stroke. Polyline/Highlighter reuse the 'path'/'brush' drag kinds
           // respectively — the drag logic only cares about vertex-vs-move
-          // capability, not the exact original type.
-          const isPathLike = d.type === 'path' || d.type === 'polyline';
+          // capability, not the exact original type. The 5 Patterns-group
+          // tools (ABCD/XABCD/Cypher/Three Drives/Head & Shoulders) are
+          // vertex-draggable like Path/Polyline, so they reuse the 'path' kind.
+          const isPathLike = d.type === 'path' || d.type === 'polyline' ||
+            d.type === 'abcd' || d.type === 'xabcd' || d.type === 'cypher' || d.type === 'threeDrives' || d.type === 'headShoulders';
           let vertexIndex: number | null = null;
           if (isPathLike) {
             for (let vi = 0; vi < screenPts.length; vi++) {
