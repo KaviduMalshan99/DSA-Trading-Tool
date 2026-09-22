@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, memo } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, memo } from 'react';
 import {
   useDrawingStore,
   CURSOR_MODES,
@@ -802,6 +802,47 @@ function ComingSoonIcon() {
   );
 }
 
+// Shared flyout panel className/style — overflow-y-auto so a tall group
+// (e.g. Shapes' Arrows section) scrolls instead of clipping. FLYOUT_CLASS_BOTTOM
+// is for the Delete menu, which anchors its panel from the bottom instead of
+// the top. maxHeight is NOT included here: each flyout is `position: absolute;
+// top: 0` relative to its own trigger group, which sits at a different
+// vertical offset in the rail, so a single viewport-relative constant either
+// clips nothing (too tall, runs off-screen) or clips everything (too short).
+// See useFlyoutMaxHeight below, which computes the real available height per
+// flyout from its trigger's on-screen position.
+const FLYOUT_CLASS_TOP = "absolute left-full top-0 ml-1 py-1 overflow-y-auto";
+const FLYOUT_CLASS_BOTTOM = "absolute left-full bottom-0 ml-1 py-1 overflow-y-auto";
+const FLYOUT_STYLE_BASE = {
+  zIndex: 100,
+  background: 'var(--bg-panel-alt)',
+  borderRadius: 4,
+  boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
+} as const;
+
+// Conservative fallback used for the single render frame before the effect
+// below measures the trigger's real position (and if the ref is ever unset).
+const FLYOUT_MAX_HEIGHT_FALLBACK = 'calc(100vh - 160px)';
+
+// Computes a maxHeight (px) that exactly fits the viewport space available to
+// a flyout given its trigger group's on-screen position, so a tall panel
+// scrolls instead of clipping or running off the edge of the screen.
+// Re-measures whenever the flyout opens. `anchor` must match the flyout's own
+// CSS anchor: 'top' (FLYOUT_CLASS_TOP, grows downward — space is between the
+// trigger's top and the bottom of the viewport) or 'bottom' (FLYOUT_CLASS_BOTTOM,
+// grows upward — space is between the top of the viewport and the trigger's
+// bottom edge).
+function useFlyoutMaxHeight(open: boolean, groupRef: React.RefObject<HTMLDivElement>, anchor: 'top' | 'bottom' = 'top') {
+  const [maxHeight, setMaxHeight] = useState<string>(FLYOUT_MAX_HEIGHT_FALLBACK);
+  useLayoutEffect(() => {
+    if (!open || !groupRef.current) return;
+    const rect = groupRef.current.getBoundingClientRect();
+    const available = anchor === 'top' ? window.innerHeight - rect.top - 8 : rect.bottom - 8;
+    setMaxHeight(`${Math.max(available, 120)}px`);
+  }, [open, groupRef, anchor]);
+  return maxHeight;
+}
+
 // Small folded-corner triangle — TradingView's indicator that a toolbar button
 // has a flyout list of related tools. Hidden until the button is hovered.
 function CornerArrow() {
@@ -1199,6 +1240,17 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
   const cyclesGroupRef = useRef<HTMLDivElement>(null);
   const deleteGroupRef = useRef<HTMLDivElement>(null);
 
+  const cursorFlyoutMaxHeight = useFlyoutMaxHeight(cursorDropdownOpen, cursorGroupRef);
+  const trendFlyoutMaxHeight = useFlyoutMaxHeight(trendDropdownOpen, trendGroupRef);
+  const shapeFlyoutMaxHeight = useFlyoutMaxHeight(shapeDropdownOpen, shapeGroupRef);
+  const annotationFlyoutMaxHeight = useFlyoutMaxHeight(annotationDropdownOpen, annotationGroupRef);
+  const positionRangeFlyoutMaxHeight = useFlyoutMaxHeight(positionRangeDropdownOpen, positionRangeGroupRef);
+  const fibFlyoutMaxHeight = useFlyoutMaxHeight(fibDropdownOpen, fibGroupRef);
+  const gannFlyoutMaxHeight = useFlyoutMaxHeight(gannDropdownOpen, gannGroupRef);
+  const patternFlyoutMaxHeight = useFlyoutMaxHeight(patternDropdownOpen, patternGroupRef);
+  const cyclesFlyoutMaxHeight = useFlyoutMaxHeight(cyclesDropdownOpen, cyclesGroupRef);
+  const deleteFlyoutMaxHeight = useFlyoutMaxHeight(deleteMenuOpen, deleteGroupRef, 'bottom');
+
   const isCursorGroupActive = (CURSOR_MODES as readonly string[]).includes(activeTool);
   const isTrendGroupActive = (TREND_TOOLS as readonly string[]).includes(activeTool);
   const isShapeGroupActive = (SHAPE_TOOLS as readonly string[]).includes(activeTool);
@@ -1264,14 +1316,8 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
 
         {cursorDropdownOpen && (
           <div
-            className="absolute left-full top-0 ml-1 py-1 overflow-hidden"
-            style={{
-              zIndex: 100,
-              width: 180,
-              background: 'var(--bg-panel-alt)',
-              borderRadius: 4,
-              boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
-            }}
+            className={FLYOUT_CLASS_TOP}
+            style={{ ...FLYOUT_STYLE_BASE, width: 180, maxHeight: cursorFlyoutMaxHeight }}
           >
             {CURSOR_ITEMS.map(({ mode, label }) => (
               <button
@@ -1321,14 +1367,8 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
 
         {trendDropdownOpen && (
           <div
-            className="absolute left-full top-0 ml-1 py-1 overflow-hidden"
-            style={{
-              zIndex: 100,
-              width: 224,
-              background: 'var(--bg-panel-alt)',
-              borderRadius: 4,
-              boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
-            }}
+            className={FLYOUT_CLASS_TOP}
+            style={{ ...FLYOUT_STYLE_BASE, width: 224, maxHeight: trendFlyoutMaxHeight }}
           >
             <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)] select-none">
               Lines
@@ -1392,14 +1432,8 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
 
         {shapeDropdownOpen && (
           <div
-            className="absolute left-full top-0 ml-1 py-1 overflow-hidden"
-            style={{
-              zIndex: 100,
-              width: 224,
-              background: 'var(--bg-panel-alt)',
-              borderRadius: 4,
-              boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
-            }}
+            className={FLYOUT_CLASS_TOP}
+            style={{ ...FLYOUT_STYLE_BASE, width: 224, maxHeight: shapeFlyoutMaxHeight }}
           >
             <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)] select-none">
               Shapes
@@ -1478,14 +1512,8 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
 
         {annotationDropdownOpen && (
           <div
-            className="absolute left-full top-0 ml-1 py-1 overflow-hidden"
-            style={{
-              zIndex: 100,
-              width: 200,
-              background: 'var(--bg-panel-alt)',
-              borderRadius: 4,
-              boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
-            }}
+            className={FLYOUT_CLASS_TOP}
+            style={{ ...FLYOUT_STYLE_BASE, width: 200, maxHeight: annotationFlyoutMaxHeight }}
           >
             <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)] select-none">
               Markers
@@ -1554,14 +1582,8 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
 
         {fibDropdownOpen && (
           <div
-            className="absolute left-full top-0 ml-1 py-1 overflow-hidden"
-            style={{
-              zIndex: 100,
-              width: 240,
-              background: 'var(--bg-panel-alt)',
-              borderRadius: 4,
-              boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
-            }}
+            className={FLYOUT_CLASS_TOP}
+            style={{ ...FLYOUT_STYLE_BASE, width: 240, maxHeight: fibFlyoutMaxHeight }}
           >
             {FIB_ITEMS.map(({ tool, label }) => (
               <FavoritableMenuItem
@@ -1610,14 +1632,8 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
 
         {gannDropdownOpen && (
           <div
-            className="absolute left-full top-0 ml-1 py-1 overflow-hidden"
-            style={{
-              zIndex: 100,
-              width: 240,
-              background: 'var(--bg-panel-alt)',
-              borderRadius: 4,
-              boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
-            }}
+            className={FLYOUT_CLASS_TOP}
+            style={{ ...FLYOUT_STYLE_BASE, width: 240, maxHeight: gannFlyoutMaxHeight }}
           >
             {GANN_ITEMS.map(({ tool, label }) => (
               <FavoritableMenuItem
@@ -1663,14 +1679,8 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
 
         {patternDropdownOpen && (
           <div
-            className="absolute left-full top-0 ml-1 py-1 overflow-hidden"
-            style={{
-              zIndex: 100,
-              width: 240,
-              background: 'var(--bg-panel-alt)',
-              borderRadius: 4,
-              boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
-            }}
+            className={FLYOUT_CLASS_TOP}
+            style={{ ...FLYOUT_STYLE_BASE, width: 240, maxHeight: patternFlyoutMaxHeight }}
           >
             {PATTERN_ITEMS.map(({ tool, label }) => (
               <FavoritableMenuItem
@@ -1716,14 +1726,8 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
 
         {cyclesDropdownOpen && (
           <div
-            className="absolute left-full top-0 ml-1 py-1 overflow-hidden"
-            style={{
-              zIndex: 100,
-              width: 240,
-              background: 'var(--bg-panel-alt)',
-              borderRadius: 4,
-              boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
-            }}
+            className={FLYOUT_CLASS_TOP}
+            style={{ ...FLYOUT_STYLE_BASE, width: 240, maxHeight: cyclesFlyoutMaxHeight }}
           >
             {CYCLES_ITEMS.map(({ tool, label }) => (
               <FavoritableMenuItem
@@ -1769,14 +1773,8 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
 
         {positionRangeDropdownOpen && (
           <div
-            className="absolute left-full top-0 ml-1 py-1 overflow-hidden"
-            style={{
-              zIndex: 100,
-              width: 210,
-              background: 'var(--bg-panel-alt)',
-              borderRadius: 4,
-              boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
-            }}
+            className={FLYOUT_CLASS_TOP}
+            style={{ ...FLYOUT_STYLE_BASE, width: 210, maxHeight: positionRangeFlyoutMaxHeight }}
           >
             <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)] select-none">
               Forecasting
@@ -1938,14 +1936,8 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
 
         {deleteMenuOpen && (
           <div
-            className="absolute left-full bottom-0 ml-1 py-1 overflow-hidden"
-            style={{
-              zIndex: 100,
-              width: 180,
-              background: 'var(--bg-panel-alt)',
-              borderRadius: 4,
-              boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
-            }}
+            className={FLYOUT_CLASS_BOTTOM}
+            style={{ ...FLYOUT_STYLE_BASE, width: 180, maxHeight: deleteFlyoutMaxHeight }}
           >
             <button
               onClick={() => { if (selectedId) deleteDrawing(selectedId); setDeleteMenuOpen(false); }}
