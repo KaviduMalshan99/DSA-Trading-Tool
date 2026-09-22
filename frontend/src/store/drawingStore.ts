@@ -76,9 +76,17 @@ export const GANN_TOOLS: readonly GannTool[] = ['gannFan', 'gannBox', 'gannSquar
 export type PatternTool = 'abcd' | 'xabcd' | 'cypher' | 'threeDrives' | 'headShoulders';
 export const PATTERN_TOOLS: readonly PatternTool[] = ['abcd', 'xabcd', 'cypher', 'threeDrives', 'headShoulders'];
 
+// The "Cycles" group — Cyclic Lines, Time Cycles, Sine Line — grouped under
+// one dropdown just like Trend Line/Shapes/.../Patterns. All three are
+// 2-point tools: the two clicks set an interval (Cyclic Lines/Time Cycles
+// repeat vertical lines at that spacing; Sine Line uses it as wavelength +
+// amplitude) — see CyclicLinesDrawing/TimeCyclesDrawing/SineLineDrawing below.
+export type CyclesTool = 'cyclicLines' | 'timeCycles' | 'sineLine';
+export const CYCLES_TOOLS: readonly CyclesTool[] = ['cyclicLines', 'timeCycles', 'sineLine'];
+
 export type DrawingTool =
   | CursorMode | TrendTool | ShapeTool | AnnotationTool | ActionTool | PositionRangeTool | FibTool | GannTool
-  | PatternTool;
+  | PatternTool | CyclesTool;
 
 export type LineDash = 'solid' | 'dashed' | 'dotted';
 
@@ -611,6 +619,40 @@ export interface PatternDrawing extends LineStyle {
   points: { price: number; time: number }[];
 }
 
+// Cyclic Lines: same 2-point baseline shape as Trend Line — price1/time1 and
+// price2/time2 set the repeating interval (the pixel distance between them),
+// rendered as evenly spaced full-height vertical lines (see the 'cyclicLines'
+// render branch in DrawingCanvas.tsx). Prices aren't used for the geometry
+// (only the time delta matters) but are kept for symmetry with the shared
+// 2-point drag/hitTest machinery.
+export interface CyclicLinesDrawing extends LineStyle {
+  id: string;
+  type: 'cyclicLines';
+  price1: number; time1: number;
+  price2: number; time2: number;
+}
+
+// Time Cycles: identical repeating-vertical-line geometry to Cyclic Lines —
+// only the render branch differs, labeling each line with its cycle number
+// (see DrawingCanvas.tsx).
+export interface TimeCyclesDrawing extends LineStyle {
+  id: string;
+  type: 'timeCycles';
+  price1: number; time1: number;
+  price2: number; time2: number;
+}
+
+// Sine Line: same 2-point shape as Trend Line — the horizontal distance
+// between the two anchors sets the wavelength, the vertical distance sets
+// the amplitude. Rendered as a sampled sine-wave polyline across the visible
+// chart width (see the 'sineLine' render branch in DrawingCanvas.tsx).
+export interface SineLineDrawing extends LineStyle {
+  id: string;
+  type: 'sineLine';
+  price1: number; time1: number;
+  price2: number; time2: number;
+}
+
 export type Drawing =
   | TrendLineDrawing
   | RayDrawing
@@ -657,7 +699,10 @@ export type Drawing =
   | RegressionDrawing
   | FlatChannelDrawing
   | DisjointChannelDrawing
-  | PatternDrawing;
+  | PatternDrawing
+  | CyclicLinesDrawing
+  | TimeCyclesDrawing
+  | SineLineDrawing;
 
 interface DrawingState {
   activeTool: DrawingTool;
@@ -678,6 +723,8 @@ interface DrawingState {
   lastGannTool: GannTool;
   // Same idea for the Patterns group's dropdown button icon.
   lastPatternTool: PatternTool;
+  // Same idea for the Cycles group's dropdown button icon.
+  lastCyclesTool: CyclesTool;
   // Cursor-group tools keep the chart interactive; the legacy magic snap mode is not exposed.
   magnetEnabled: boolean;
   // "Stay in Drawing Mode" — off (default) matches TradingView: finishing a
@@ -754,6 +801,10 @@ function isPatternTool(tool: DrawingTool): tool is PatternTool {
   return (PATTERN_TOOLS as readonly string[]).includes(tool);
 }
 
+function isCyclesTool(tool: DrawingTool): tool is CyclesTool {
+  return (CYCLES_TOOLS as readonly string[]).includes(tool);
+}
+
 // Capped so a long session doesn't grow this unboundedly.
 const MAX_HISTORY = 50;
 
@@ -788,6 +839,7 @@ export const useDrawingStore = create<DrawingState>((set) => ({
   lastFibTool: 'fibonacci',
   lastGannTool: 'gannFan',
   lastPatternTool: 'abcd',
+  lastCyclesTool: 'cyclicLines',
   magnetEnabled: false,
   keepToolActive: false,
   drawingsLocked: false,
@@ -809,6 +861,7 @@ export const useDrawingStore = create<DrawingState>((set) => ({
       const fibGroup = isFibTool(tool);
       const gannGroup = isGannTool(tool);
       const patternGroup = isPatternTool(tool);
+      const cyclesGroup = isCyclesTool(tool);
       // Re-clicking the active drawing tool deselects it back to the last cursor mode.
       const activeTool = !cursorGroup && s.activeTool === tool ? s.lastCursorMode : tool;
       return {
@@ -821,6 +874,7 @@ export const useDrawingStore = create<DrawingState>((set) => ({
         lastFibTool: fibGroup ? tool : s.lastFibTool,
         lastGannTool: gannGroup ? tool : s.lastGannTool,
         lastPatternTool: patternGroup ? tool : s.lastPatternTool,
+        lastCyclesTool: cyclesGroup ? tool : s.lastCyclesTool,
         magnetEnabled: cursorGroup ? false : s.magnetEnabled,
       };
     }),

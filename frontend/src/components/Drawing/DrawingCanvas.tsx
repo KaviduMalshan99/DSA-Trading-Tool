@@ -22,6 +22,7 @@ const CAPTURE_TOOLS = new Set<DrawingTool>([
   'longPosition', 'shortPosition', 'anchoredVwap', 'priceRange', 'dateRange', 'datePriceRange',
   'gannFan', 'gannBox', 'gannSquare',
   'abcd', 'xabcd', 'cypher', 'threeDrives', 'headShoulders',
+  'cyclicLines', 'timeCycles', 'sineLine',
 ]);
 
 // Number of clicks each drawing tool needs before it's finalized. Horizontal
@@ -83,6 +84,9 @@ const CLICKS_REQUIRED: Partial<Record<DrawingTool, number>> = {
   cypher: 5,
   headShoulders: 5,
   threeDrives: 6,
+  cyclicLines: 2,
+  timeCycles: 2,
+  sineLine: 2,
 };
 
 // Point-count and per-point letter labels for the Patterns group's connected-
@@ -556,6 +560,29 @@ function extendLineToRect(
   };
 }
 
+// Cyclic Lines/Time Cycles: pixel-x positions of the repeating vertical lines
+// from anchor x1, stepping by `spacing` in both directions until off the
+// visible canvas width W. `k` is the cycle index (0 = anchor, signed in the
+// direction of `spacing`) — Time Cycles uses it to label each line. Shared by
+// the render branches and hitTest below so the two stay in sync. A near-zero
+// spacing (degenerate/same-x clicks) collapses to just the anchor line rather
+// than looping forever.
+function computeCyclicLineXs(x1: number, spacing: number, W: number): { x: number; k: number }[] {
+  if (Math.abs(spacing) < 1) return [{ x: x1, k: 0 }];
+  const pts: { x: number; k: number }[] = [{ x: x1, k: 0 }];
+  const MAX_LINES = 2000; // safety cap — far more than any realistic canvas width needs
+  for (let k = 1; pts.length < MAX_LINES; k++) {
+    const xf = x1 + k * spacing;
+    const xb = x1 - k * spacing;
+    const fIn = xf >= 0 && xf <= W;
+    const bIn = xb >= 0 && xb <= W;
+    if (fIn) pts.push({ x: xf, k });
+    if (bIn) pts.push({ x: xb, k: -k });
+    if (!fIn && !bIn) break;
+  }
+  return pts;
+}
+
 // ── draw one completed/preview drawing ───────────────────────────────────────
 
 function renderDrawing(
@@ -719,6 +746,86 @@ function renderDrawing(
       ctx.arc(x1, y1, 4, 0, Math.PI * 2);
       ctx.fill();
     }
+
+  } else if (d.type === 'cyclicLines' || d.type === 'timeCycles') {
+    // Both tools share identical repeating-vertical-line geometry — the two
+    // anchors set the pixel interval (spacing = x2 - x1), repeated in both
+    // directions across the canvas. Time Cycles' only difference is the
+    // forward cycle-number label drawn near the top of each line.
+    const x1 = timeToX(chart, d.time1);
+    const x2 = timeToX(chart, d.time2);
+    if (x1 == null || x2 == null) { ctx.restore(); return; }
+    const spacing = x2 - x1;
+
+    const baseColor = d.color ?? '#2196F3';
+    const baseOpacity = d.opacity ?? 100;
+    const baseWidth = d.width ?? 1.5;
+    const dashPattern: number[] = d.dash === 'dashed' ? [8, 4] : d.dash === 'dotted' ? [2, 3] : [];
+
+    const xs = computeCyclicLineXs(x1, spacing, W);
+    for (const { x, k } of xs) {
+      // emphasize the two anchor lines (k=0 and k=1) so the baseline interval reads clearly
+      const emphasize = k === 0 || k === 1;
+      const lineColor = hexToRgba(baseColor, emphasize ? baseOpacity : Math.max(baseOpacity * 0.6, 20));
+      ctx.strokeStyle = eraserHover ? '#f85149' : lineColor;
+      ctx.lineWidth = (emphasize ? baseWidth + 0.5 : Math.max(baseWidth - 0.5, 1)) + (selected ? 1 : 0);
+      ctx.setLineDash(dashPattern);
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, H);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      if (d.type === 'timeCycles' && k > 0) {
+        ctx.fillStyle = eraserHover ? '#f85149' : hexToRgba(baseColor, Math.max(baseOpacity * 0.8, 40));
+        ctx.font = '10px monospace';
+        ctx.fillText(String(k), Math.min(Math.max(x + 3, 2), W - 16), 12);
+      }
+    }
+
+  } else if (d.type === 'sineLine') {
+    // The two anchors set wavelength (horizontal distance) and amplitude
+    // (vertical distance); the wave is sampled across the full canvas width
+    // and stroked as one polyline, same pattern as the Anchored VWAP branch.
+    const x1 = timeToX(chart, d.time1);
+    const y1 = priceToY(series, d.price1);
+    const x2 = timeToX(chart, d.time2);
+    const y2 = priceToY(series, d.price2);
+    if (x1 == null || y1 == null || x2 == null || y2 == null) { ctx.restore(); return; }
+
+    const baseColor = d.color ?? '#2196F3';
+    const lineColor = hexToRgba(baseColor, d.opacity ?? 100);
+    const dashPattern: number[] = d.dash === 'dashed' ? [8, 4] : d.dash === 'dotted' ? [2, 3] : [];
+
+    ctx.strokeStyle = eraserHover ? '#f85149' : lineColor;
+    ctx.lineWidth = (d.width ?? 1.5) + (selected ? 1 : 0);
+    ctx.setLineDash(dashPattern);
+
+    const wavelength = Math.abs(x2 - x1);
+    ctx.beginPath();
+    if (wavelength < 1) {
+      // degenerate (same-x clicks) — fall back to a plain segment
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+    } else {
+      const amplitude = Math.abs(y2 - y1);
+      const midY = (y1 + y2) / 2;
+      const STEP = 2;
+      for (let x = 0; x <= W; x += STEP) {
+        const y = midY + amplitude * Math.sin((2 * Math.PI * (x - x1)) / wavelength);
+        if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.fillStyle = eraserHover ? '#f85149' : baseColor;
+    ctx.beginPath();
+    ctx.arc(x1, y1, selected ? 4.5 : 3.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(x2, y2, selected ? 4.5 : 3.5, 0, Math.PI * 2);
+    ctx.fill();
 
   } else if (d.type === 'gannBox' || d.type === 'gannSquare') {
     // Same 2-corner box shape as Rectangle (see the 'rectangle' branch below)
@@ -2632,6 +2739,40 @@ function hitTest(
     return false;
   }
 
+  if (d.type === 'cyclicLines' || d.type === 'timeCycles') {
+    // Same repeating-vertical-line spacing as the render branch (spacing =
+    // x2 - x1), but tested in O(1): round to the nearest cycle index k
+    // instead of walking every line across the canvas — hitTest doesn't have
+    // the canvas width W available, and this needs it, so it doesn't loop.
+    const x1 = timeToX(chart, d.time1);
+    const x2 = timeToX(chart, d.time2);
+    if (x1 == null || x2 == null) return false;
+    const spacing = x2 - x1;
+    if (Math.abs(spacing) < 1) return Math.abs(mx - x1) < TOL;
+    const k = Math.round((mx - x1) / spacing);
+    const nearestX = x1 + k * spacing;
+    return Math.abs(mx - nearestX) < TOL;
+  }
+
+  if (d.type === 'sineLine') {
+    const x1 = timeToX(chart, d.time1);
+    const y1 = priceToY(series, d.price1);
+    const x2 = timeToX(chart, d.time2);
+    const y2 = priceToY(series, d.price2);
+    if (x1 == null || y1 == null || x2 == null || y2 == null) return false;
+
+    const wavelength = Math.abs(x2 - x1);
+    if (wavelength < 1) return distToSegment(mx, my, x1, y1, x2, y2) < TOL;
+
+    // The sine wave is an explicit function of x (unlike the arc/curve's
+    // parametric Bezier), so its y at the mouse's own x is exact — no need to
+    // sample into segments the way hitTestQuadratic does for curves.
+    const amplitude = Math.abs(y2 - y1);
+    const midY = (y1 + y2) / 2;
+    const y = midY + amplitude * Math.sin((2 * Math.PI * (mx - x1)) / wavelength);
+    return Math.abs(my - y) < TOL;
+  }
+
   if (d.type === 'trendline' || d.type === 'ray' || d.type === 'extendedLine' ||
       d.type === 'infoLine' || d.type === 'trendAngle') {
     const x1 = timeToX(chart, d.time1);
@@ -3189,7 +3330,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
         if (drag && drag.id === d.id) {
           if (drag.kind === 'trendline' && (d.type === 'trendline' || d.type === 'arrow' || d.type === 'priceNote' ||
               d.type === 'ray' || d.type === 'extendedLine' || d.type === 'infoLine' || d.type === 'trendAngle' ||
-              d.type === 'gannFan')) {
+              d.type === 'gannFan' || d.type === 'cyclicLines' || d.type === 'timeCycles' || d.type === 'sineLine')) {
             dd = { ...d, price1: drag.price1, time1: drag.time1, price2: drag.price2, time2: drag.time2 };
           } else if (drag.kind === 'channel' && (d.type === 'channel' || d.type === 'rotatedRectangle' || d.type === 'fibChannel')) {
             dd = { ...d, price1: drag.price1, time1: drag.time1, price2: drag.price2, time2: drag.time2,
@@ -3268,6 +3409,12 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
             preview = { id: '__preview', type: 'ray', price1, time1, price2, time2 };
           else if (tool === 'gannFan' && price2 != null && time2 != null)
             preview = { id: '__preview', type: 'gannFan', price1, time1, price2, time2 };
+          else if (tool === 'cyclicLines' && price2 != null && time2 != null)
+            preview = { id: '__preview', type: 'cyclicLines', price1, time1, price2, time2 };
+          else if (tool === 'timeCycles' && price2 != null && time2 != null)
+            preview = { id: '__preview', type: 'timeCycles', price1, time1, price2, time2 };
+          else if (tool === 'sineLine' && price2 != null && time2 != null)
+            preview = { id: '__preview', type: 'sineLine', price1, time1, price2, time2 };
           else if (tool === 'extendedLine' && price2 != null && time2 != null)
             preview = { id: '__preview', type: 'extendedLine', price1, time1, price2, time2 };
           else if (tool === 'infoLine' && price2 != null && time2 != null)
@@ -3756,7 +3903,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
       if (price2 == null || time2 == null) return;
       addDrawing({ id, type: 'trendline', price1, time1, price2, time2 });
     } else if (tool === 'ray' || tool === 'extendedLine' || tool === 'infoLine' || tool === 'trendAngle' ||
-        tool === 'gannFan') {
+        tool === 'gannFan' || tool === 'cyclicLines' || tool === 'timeCycles' || tool === 'sineLine') {
       if (price2 == null || time2 == null) return;
       addDrawing({ id, type: tool, price1, time1, price2, time2 });
     } else if (tool === 'hline') {
@@ -4328,7 +4475,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
         const d = drawingsRef.current[i];
         if (d.type === 'trendline' || d.type === 'arrow' || d.type === 'priceNote' ||
             d.type === 'ray' || d.type === 'extendedLine' || d.type === 'infoLine' || d.type === 'trendAngle' ||
-            d.type === 'gannFan') {
+            d.type === 'gannFan' || d.type === 'cyclicLines' || d.type === 'timeCycles' || d.type === 'sineLine') {
           const x1 = timeToX(chart, d.time1), y1 = priceToY(series, d.price1);
           const x2 = timeToX(chart, d.time2), y2 = priceToY(series, d.price2);
           if (x1 == null || y1 == null || x2 == null || y2 == null) continue;
@@ -4442,7 +4589,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
 
         if (d.type === 'trendline' || d.type === 'arrow' || d.type === 'priceNote' ||
             d.type === 'ray' || d.type === 'extendedLine' || d.type === 'infoLine' || d.type === 'trendAngle' ||
-            d.type === 'gannFan') {
+            d.type === 'gannFan' || d.type === 'cyclicLines' || d.type === 'timeCycles' || d.type === 'sineLine') {
           const x1 = timeToX(chart, d.time1), y1 = priceToY(series, d.price1);
           const x2 = timeToX(chart, d.time2), y2 = priceToY(series, d.price2);
           if (x1 == null || y1 == null || x2 == null || y2 == null) continue;
