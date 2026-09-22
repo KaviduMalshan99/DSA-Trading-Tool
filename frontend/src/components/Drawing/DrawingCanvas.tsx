@@ -22,7 +22,7 @@ const CAPTURE_TOOLS = new Set<DrawingTool>([
   'longPosition', 'shortPosition', 'anchoredVwap', 'priceRange', 'dateRange', 'datePriceRange',
   'gannFan', 'gannBox', 'gannSquare',
   'abcd', 'xabcd', 'cypher', 'threeDrives', 'headShoulders',
-  'cyclicLines', 'timeCycles', 'sineLine',
+  'cyclicLines', 'timeCycles', 'sineLine', 'fibTimeZone',
 ]);
 
 // Number of clicks each drawing tool needs before it's finalized. Horizontal
@@ -87,6 +87,7 @@ const CLICKS_REQUIRED: Partial<Record<DrawingTool, number>> = {
   cyclicLines: 2,
   timeCycles: 2,
   sineLine: 2,
+  fibTimeZone: 2,
 };
 
 // Point-count and per-point letter labels for the Patterns group's connected-
@@ -583,6 +584,25 @@ function computeCyclicLineXs(x1: number, spacing: number, W: number): { x: numbe
   return pts;
 }
 
+// Fib Time Zone: the fixed Fibonacci-sequence bar-offset multipliers vertical
+// lines are drawn at (1,2,3,5,8,13,21,34,55 units of `spacing` from the
+// anchor). Unlike computeCyclicLineXs this set is small and fixed — no
+// loop/cap, and no mirrored negative-k side — so it's just mapped directly.
+const FIB_TIME_OFFSETS = [1, 2, 3, 5, 8, 13, 21, 34, 55] as const;
+
+// pixel-x positions of the Fib Time Zone vertical lines, off-screen ones
+// skipped (not clamped) — same visibility rule as computeCyclicLineXs. Shared
+// by the render branch and hitTest below so the two stay in sync.
+function computeFibTimeZoneXs(x1: number, spacing: number, W: number): { x: number; k: number }[] {
+  if (Math.abs(spacing) < 1) return [{ x: x1, k: 0 }];
+  const pts: { x: number; k: number }[] = [{ x: x1, k: 0 }];
+  for (const fibK of FIB_TIME_OFFSETS) {
+    const x = x1 + fibK * spacing;
+    if (x >= 0 && x <= W) pts.push({ x, k: fibK });
+  }
+  return pts;
+}
+
 // ── draw one completed/preview drawing ───────────────────────────────────────
 
 function renderDrawing(
@@ -826,6 +846,51 @@ function renderDrawing(
     ctx.beginPath();
     ctx.arc(x2, y2, selected ? 4.5 : 3.5, 0, Math.PI * 2);
     ctx.fill();
+
+  } else if (d.type === 'fibTimeZone') {
+    // Own branch — NOT merged with cyclicLines (different, fixed offset set)
+    // or the fib-level family (fibLevelsFor is never called here). The two
+    // anchors set the pixel spacing (spacing = x2 - x1); vertical lines are
+    // drawn at Fibonacci-sequence multiples of that spacing from the anchor,
+    // each labeled with its Fibonacci number — same pattern as Time Cycles'
+    // numbered labels, but a fixed offset set instead of every k.
+    const x1 = timeToX(chart, d.time1);
+    const x2 = timeToX(chart, d.time2);
+    if (x1 == null || x2 == null) { ctx.restore(); return; }
+    const spacing = x2 - x1;
+
+    const baseColor = d.color ?? '#2196F3';
+    const baseOpacity = d.opacity ?? 100;
+    const baseWidth = d.width ?? 1.5;
+    const dashPattern: number[] = d.dash === 'dashed' ? [8, 4] : d.dash === 'dotted' ? [2, 3] : [];
+
+    const xs = computeFibTimeZoneXs(x1, spacing, W);
+    for (const { x, k } of xs) {
+      // emphasize the anchor (k=0) so the baseline unit reads clearly
+      const emphasize = k === 0;
+      const lineColor = hexToRgba(baseColor, emphasize ? baseOpacity : Math.max(baseOpacity * 0.6, 20));
+      ctx.strokeStyle = eraserHover ? '#f85149' : lineColor;
+      ctx.lineWidth = (emphasize ? baseWidth + 0.5 : Math.max(baseWidth - 0.5, 1)) + (selected ? 1 : 0);
+      ctx.setLineDash(dashPattern);
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, H);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      if (k > 0) {
+        ctx.fillStyle = eraserHover ? '#f85149' : hexToRgba(baseColor, Math.max(baseOpacity * 0.8, 40));
+        ctx.font = '10px monospace';
+        ctx.fillText(String(k), Math.min(Math.max(x + 3, 2), W - 16), 12);
+      }
+    }
+
+    if (selected) {
+      const y1 = priceToY(series, d.price1);
+      const y2 = priceToY(series, d.price2);
+      if (y1 != null) { ctx.fillStyle = eraserHover ? '#f85149' : baseColor; ctx.beginPath(); ctx.arc(x1, y1, 4, 0, Math.PI * 2); ctx.fill(); }
+      if (y2 != null) { ctx.fillStyle = eraserHover ? '#f85149' : baseColor; ctx.beginPath(); ctx.arc(x2, y2, 4, 0, Math.PI * 2); ctx.fill(); }
+    }
 
   } else if (d.type === 'gannBox' || d.type === 'gannSquare') {
     // Same 2-corner box shape as Rectangle (see the 'rectangle' branch below)
@@ -2754,6 +2819,23 @@ function hitTest(
     return Math.abs(mx - nearestX) < TOL;
   }
 
+  if (d.type === 'fibTimeZone') {
+    // Own branch — fixed 9-element Fibonacci offset set, so just check each
+    // candidate x directly (same set the render branch computes) rather than
+    // cyclicLines' O(1) rounding trick, which assumes an infinite repeat.
+    const x1 = timeToX(chart, d.time1);
+    const x2 = timeToX(chart, d.time2);
+    if (x1 == null || x2 == null) return false;
+    const spacing = x2 - x1;
+    if (Math.abs(spacing) < 1) return Math.abs(mx - x1) < TOL;
+    if (Math.abs(mx - x1) < TOL) return true;
+    for (const fibK of FIB_TIME_OFFSETS) {
+      const x = x1 + fibK * spacing;
+      if (Math.abs(mx - x) < TOL) return true;
+    }
+    return false;
+  }
+
   if (d.type === 'sineLine') {
     const x1 = timeToX(chart, d.time1);
     const y1 = priceToY(series, d.price1);
@@ -3330,7 +3412,8 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
         if (drag && drag.id === d.id) {
           if (drag.kind === 'trendline' && (d.type === 'trendline' || d.type === 'arrow' || d.type === 'priceNote' ||
               d.type === 'ray' || d.type === 'extendedLine' || d.type === 'infoLine' || d.type === 'trendAngle' ||
-              d.type === 'gannFan' || d.type === 'cyclicLines' || d.type === 'timeCycles' || d.type === 'sineLine')) {
+              d.type === 'gannFan' || d.type === 'cyclicLines' || d.type === 'timeCycles' || d.type === 'sineLine' ||
+              d.type === 'fibTimeZone')) {
             dd = { ...d, price1: drag.price1, time1: drag.time1, price2: drag.price2, time2: drag.time2 };
           } else if (drag.kind === 'channel' && (d.type === 'channel' || d.type === 'rotatedRectangle' || d.type === 'fibChannel')) {
             dd = { ...d, price1: drag.price1, time1: drag.time1, price2: drag.price2, time2: drag.time2,
@@ -3415,6 +3498,8 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
             preview = { id: '__preview', type: 'timeCycles', price1, time1, price2, time2 };
           else if (tool === 'sineLine' && price2 != null && time2 != null)
             preview = { id: '__preview', type: 'sineLine', price1, time1, price2, time2 };
+          else if (tool === 'fibTimeZone' && price2 != null && time2 != null)
+            preview = { id: '__preview', type: 'fibTimeZone', price1, time1, price2, time2 };
           else if (tool === 'extendedLine' && price2 != null && time2 != null)
             preview = { id: '__preview', type: 'extendedLine', price1, time1, price2, time2 };
           else if (tool === 'infoLine' && price2 != null && time2 != null)
@@ -3903,7 +3988,8 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
       if (price2 == null || time2 == null) return;
       addDrawing({ id, type: 'trendline', price1, time1, price2, time2 });
     } else if (tool === 'ray' || tool === 'extendedLine' || tool === 'infoLine' || tool === 'trendAngle' ||
-        tool === 'gannFan' || tool === 'cyclicLines' || tool === 'timeCycles' || tool === 'sineLine') {
+        tool === 'gannFan' || tool === 'cyclicLines' || tool === 'timeCycles' || tool === 'sineLine' ||
+        tool === 'fibTimeZone') {
       if (price2 == null || time2 == null) return;
       addDrawing({ id, type: tool, price1, time1, price2, time2 });
     } else if (tool === 'hline') {
@@ -4475,7 +4561,8 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
         const d = drawingsRef.current[i];
         if (d.type === 'trendline' || d.type === 'arrow' || d.type === 'priceNote' ||
             d.type === 'ray' || d.type === 'extendedLine' || d.type === 'infoLine' || d.type === 'trendAngle' ||
-            d.type === 'gannFan' || d.type === 'cyclicLines' || d.type === 'timeCycles' || d.type === 'sineLine') {
+            d.type === 'gannFan' || d.type === 'cyclicLines' || d.type === 'timeCycles' || d.type === 'sineLine' ||
+            d.type === 'fibTimeZone') {
           const x1 = timeToX(chart, d.time1), y1 = priceToY(series, d.price1);
           const x2 = timeToX(chart, d.time2), y2 = priceToY(series, d.price2);
           if (x1 == null || y1 == null || x2 == null || y2 == null) continue;
@@ -4589,7 +4676,8 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
 
         if (d.type === 'trendline' || d.type === 'arrow' || d.type === 'priceNote' ||
             d.type === 'ray' || d.type === 'extendedLine' || d.type === 'infoLine' || d.type === 'trendAngle' ||
-            d.type === 'gannFan' || d.type === 'cyclicLines' || d.type === 'timeCycles' || d.type === 'sineLine') {
+            d.type === 'gannFan' || d.type === 'cyclicLines' || d.type === 'timeCycles' || d.type === 'sineLine' ||
+            d.type === 'fibTimeZone') {
           const x1 = timeToX(chart, d.time1), y1 = priceToY(series, d.price1);
           const x2 = timeToX(chart, d.time2), y2 = priceToY(series, d.price2);
           if (x1 == null || y1 == null || x2 == null || y2 == null) continue;

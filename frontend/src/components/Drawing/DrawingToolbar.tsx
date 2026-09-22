@@ -397,6 +397,19 @@ function FibChannelIcon() {
   );
 }
 
+// Fib Time Zone: vertical bars at increasing (Fibonacci-growth) spacing,
+// echoing the tool's own Fibonacci-multiple offsets from the anchor.
+function FibTimeZoneIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5" fill="none">
+      <line x1="3"  y1="3" x2="3"  y2="21" />
+      <line x1="6"  y1="3" x2="6"  y2="21" />
+      <line x1="10" y1="3" x2="10" y2="21" />
+      <line x1="16" y1="3" x2="16" y2="21" strokeWidth="1" strokeDasharray="2 2" />
+    </svg>
+  );
+}
+
 // Gann Fan: several rays fanning out from one corner point (the apex),
 // echoing the tool's own anchor+direction shape.
 function GannFanIcon() {
@@ -925,6 +938,7 @@ const FIB_ICON: Record<FibTool, React.ReactNode> = {
   fibExtension: <FibExtensionIcon />,
   trendFibExtension: <TrendFibExtensionIcon />,
   fibChannel: <FibChannelIcon />,
+  fibTimeZone: <FibTimeZoneIcon />,
 };
 
 // The Fibonacci group's flyout — flat list (no subsections), same pattern as
@@ -934,6 +948,7 @@ const FIB_ITEMS: { tool: FibTool; label: string }[] = [
   { tool: 'fibExtension',      label: 'Fib Extension' },
   { tool: 'trendFibExtension', label: 'Trend-based Fib Extension' },
   { tool: 'fibChannel',        label: 'Fib Channel' },
+  { tool: 'fibTimeZone',       label: 'Fib Time Zone' },
 ];
 
 const GANN_ICON: Record<GannTool, React.ReactNode> = {

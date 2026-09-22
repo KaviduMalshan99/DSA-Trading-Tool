@@ -59,8 +59,13 @@ export const POSITION_RANGE_TOOLS: readonly PositionRangeTool[] = [
 // The "Fibonacci" group — Fib Retracement plus ratio-table variants (Fib
 // Extension, Trend-based Fib Extension, Fib Channel), grouped under one
 // dropdown just like Trend Line/Shapes/Annotation/Prediction & measurement.
-export type FibTool = 'fibonacci' | 'fibExtension' | 'trendFibExtension' | 'fibChannel';
-export const FIB_TOOLS: readonly FibTool[] = ['fibonacci', 'fibExtension', 'trendFibExtension', 'fibChannel'];
+// 'fibTimeZone' is grouped here for the toolbar flyout only — unlike the other
+// 4, it has no ratio-table/levels (see FibTimeZoneDrawing below) and is
+// deliberately excluded from FibLikeDrawing; fibLevelsFor's FibTool parameter
+// never actually receives it since every call site narrows d.type to the
+// 4 ratio-table literals first.
+export type FibTool = 'fibonacci' | 'fibExtension' | 'trendFibExtension' | 'fibChannel' | 'fibTimeZone';
+export const FIB_TOOLS: readonly FibTool[] = ['fibonacci', 'fibExtension', 'trendFibExtension', 'fibChannel', 'fibTimeZone'];
 
 // The "Gann" group — Gann Fan, Gann Box, Gann Square — grouped under one
 // dropdown just like Trend Line/Shapes/.../Fibonacci.
@@ -525,6 +530,21 @@ export interface FibChannelDrawing {
 // they resolve to.
 export type FibLikeDrawing = FibonacciDrawing | FibExtensionDrawing | TrendFibExtensionDrawing | FibChannelDrawing;
 
+// Fib Time Zone: lives in the Fibonacci flyout but is NOT a ratio-table tool
+// (no `levels`, not part of FibLikeDrawing) — geometrically it's identical to
+// CyclicLinesDrawing/TimeCyclesDrawing below: price1/time1 -> price2/time2 set
+// the pixel spacing, and vertical lines are drawn at Fibonacci-sequence
+// multiples (1,2,3,5,8,13,21,34,55) of that spacing from the anchor, each
+// labeled with its Fibonacci number (see the 'fibTimeZone' render branch in
+// DrawingCanvas.tsx). Prices aren't used for the geometry, kept for symmetry
+// with the shared 2-point drag/hitTest machinery.
+export interface FibTimeZoneDrawing extends LineStyle {
+  id: string;
+  type: 'fibTimeZone';
+  price1: number; time1: number;
+  price2: number; time2: number;
+}
+
 // Gann Fan: identical 2-point shape to Ray — price1/time1 is the anchor
 // (apex), price2/time2 is the point that sets the 1x1 ray's direction. The
 // other 6 angle rays (2x1, 3x1, 4x1, 1x2, 1x3, 1x4) are derived at render
@@ -692,6 +712,7 @@ export type Drawing =
   | FibExtensionDrawing
   | TrendFibExtensionDrawing
   | FibChannelDrawing
+  | FibTimeZoneDrawing
   | GannFanDrawing
   | GannBoxDrawing
   | GannSquareDrawing
