@@ -708,6 +708,15 @@ function CommentIcon() {
   );
 }
 
+function TableIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" fill="none" strokeLinejoin="round">
+      <rect x="3" y="4" width="18" height="16" />
+      <path d="M3 9.33h18M3 14.67h18M9 4v16M15 4v16" strokeWidth="1.5" />
+    </svg>
+  );
+}
+
 function LongPositionIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round">
@@ -1071,13 +1080,14 @@ const ANNOTATION_ICON: Record<AnnotationTool, React.ReactNode> = {
   note: <NoteIcon />,
   callout: <CalloutIcon />,
   comment: <CommentIcon />,
+  table: <TableIcon />,
 };
 
 // The flyout's two labeled sections — "Markers" (single-icon stamps, some
 // with user-typed text) and "Notes" (text-box annotations). ANNOTATION_ITEMS
 // below is the flat concatenation, kept for ALL_TOOL_ICON/ALL_TOOL_LABEL/
-// Favorites (same pattern as TREND_ITEMS/SHAPE_ITEMS). Table is deferred to
-// the coming-soon pass, so it's intentionally left out of both sections.
+// Favorites (same pattern as TREND_ITEMS/SHAPE_ITEMS). Table is a 2-click
+// box grid of editable cells, listed with the other text-box Notes.
 const ANNOTATION_MARKER_ITEMS: { tool: AnnotationTool; label: string }[] = [
   { tool: 'text',       label: 'Text' },
   { tool: 'priceNote',  label: 'Price Note' },
@@ -1091,6 +1101,7 @@ const ANNOTATION_NOTE_ITEMS: { tool: AnnotationTool; label: string }[] = [
   { tool: 'note',    label: 'Note' },
   { tool: 'callout', label: 'Callout' },
   { tool: 'comment', label: 'Comment' },
+  { tool: 'table',   label: 'Table' },
 ];
 
 const ANNOTATION_ITEMS: { tool: AnnotationTool; label: string }[] = [
@@ -1100,10 +1111,6 @@ const ANNOTATION_ITEMS: { tool: AnnotationTool; label: string }[] = [
 // Display-only placeholder for a tool that isn't built yet — NOT a DrawingTool
 // and never wired to setTool. Rendered as a disabled row via ComingSoonMenuItem.
 type ComingSoonItem = { label: string; icon: React.ReactNode };
-
-const ANNOTATION_COMING_SOON: ComingSoonItem[] = [
-  { label: 'Table', icon: <ComingSoonIcon /> },
-];
 
 const POSITION_RANGE_ICON: Record<PositionRangeTool, React.ReactNode> = {
   longPosition: <LongPositionIcon />,
@@ -1649,9 +1656,6 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
                 onToggleFavorite={() => toggleFavorite(tool)}
                 onSelect={() => { setTool(tool); setAnnotationDropdownOpen(false); }}
               />
-            ))}
-            {ANNOTATION_COMING_SOON.map((item) => (
-              <ComingSoonMenuItem key={item.label} {...item} />
             ))}
           </div>
         )}

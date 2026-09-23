@@ -24,7 +24,7 @@ const CAPTURE_TOOLS = new Set<DrawingTool>([
   'gannFan', 'gannBox', 'gannSquare',
   'abcd', 'xabcd', 'cypher', 'threeDrives', 'headShoulders',
   'cyclicLines', 'timeCycles', 'sineLine', 'fibTimeZone', 'fibSpeedFan', 'fibCircles', 'fibSpeedArcs',
-  'fibWedge', 'pitchfan',
+  'fibWedge', 'pitchfan', 'table',
 ]);
 
 // Number of clicks each drawing tool needs before it's finalized. Horizontal
@@ -45,6 +45,7 @@ const CLICKS_REQUIRED: Partial<Record<DrawingTool, number>> = {
   vline: 1,
   crossline: 1,
   rectangle: 2,
+  table: 2,
   fibonacci: 2,
   fibExtension: 2,
   trendFibExtension: 3,
@@ -1672,6 +1673,75 @@ function renderDrawing(
     ctx.fillStyle = eraserHover ? '#f85149' : baseColor;
     ctx.font = '10px monospace';
     ctx.fillText(`Δ${range}`, rx + 4, ry + 14);
+
+    if (selected) {
+      ctx.fillStyle = eraserHover ? '#f85149' : baseColor;
+      for (const [hx, hy] of [[x1, y1], [x2, y2], [x1, y2], [x2, y1]] as const) {
+        ctx.beginPath();
+        ctx.arc(hx, hy, 3.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+  } else if (d.type === 'table') {
+    const x1 = timeToX(chart, d.time1);
+    const y1 = priceToY(series, d.price1);
+    const x2 = timeToX(chart, d.time2);
+    const y2 = priceToY(series, d.price2);
+    if (x1 == null || y1 == null || x2 == null || y2 == null) { ctx.restore(); return; }
+
+    const rx = Math.min(x1, x2);
+    const ry = Math.min(y1, y2);
+    const rw = Math.abs(x2 - x1);
+    const rh = Math.abs(y2 - y1);
+    const rows = Math.max(1, d.rows);
+    const cols = Math.max(1, d.cols);
+    const cw = rw / cols;
+    const ch = rh / rows;
+
+    const baseColor = d.color ?? '#2196F3';
+    if (d.fillOpacity != null && d.fillOpacity > 0) {
+      ctx.fillStyle = eraserHover ? 'rgba(248,81,73,0.1)' : hexToRgba(baseColor, d.fillOpacity);
+      ctx.fillRect(rx, ry, rw, rh);
+    }
+
+    ctx.strokeStyle = eraserHover ? '#f85149' : baseColor;
+    ctx.lineWidth = 1 + (selected ? 0.5 : 0);
+    ctx.strokeRect(rx, ry, rw, rh);
+    // interior grid lines — cells are evenly divided (no per-row/col sizing)
+    ctx.beginPath();
+    for (let c = 1; c < cols; c++) {
+      ctx.moveTo(rx + c * cw, ry);
+      ctx.lineTo(rx + c * cw, ry + rh);
+    }
+    for (let r = 1; r < rows; r++) {
+      ctx.moveTo(rx, ry + r * ch);
+      ctx.lineTo(rx + rw, ry + r * ch);
+    }
+    ctx.stroke();
+
+    // Per-cell text, clipped to its cell; multi-line same as Callout. Skipped
+    // entirely when cells are too small to hold legible text.
+    if (cw >= 12 && ch >= 10) {
+      ctx.font = '12px sans-serif';
+      ctx.fillStyle = eraserHover ? '#f85149' : (d.textColor ?? '#d1d4dc');
+      ctx.textBaseline = 'top';
+      const lineH = 16;
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          const text = d.cells[r * cols + c] ?? '';
+          if (text.length === 0) continue;
+          const cx = rx + c * cw, cy = ry + r * ch;
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(cx + 1, cy + 1, cw - 2, ch - 2);
+          ctx.clip();
+          text.split('\n').forEach((line, i) => ctx.fillText(line, cx + 4, cy + 4 + i * lineH));
+          ctx.restore();
+        }
+      }
+      ctx.textBaseline = 'alphabetic';
+    }
 
     if (selected) {
       ctx.fillStyle = eraserHover ? '#f85149' : baseColor;
@@ -3677,6 +3747,19 @@ function hitTest(
     return distToSegment(mx, my, xS, yS, xE, yE) < TOL;
   }
 
+  if (d.type === 'table') {
+    // Unlike Rectangle (edges only), the whole body counts — so a table is
+    // selectable/draggable from inside and a double-click can land on a cell.
+    const x1 = timeToX(chart, d.time1);
+    const y1 = priceToY(series, d.price1);
+    const x2 = timeToX(chart, d.time2);
+    const y2 = priceToY(series, d.price2);
+    if (x1 == null || y1 == null || x2 == null || y2 == null) return false;
+    const lx = Math.min(x1, x2), rx = Math.max(x1, x2);
+    const ty = Math.min(y1, y2), by = Math.max(y1, y2);
+    return mx >= lx - TOL && mx <= rx + TOL && my >= ty - TOL && my <= by + TOL;
+  }
+
   if (d.type === 'rectangle' || d.type === 'gannBox' || d.type === 'gannSquare') {
     const x1 = timeToX(chart, d.time1);
     const y1 = priceToY(series, d.price1);
@@ -4189,8 +4272,12 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
   // over the canvas at the anchor's screen position. `isNew` distinguishes a
   // freshly-placed (still-empty) drawing, which gets deleted on cancel, from
   // an existing one being re-edited via double-click, which just keeps its
-  // prior text on cancel.
-  interface EditingNote { id: string; x: number; y: number; value: string; isNew: boolean }
+  // prior text on cancel. `cell` (Table only) targets one cell of
+  // TableDrawing.cells instead of `text`; `w`/`h` size the textarea to it.
+  interface EditingNote {
+    id: string; x: number; y: number; value: string; isNew: boolean;
+    cell?: number; w?: number; h?: number;
+  }
   const [editing, setEditingState] = useState<EditingNote | null>(null);
   const editingRef = useRef<EditingNote | null>(null);
   const setEditing = useCallback((v: EditingNote | null) => { editingRef.current = v; setEditingState(v); }, []);
@@ -4342,7 +4429,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
             };
           } else if (drag.kind === 'fibonacci' && (d.type === 'fibonacci' || d.type === 'fibExtension')) {
             dd = { ...d, priceHigh: drag.priceHigh, timeHigh: drag.timeHigh, priceLow: drag.priceLow, timeLow: drag.timeLow };
-          } else if (drag.kind === 'box' && (d.type === 'rectangle' || d.type === 'circle' || d.type === 'ellipse' || d.type === 'priceRange' || d.type === 'dateRange' || d.type === 'datePriceRange' || d.type === 'gannBox' || d.type === 'gannSquare')) {
+          } else if (drag.kind === 'box' && (d.type === 'rectangle' || d.type === 'circle' || d.type === 'ellipse' || d.type === 'priceRange' || d.type === 'dateRange' || d.type === 'datePriceRange' || d.type === 'gannBox' || d.type === 'gannSquare' || d.type === 'table')) {
             dd = { ...d, price1: drag.price1, time1: drag.time1, price2: drag.price2, time2: drag.time2 };
           } else if (drag.kind === 'triangle' && d.type === 'triangle') {
             dd = { ...d, price1: drag.price1, time1: drag.time1, price2: drag.price2, time2: drag.time2, price3: drag.price3, time3: drag.time3 };
@@ -4445,6 +4532,8 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
             preview = { id: '__preview', type: 'datePriceRange', price1, time1, price2, time2 };
           else if (tool === 'rectangle' && price2 != null && time2 != null)
             preview = { id: '__preview', type: 'rectangle', price1, time1, price2, time2 };
+          else if (tool === 'table' && price2 != null && time2 != null)
+            preview = { id: '__preview', type: 'table', price1, time1, price2, time2, rows: 3, cols: 3, cells: Array(9).fill('') };
           else if (tool === 'gannBox' && price2 != null && time2 != null)
             preview = { id: '__preview', type: 'gannBox', price1, time1, price2, time2 };
           else if (tool === 'gannSquare' && price2 != null && time2 != null)
@@ -4705,6 +4794,18 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
   const commitEdit = useCallback(() => {
     const ed = editingRef.current;
     if (!ed) return;
+    // Table cell: write just that cell; an empty cell never deletes the table.
+    if (ed.cell != null) {
+      const d = drawingsRef.current.find((dr) => dr.id === ed.id);
+      if (d?.type === 'table') {
+        const cells = d.cells.slice();
+        cells[ed.cell] = ed.value.trim();
+        updateDrawing(ed.id, { cells });
+      }
+      setEditing(null);
+      scheduleRender();
+      return;
+    }
     const trimmed = ed.value.trim();
     if (trimmed.length === 0) deleteDrawing(ed.id);
     else updateDrawing(ed.id, { text: trimmed });
@@ -4723,6 +4824,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
   const cancelEdit = useCallback(() => {
     const ed = editingRef.current;
     if (!ed) return;
+    if (ed.cell != null) { setEditing(null); scheduleRender(); return; }
     if (ed.isNew) deleteDrawing(ed.id);
     setEditing(null);
     scheduleRender();
@@ -4951,6 +5053,11 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
     } else if (tool === 'rectangle') {
       if (price2 == null || time2 == null) return;
       addDrawing({ id, type: 'rectangle', price1, time1, price2, time2 });
+    } else if (tool === 'table') {
+      if (price2 == null || time2 == null) return;
+      // Default 3×3 grid; a tiny box is fine — render skips text in cells too
+      // small to hold it.
+      addDrawing({ id, type: 'table', price1, time1, price2, time2, rows: 3, cols: 3, cells: Array(9).fill('') });
     } else if (tool === 'gannBox' || tool === 'gannSquare') {
       if (price2 == null || time2 == null) return;
       addDrawing({ id, type: tool, price1, time1, price2, time2 });
@@ -5594,7 +5701,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           const nearAny = Math.hypot(x - x1, y - y1) < 8 || Math.hypot(x - x2, y - y2) < 8 || Math.hypot(x - x3, y - y3) < 8;
           if (nearAny) { hoverCursor = 'grab'; break; }
           if (hitTest(d, x, y, chart, series, candlesRef.current)) { hoverCursor = 'move'; break; }
-        } else if (d.type === 'rectangle' || d.type === 'circle' || d.type === 'ellipse' || d.type === 'priceRange' || d.type === 'dateRange' || d.type === 'datePriceRange' || d.type === 'gannBox' || d.type === 'gannSquare') {
+        } else if (d.type === 'rectangle' || d.type === 'circle' || d.type === 'ellipse' || d.type === 'priceRange' || d.type === 'dateRange' || d.type === 'datePriceRange' || d.type === 'gannBox' || d.type === 'gannSquare' || d.type === 'table') {
           const x1 = timeToX(chart, d.time1), y1 = priceToY(series, d.price1);
           const x2 = timeToX(chart, d.time2), y2 = priceToY(series, d.price2);
           if (x1 == null || y1 == null || x2 == null || y2 == null) continue;
@@ -5844,7 +5951,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           return;
         }
 
-        if (d.type === 'rectangle' || d.type === 'circle' || d.type === 'ellipse' || d.type === 'priceRange' || d.type === 'dateRange' || d.type === 'datePriceRange' || d.type === 'gannBox' || d.type === 'gannSquare') {
+        if (d.type === 'rectangle' || d.type === 'circle' || d.type === 'ellipse' || d.type === 'priceRange' || d.type === 'dateRange' || d.type === 'datePriceRange' || d.type === 'gannBox' || d.type === 'gannSquare' || d.type === 'table') {
           const x1 = timeToX(chart, d.time1), y1 = priceToY(series, d.price1);
           const x2 = timeToX(chart, d.time2), y2 = priceToY(series, d.price2);
           if (x1 == null || y1 == null || x2 == null || y2 == null) continue;
@@ -6108,6 +6215,22 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
 
       for (let i = drawingsRef.current.length - 1; i >= 0; i--) {
         const d = drawingsRef.current[i];
+        if (d.type === 'table') {
+          // Table: open the editor over the double-clicked cell.
+          if (!hitTest(d, x, y, chart, series, candlesRef.current)) continue;
+          const x1 = timeToX(chart, d.time1), y1 = priceToY(series, d.price1);
+          const x2 = timeToX(chart, d.time2), y2 = priceToY(series, d.price2);
+          if (x1 == null || y1 == null || x2 == null || y2 == null) continue;
+          const rows = Math.max(1, d.rows), cols = Math.max(1, d.cols);
+          const rx = Math.min(x1, x2), ry = Math.min(y1, y2);
+          const cw = Math.abs(x2 - x1) / cols, ch = Math.abs(y2 - y1) / rows;
+          const c = Math.min(cols - 1, Math.max(0, Math.floor((x - rx) / (cw || 1))));
+          const r = Math.min(rows - 1, Math.max(0, Math.floor((y - ry) / (ch || 1))));
+          const idx = r * cols + c;
+          selectDrawing(d.id);
+          setEditing({ id: d.id, x: rx + c * cw, y: ry + r * ch + 2, w: cw, h: ch, value: d.cells[idx] ?? '', isNew: false, cell: idx });
+          return;
+        }
         if (d.type !== 'text' && d.type !== 'signpost' && d.type !== 'note' &&
             d.type !== 'callout' && d.type !== 'comment') continue;
         if (!hitTest(d, x, y, chart, series, candlesRef.current)) continue;
@@ -6239,9 +6362,9 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           style={{
             left: editing.x,
             top: editing.y - 2,
-            minWidth: 120,
-            maxWidth: 280,
-            minHeight: 24,
+            ...(editing.w != null && editing.h != null
+              ? { width: editing.w, height: editing.h }
+              : { minWidth: 120, maxWidth: 280, minHeight: 24 }),
             zIndex: 70,
             pointerEvents: 'auto',
             background: 'transparent',

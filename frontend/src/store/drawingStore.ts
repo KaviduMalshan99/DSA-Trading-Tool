@@ -40,11 +40,13 @@ export const SHAPE_TOOLS: readonly ShapeTool[] = [
 // 'note'/'callout'/'comment' are text-box markers that reuse Text/Signpost's
 // shared inline-editing machinery (see the generalized editing handlers in
 // DrawingCanvas.tsx) — same single-anchor + user-typed text shape as Signpost.
+// 'table' is a 2-click box (same corners as Rectangle) divided into a grid of
+// cells, each edited through that same machinery via EditingNote's `cell`.
 export type AnnotationTool =
   | 'text' | 'priceNote' | 'pin' | 'flagMark' | 'priceLabel' | 'signpost'
-  | 'note' | 'callout' | 'comment';
+  | 'note' | 'callout' | 'comment' | 'table';
 export const ANNOTATION_TOOLS: readonly AnnotationTool[] =
-  ['text', 'priceNote', 'pin', 'flagMark', 'priceLabel', 'signpost', 'note', 'callout', 'comment'];
+  ['text', 'priceNote', 'pin', 'flagMark', 'priceLabel', 'signpost', 'note', 'callout', 'comment', 'table'];
 
 // Standalone action tools: Measure doesn't leave a persisted drawing behind
 // (it's a transient readout cleared on tool change), and Zoom In performs an
@@ -459,6 +461,24 @@ export interface CommentDrawing {
   color?: string;
 }
 
+// Table: a 2-click box (corners named like RectangleDrawing, so it shares the
+// 'box' drag bucket) divided evenly into rows × cols cells. `cells` is
+// row-major (index = r * cols + c) with length rows * cols; each cell is
+// edited via the shared inline-edit overlay (EditingNote.cell). An empty cell
+// is just an empty string — it never deletes the table.
+export interface TableDrawing {
+  id: string;
+  type: 'table';
+  price1: number; time1: number;
+  price2: number; time2: number;
+  rows: number;
+  cols: number;
+  cells: string[];
+  color?: string;
+  textColor?: string;
+  fillOpacity?: number;
+}
+
 // Long/Short Position: single-click projection tool — entry line splits a
 // profit zone (toward targetPrice) from a loss zone (toward stopPrice); the
 // box spans time1..time2. For 'longPosition' targetPrice > entryPrice >
@@ -844,6 +864,7 @@ export type Drawing =
   | NoteDrawing
   | CalloutDrawing
   | CommentDrawing
+  | TableDrawing
   | PositionDrawing
   | PriceRangeDrawing
   | DateRangeDrawing
