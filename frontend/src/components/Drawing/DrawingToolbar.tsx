@@ -452,6 +452,21 @@ function FibSpeedArcsIcon() {
   );
 }
 
+// Fib Wedge: two edges from a corner apex with fib-ratio arcs curving
+// between them — Fib Circles clipped to a wedge.
+function FibWedgeIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5" fill="none">
+      <line x1="3" y1="21" x2="21" y2="21" />
+      <line x1="3" y1="21" x2="15.7" y2="8.3" />
+      <path d="M21 21a18 18 0 0 0-5.3-12.7" />
+      <path d="M14 21a11 11 0 0 0-3.2-7.8" strokeWidth="1" />
+      <path d="M8.5 21a5.5 5.5 0 0 0-1.6-3.9" strokeWidth="1" />
+      <circle cx="3" cy="21" r="1.5" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
 // Gann Fan: several rays fanning out from one corner point (the apex),
 // echoing the tool's own anchor+direction shape.
 function GannFanIcon() {
@@ -1129,6 +1144,7 @@ const FIB_ICON: Record<FibTool, React.ReactNode> = {
   fibSpeedFan: <FibSpeedFanIcon />,
   fibCircles: <FibCirclesIcon />,
   fibSpeedArcs: <FibSpeedArcsIcon />,
+  fibWedge: <FibWedgeIcon />,
 };
 
 // The Fibonacci group's flyout — flat list (no subsections), same pattern as
@@ -1142,11 +1158,11 @@ const FIB_ITEMS: { tool: FibTool; label: string }[] = [
   { tool: 'fibSpeedFan',       label: 'Fib Speed/Resistance Fan' },
   { tool: 'fibCircles',        label: 'Fib Circles' },
   { tool: 'fibSpeedArcs',      label: 'Fib Speed/Resistance Arcs' },
+  { tool: 'fibWedge',          label: 'Fib Wedge' },
 ];
 
 const FIB_COMING_SOON: ComingSoonItem[] = [
   { label: 'Fib Spiral', icon: <ComingSoonIcon /> },
-  { label: 'Fib Wedge', icon: <ComingSoonIcon /> },
   { label: 'Pitchfan', icon: <ComingSoonIcon /> },
 ];
 

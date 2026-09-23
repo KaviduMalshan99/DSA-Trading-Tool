@@ -24,6 +24,7 @@ const CAPTURE_TOOLS = new Set<DrawingTool>([
   'gannFan', 'gannBox', 'gannSquare',
   'abcd', 'xabcd', 'cypher', 'threeDrives', 'headShoulders',
   'cyclicLines', 'timeCycles', 'sineLine', 'fibTimeZone', 'fibSpeedFan', 'fibCircles', 'fibSpeedArcs',
+  'fibWedge',
 ]);
 
 // Number of clicks each drawing tool needs before it's finalized. Horizontal
@@ -57,6 +58,7 @@ const CLICKS_REQUIRED: Partial<Record<DrawingTool, number>> = {
   ellipse: 2,
   triangle: 3,
   sector: 3,
+  fibWedge: 3,
   positionForecast: 3,
   arc: 3,
   curve: 3,
@@ -235,6 +237,12 @@ const FIB_CIRCLE_RATIOS = [0.236, 0.382, 0.5, 0.618, 1, 1.618, 2.618];
 // two can't drift. NOT a fibLevelsFor table, and deliberately not
 // FIB_CIRCLE_RATIOS (its 1.618/2.618 arcs would dominate the drawing).
 const FIB_ARC_RATIOS = [0.382, 0.5, 0.618, 1];
+
+// Fib Wedge's arc ratios (multiples of the apex→edge-A base radius) — shared
+// by the render branch and hitTest so the two can't drift. NOT a fibLevelsFor
+// table, and deliberately not FIB_CIRCLE_RATIOS (arcs past r=1 would overrun
+// the wedge's edges).
+const FIB_WEDGE_RATIOS = [0.236, 0.382, 0.5, 0.618, 0.786, 1];
 
 // Shared ratio set for Gann Box/Square grid divisions.
 const GANN_GRID_RATIOS = [0, 0.25, 0.382, 0.5, 0.618, 0.75, 1.0];
@@ -1839,6 +1847,80 @@ function renderDrawing(
       for (const [hx, hy] of handles) {
         ctx.beginPath();
         ctx.arc(hx, hy, 3.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+  } else if (d.type === 'fibWedge') {
+    // Own branch — NOT routed through fibLevelsFor. Fib Circles clipped to a
+    // Sector's sweep: sectorGeometry gives the edge angles, the base radius is
+    // the apex→p2 pixel distance, and each fib-ratio arc runs from edge A to
+    // edge B. p3 only sets edge B's angle, so edge B stops at the r=1 arc.
+    const pts3 = get3PointScreen(d.price1, d.time1, d.price2, d.time2, d.price3, d.time3, chart, series);
+    if (!pts3) { ctx.restore(); return; }
+    const { x1, y1, x2, y2, x3, y3 } = pts3;
+
+    const geo = sectorGeometry(x1, y1, x2, y2, x3, y3);
+    const baseR = Math.hypot(x2 - x1, y2 - y1);
+
+    const baseColor = d.color ?? '#2196F3';
+    const baseOpacity = d.opacity ?? 100;
+    const baseWidth = d.width ?? 1.5;
+    const dashPattern: number[] = d.dash === 'dashed' ? [8, 4] : d.dash === 'dotted' ? [2, 3] : [];
+
+    const strokeEdge = (ex: number, ey: number) => {
+      ctx.strokeStyle = eraserHover ? '#f85149' : hexToRgba(baseColor, baseOpacity);
+      ctx.lineWidth = baseWidth + (selected ? 1 : 0);
+      ctx.setLineDash(dashPattern);
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(ex, ey);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    };
+
+    if (geo.kind === 'wedge' && baseR >= 1) {
+      // label position: each arc's midpoint, on the wedge's bisector
+      const mid = geo.aA + geo.diff / 2;
+      for (const r of FIB_WEDGE_RATIOS) {
+        // emphasize the base arc (r=1, through p2), same as Fib Circles
+        const emphasize = r === 1;
+        const arcR = baseR * r;
+
+        const lineColor = hexToRgba(baseColor, emphasize ? baseOpacity : Math.max(baseOpacity * 0.5, 15));
+        ctx.strokeStyle = eraserHover ? '#f85149' : lineColor;
+        ctx.lineWidth = (emphasize ? baseWidth + 0.5 : Math.max(baseWidth - 0.5, 1)) + (selected ? 1 : 0);
+        ctx.setLineDash(dashPattern);
+        ctx.beginPath();
+        ctx.arc(x1, y1, arcR, geo.aA, geo.aB, geo.ccw);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        ctx.fillStyle = eraserHover ? '#f85149' : hexToRgba(baseColor, emphasize ? baseOpacity : Math.max(baseOpacity * 0.7, 30));
+        ctx.font = '10px monospace';
+        ctx.fillText(String(r),
+          Math.min(Math.max(x1 + Math.cos(mid) * arcR, 2), W - 24),
+          Math.min(Math.max(y1 + Math.sin(mid) * arcR, 10), H - 4));
+      }
+
+      strokeEdge(x2, y2);
+      strokeEdge(x1 + Math.cos(geo.aB) * baseR, y1 + Math.sin(geo.aB) * baseR);
+    } else if (geo.kind === 'rayA' || geo.kind === 'collinear') {
+      // collinear is the preview state between clicks 2 and 3 (p3 = p2)
+      strokeEdge(x2, y2);
+    } else if (geo.kind === 'rayB') {
+      strokeEdge(x3, y3);
+    }
+
+    ctx.fillStyle = eraserHover ? '#f85149' : baseColor;
+    ctx.beginPath();
+    ctx.arc(x1, y1, 4, 0, Math.PI * 2);
+    ctx.fill();
+
+    if (selected) {
+      for (const [hx, hy] of [[x2, y2], [x3, y3]] as const) {
+        ctx.beginPath();
+        ctx.arc(hx, hy, 4, 0, Math.PI * 2);
         ctx.fill();
       }
     }
@@ -3594,6 +3676,34 @@ function hitTest(
     return geo.diff > 0 ? rel >= 0 && rel <= geo.diff : rel <= 0 && rel >= geo.diff;
   }
 
+  if (d.type === 'fibWedge') {
+    const pts3 = get3PointScreen(d.price1, d.time1, d.price2, d.time2, d.price3, d.time3, chart, series);
+    if (!pts3) return false;
+    const { x1, y1, x2, y2, x3, y3 } = pts3;
+    if (Math.hypot(mx - x1, my - y1) < TOL || Math.hypot(mx - x2, my - y2) < TOL ||
+        Math.hypot(mx - x3, my - y3) < TOL) return true;
+
+    const geo = sectorGeometry(x1, y1, x2, y2, x3, y3);
+    const baseR = Math.hypot(x2 - x1, y2 - y1);
+    // Same edge segments as the render branch: edge A to p2; in the wedge
+    // state edge B stops at the r=1 arc, while the rayB state strokes to p3.
+    if (geo.kind === 'apex') return false;
+    if (geo.kind === 'rayB') return distToSegment(mx, my, x1, y1, x3, y3) < TOL;
+    if (distToSegment(mx, my, x1, y1, x2, y2) < TOL) return true;
+    if (geo.kind !== 'wedge' || baseR < 1) return false;
+    if (distToSegment(mx, my, x1, y1, x1 + Math.cos(geo.aB) * baseR, y1 + Math.sin(geo.aB) * baseR) < TOL) return true;
+
+    // Same FIB_WEDGE_RATIOS arcs as the render branch: a ring-distance test
+    // restricted to the wedge's sweep (Sector's angle-in-sweep test). No
+    // "inside the wedge" hit — nothing is filled.
+    let rel = Math.atan2(my - y1, mx - x1) - geo.aA;
+    while (rel <= -Math.PI) rel += Math.PI * 2;
+    while (rel > Math.PI) rel -= Math.PI * 2;
+    const inSweep = geo.diff > 0 ? rel >= 0 && rel <= geo.diff : rel <= 0 && rel >= geo.diff;
+    const dist = Math.hypot(mx - x1, my - y1);
+    return inSweep && FIB_WEDGE_RATIOS.some((r) => Math.abs(dist - baseR * r) < TOL);
+  }
+
   if (d.type === 'positionForecast') {
     const pts3 = get3PointScreen(d.price1, d.time1, d.price2, d.time2, d.price3, d.time3, chart, series);
     if (!pts3) return false;
@@ -4015,7 +4125,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
   const dragRef = useRef<{
     active: boolean;
     kind: 'trendline' | 'channel' | 'flatChannel' | 'disjointChannel' | 'fibonacci' | 'box' | 'path' | 'brush'
-      | 'triangle' | 'arc' | 'curve' | 'doubleCurve' | 'trendFibExtension' | 'sector' | 'positionForecast'
+      | 'triangle' | 'arc' | 'curve' | 'doubleCurve' | 'trendFibExtension' | 'sector' | 'fibWedge' | 'positionForecast'
       | 'arrowMark' | 'note' | 'position' | 'hline' | 'vline' | 'hray';
     id: string;
     mode: 'move' | 'p1' | 'p2' | 'p3' | 'c2' | 'c3' | 'vertex' | 'target' | 'stop' | 'width'
@@ -4036,7 +4146,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
         priceB1: number; timeB1: number; priceB2: number; timeB2: number }
     | { kind: 'fibonacci'; id: string; priceHigh: number; timeHigh: number; priceLow: number; timeLow: number }
     | { kind: 'box'; id: string; price1: number; time1: number; price2: number; time2: number }
-    | { kind: 'triangle' | 'arc' | 'curve' | 'doubleCurve' | 'trendFibExtension' | 'sector' | 'positionForecast'; id: string;
+    | { kind: 'triangle' | 'arc' | 'curve' | 'doubleCurve' | 'trendFibExtension' | 'sector' | 'fibWedge' | 'positionForecast'; id: string;
         price1: number; time1: number; price2: number; time2: number; price3: number; time3: number }
     | { kind: 'path' | 'brush'; id: string; points: { price: number; time: number }[] }
     | { kind: 'arrowMark'; id: string; price: number; time: number }
@@ -4133,6 +4243,8 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           } else if (drag.kind === 'triangle' && d.type === 'triangle') {
             dd = { ...d, price1: drag.price1, time1: drag.time1, price2: drag.price2, time2: drag.time2, price3: drag.price3, time3: drag.time3 };
           } else if (drag.kind === 'sector' && d.type === 'sector') {
+            dd = { ...d, price1: drag.price1, time1: drag.time1, price2: drag.price2, time2: drag.time2, price3: drag.price3, time3: drag.time3 };
+          } else if (drag.kind === 'fibWedge' && d.type === 'fibWedge') {
             dd = { ...d, price1: drag.price1, time1: drag.time1, price2: drag.price2, time2: drag.time2, price3: drag.price3, time3: drag.time3 };
           } else if (drag.kind === 'positionForecast' && d.type === 'positionForecast') {
             dd = { ...d, price1: drag.price1, time1: drag.time1, price2: drag.price2, time2: drag.time2, price3: drag.price3, time3: drag.time3 };
@@ -4281,6 +4393,9 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
               price3: price3 ?? price2, time3: time3 ?? time2 };
           else if (tool === 'sector' && price2 != null && time2 != null)
             preview = { id: '__preview', type: 'sector', price1, time1, price2, time2,
+              price3: price3 ?? price2, time3: time3 ?? time2 };
+          else if (tool === 'fibWedge' && price2 != null && time2 != null)
+            preview = { id: '__preview', type: 'fibWedge', price1, time1, price2, time2,
               price3: price3 ?? price2, time3: time3 ?? time2 };
           else if (tool === 'positionForecast' && price2 != null && time2 != null)
             preview = { id: '__preview', type: 'positionForecast', price1, time1, price2, time2,
@@ -4793,6 +4908,9 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
     } else if (tool === 'sector') {
       if (price2 == null || time2 == null || price3 == null || time3 == null) return;
       addDrawing({ id, type: 'sector', price1, time1, price2, time2, price3, time3 });
+    } else if (tool === 'fibWedge') {
+      if (price2 == null || time2 == null || price3 == null || time3 == null) return;
+      addDrawing({ id, type: 'fibWedge', price1, time1, price2, time2, price3, time3 });
     } else if (tool === 'positionForecast') {
       if (price2 == null || time2 == null || price3 == null || time3 == null) return;
       addDrawing({ id, type: 'positionForecast', price1, time1, price2, time2, price3, time3 });
@@ -5097,7 +5215,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
         }
 
         if (drag.kind === 'triangle' || drag.kind === 'arc' || drag.kind === 'curve' || drag.kind === 'doubleCurve' ||
-            drag.kind === 'trendFibExtension' || drag.kind === 'sector' || drag.kind === 'positionForecast') {
+            drag.kind === 'trendFibExtension' || drag.kind === 'sector' || drag.kind === 'fibWedge' || drag.kind === 'positionForecast') {
           // All 5 store 3 independent anchor points with identical move/p1/p2/p3
           // semantics — a single drag application covers all of them.
           let nx1 = drag.origX1, ny1 = drag.origY1;
@@ -5357,7 +5475,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           if (nearAny) { hoverCursor = 'grab'; break; }
           if (hitTest(d, x, y, chart, series, candlesRef.current)) { hoverCursor = 'move'; break; }
         } else if (d.type === 'triangle' || d.type === 'arc' || d.type === 'curve' || d.type === 'doubleCurve' ||
-            d.type === 'trendFibExtension' || d.type === 'sector' || d.type === 'positionForecast') {
+            d.type === 'trendFibExtension' || d.type === 'sector' || d.type === 'fibWedge' || d.type === 'positionForecast') {
           const pts3 = get3PointScreen(d.price1, d.time1, d.price2, d.time2, d.price3, d.time3, chart, series);
           if (!pts3) continue;
           const { x1, y1, x2, y2, x3, y3 } = pts3;
@@ -5590,7 +5708,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
         }
 
         if (d.type === 'triangle' || d.type === 'arc' || d.type === 'curve' || d.type === 'doubleCurve' ||
-            d.type === 'trendFibExtension' || d.type === 'sector' || d.type === 'positionForecast') {
+            d.type === 'trendFibExtension' || d.type === 'sector' || d.type === 'fibWedge' || d.type === 'positionForecast') {
           const pts3 = get3PointScreen(d.price1, d.time1, d.price2, d.time2, d.price3, d.time3, chart, series);
           if (!pts3) continue;
           const { x1, y1, x2, y2, x3, y3 } = pts3;
@@ -5788,7 +5906,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           });
         } else if (preview.kind === 'channel' || preview.kind === 'triangle' || preview.kind === 'arc' ||
             preview.kind === 'curve' || preview.kind === 'doubleCurve' || preview.kind === 'trendFibExtension' ||
-            preview.kind === 'sector' || preview.kind === 'positionForecast') {
+            preview.kind === 'sector' || preview.kind === 'fibWedge' || preview.kind === 'positionForecast') {
           updateDrawing(drag.id, {
             price1: preview.price1, time1: preview.time1,
             price2: preview.price2, time2: preview.time2,
