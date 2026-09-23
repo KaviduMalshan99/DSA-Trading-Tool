@@ -19,7 +19,7 @@ const CAPTURE_TOOLS = new Set<DrawingTool>([
   'triangle', 'arc', 'curve', 'doubleCurve',
   'arrowMarker', 'arrowTool', 'arrowMarkUp', 'arrowMarkDown', 'brush', 'highlighter',
   'text', 'priceNote', 'pin', 'flagMark', 'priceLabel', 'signpost', 'note', 'callout', 'comment', 'measure', 'zoomIn',
-  'longPosition', 'shortPosition', 'anchoredVwap', 'priceRange', 'dateRange', 'datePriceRange',
+  'longPosition', 'shortPosition', 'anchoredVwap', 'priceRange', 'dateRange', 'datePriceRange', 'sector',
   'gannFan', 'gannBox', 'gannSquare',
   'abcd', 'xabcd', 'cypher', 'threeDrives', 'headShoulders',
   'cyclicLines', 'timeCycles', 'sineLine', 'fibTimeZone',
@@ -55,6 +55,7 @@ const CLICKS_REQUIRED: Partial<Record<DrawingTool, number>> = {
   circle: 2,
   ellipse: 2,
   triangle: 3,
+  sector: 3,
   arc: 3,
   curve: 3,
   doubleCurve: 3,
@@ -1573,6 +1574,78 @@ function renderDrawing(
       }
     }
 
+  } else if (d.type === 'sector') {
+    const pts3 = get3PointScreen(d.price1, d.time1, d.price2, d.time2, d.price3, d.time3, chart, series);
+    if (!pts3) { ctx.restore(); return; }
+    const { x1, y1, x2, y2, x3, y3 } = pts3;
+
+    const baseColor = d.color ?? '#2196F3';
+    const lineColor = eraserHover ? '#f85149' : hexToRgba(baseColor, d.opacity ?? 100);
+    const dashPattern: number[] = d.dash === 'dashed' ? [8, 4] : d.dash === 'dotted' ? [2, 3] : [];
+    const geo = sectorGeometry(x1, y1, x2, y2, x3, y3);
+
+    // Apex -> through (px,py) -> chart edge, like Gann Fan's rays. Falls back
+    // to the anchor itself when the edge crossing isn't ahead of the apex
+    // (apex scrolled off-canvas with the ray pointing away from the view).
+    const strokeRay = (px: number, py: number) => {
+      const ext = extendLineToRect(x1, y1, px, py, W, H);
+      const edge = ext && (ext.bx - x1) * (px - x1) + (ext.by - y1) * (py - y1) > 0 ? ext : null;
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(edge ? edge.bx : px, edge ? edge.by : py);
+      ctx.stroke();
+    };
+
+    if (geo.kind === 'wedge') {
+      if (d.filled !== false) {
+        // Radius reaching the farthest canvas corner from the apex, so the
+        // wedge always covers the visible area; the canvas clips the rest.
+        const R = Math.max(
+          Math.hypot(x1, y1), Math.hypot(W - x1, y1),
+          Math.hypot(x1, H - y1), Math.hypot(W - x1, H - y1),
+        );
+        ctx.fillStyle = eraserHover ? 'rgba(248,81,73,0.1)' : hexToRgba(d.fillColor ?? baseColor, d.fillOpacity ?? 20);
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.arc(x1, y1, R, geo.aA, geo.aB, geo.ccw);
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
+
+    ctx.strokeStyle = lineColor;
+    ctx.lineWidth = (d.width ?? 1) + (selected ? 0.5 : 0);
+    ctx.setLineDash(dashPattern);
+    if (geo.kind === 'wedge' || geo.kind === 'collinear' || geo.kind === 'rayA') strokeRay(x2, y2);
+    if (geo.kind === 'wedge' || geo.kind === 'collinear' || geo.kind === 'rayB') strokeRay(x3, y3);
+    ctx.setLineDash([]);
+
+    if (geo.kind === 'wedge') {
+      // angle arc near the apex + interior-angle label on the bisector
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(x1, y1, 40, geo.aA, geo.aB, geo.ccw);
+      ctx.stroke();
+
+      const deg = Math.abs(geo.diff) * 180 / Math.PI;
+      const mid = geo.aA + geo.diff / 2;
+      ctx.font = 'bold 11px sans-serif';
+      ctx.fillStyle = eraserHover ? '#f85149' : baseColor;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(`${deg.toFixed(1)}°`, Math.min(x1 + 52 * Math.cos(mid), W - 50), y1 + 52 * Math.sin(mid));
+    }
+
+    if (selected || geo.kind === 'apex') {
+      ctx.fillStyle = eraserHover ? '#f85149' : baseColor;
+      const handles = selected ? [[x1, y1], [x2, y2], [x3, y3]] as const : [[x1, y1]] as const;
+      for (const [hx, hy] of handles) {
+        ctx.beginPath();
+        ctx.arc(hx, hy, 3.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
   } else if (d.type === 'arc' || d.type === 'curve') {
     const pts3 = get3PointScreen(d.price1, d.time1, d.price2, d.time2, d.price3, d.time3, chart, series);
     if (!pts3) { ctx.restore(); return; }
@@ -2846,6 +2919,36 @@ function get3PointScreen(
   return { x1, y1, x2, y2, x3, y3 };
 }
 
+// Sector: pixel-space wedge geometry from apex (x1,y1) toward ray-A end
+// (x2,y2) and ray-B end (x3,y3). Shared by the render branch and hitTest so
+// the two agree on the degenerate cases — which occur on every preview frame
+// between clicks 2 and 3, since the preview sets p3 = p2. `diff` is the signed
+// sweep from ray A to ray B normalized into (-PI, PI]; `ccw` is the matching
+// ctx.arc anticlockwise flag (canvas angles grow clockwise, y down).
+type SectorGeometry =
+  | { kind: 'apex' }                  // both rays < 1px — nothing but the apex
+  | { kind: 'rayA' } | { kind: 'rayB' } // only that ray has length
+  | { kind: 'collinear' }             // rays nearly collinear — no wedge/arc/label
+  | { kind: 'wedge'; aA: number; aB: number; diff: number; ccw: boolean };
+
+function sectorGeometry(
+  x1: number, y1: number, x2: number, y2: number, x3: number, y3: number,
+): SectorGeometry {
+  const lenA = Math.hypot(x2 - x1, y2 - y1);
+  const lenB = Math.hypot(x3 - x1, y3 - y1);
+  if (lenA < 1 && lenB < 1) return { kind: 'apex' };
+  if (lenB < 1) return { kind: 'rayA' };
+  if (lenA < 1) return { kind: 'rayB' };
+  const cross = (x2 - x1) * (y3 - y1) - (y2 - y1) * (x3 - x1);
+  if (Math.abs(cross) / (lenA * lenB) < 0.01) return { kind: 'collinear' };
+  const aA = Math.atan2(y2 - y1, x2 - x1);
+  const aB = Math.atan2(y3 - y1, x3 - x1);
+  let diff = aB - aA;
+  while (diff <= -Math.PI) diff += Math.PI * 2;
+  while (diff > Math.PI) diff -= Math.PI * 2;
+  return { kind: 'wedge', aA, aB, diff, ccw: diff < 0 };
+}
+
 // Shared by Arc/Curve (identical math — start p1, end p2, control p3) and by
 // Double Curve's two segments. `t` in [0,1].
 function quadraticPoint(
@@ -3112,6 +3215,34 @@ function hitTest(
       distToSegment(mx, my, x2, y2, x3, y3) < TOL ||
       distToSegment(mx, my, x3, y3, x1, y1) < TOL ||
       pointInPolygon(mx, my, [{ x: x1, y: y1 }, { x: x2, y: y2 }, { x: x3, y: y3 }]);
+  }
+
+  if (d.type === 'sector') {
+    const pts3 = get3PointScreen(d.price1, d.time1, d.price2, d.time2, d.price3, d.time3, chart, series);
+    if (!pts3) return false;
+    const { x1, y1, x2, y2, x3, y3 } = pts3;
+    const geo = sectorGeometry(x1, y1, x2, y2, x3, y3);
+    if (geo.kind === 'apex') return Math.hypot(mx - x1, my - y1) < TOL;
+
+    // Rays render out to the chart edge; hitTest has no canvas size, so test
+    // against a segment long enough to outrun any realistic canvas instead.
+    const FAR = 1e5;
+    const nearRay = (px: number, py: number) => {
+      const len = Math.hypot(px - x1, py - y1);
+      return distToSegment(mx, my, x1, y1, x1 + (px - x1) / len * FAR, y1 + (py - y1) / len * FAR) < TOL;
+    };
+    const nearA = geo.kind !== 'rayB' && nearRay(x2, y2);
+    const nearB = geo.kind !== 'rayA' && nearRay(x3, y3);
+    if (nearA || nearB) return true;
+    if (geo.kind !== 'wedge') return false;
+
+    // Inside the wedge: the mouse's angle from the apex lies within the sweep
+    // from ray A toward ray B. The fill's radius always reaches past the
+    // canvas, so any on-canvas point within the sweep is inside.
+    let rel = Math.atan2(my - y1, mx - x1) - geo.aA;
+    while (rel <= -Math.PI) rel += Math.PI * 2;
+    while (rel > Math.PI) rel -= Math.PI * 2;
+    return geo.diff > 0 ? rel >= 0 && rel <= geo.diff : rel <= 0 && rel >= geo.diff;
   }
 
   if (d.type === 'arc' || d.type === 'curve') {
@@ -3523,7 +3654,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
   const dragRef = useRef<{
     active: boolean;
     kind: 'trendline' | 'channel' | 'flatChannel' | 'disjointChannel' | 'fibonacci' | 'box' | 'path' | 'brush'
-      | 'triangle' | 'arc' | 'curve' | 'doubleCurve' | 'trendFibExtension'
+      | 'triangle' | 'arc' | 'curve' | 'doubleCurve' | 'trendFibExtension' | 'sector'
       | 'arrowMark' | 'note' | 'position' | 'hline' | 'vline' | 'hray';
     id: string;
     mode: 'move' | 'p1' | 'p2' | 'p3' | 'c2' | 'c3' | 'vertex' | 'target' | 'stop' | 'width'
@@ -3544,7 +3675,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
         priceB1: number; timeB1: number; priceB2: number; timeB2: number }
     | { kind: 'fibonacci'; id: string; priceHigh: number; timeHigh: number; priceLow: number; timeLow: number }
     | { kind: 'box'; id: string; price1: number; time1: number; price2: number; time2: number }
-    | { kind: 'triangle' | 'arc' | 'curve' | 'doubleCurve' | 'trendFibExtension'; id: string;
+    | { kind: 'triangle' | 'arc' | 'curve' | 'doubleCurve' | 'trendFibExtension' | 'sector'; id: string;
         price1: number; time1: number; price2: number; time2: number; price3: number; time3: number }
     | { kind: 'path' | 'brush'; id: string; points: { price: number; time: number }[] }
     | { kind: 'arrowMark'; id: string; price: number; time: number }
@@ -3639,6 +3770,8 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           } else if (drag.kind === 'box' && (d.type === 'rectangle' || d.type === 'circle' || d.type === 'ellipse' || d.type === 'priceRange' || d.type === 'dateRange' || d.type === 'datePriceRange' || d.type === 'gannBox' || d.type === 'gannSquare')) {
             dd = { ...d, price1: drag.price1, time1: drag.time1, price2: drag.price2, time2: drag.time2 };
           } else if (drag.kind === 'triangle' && d.type === 'triangle') {
+            dd = { ...d, price1: drag.price1, time1: drag.time1, price2: drag.price2, time2: drag.time2, price3: drag.price3, time3: drag.time3 };
+          } else if (drag.kind === 'sector' && d.type === 'sector') {
             dd = { ...d, price1: drag.price1, time1: drag.time1, price2: drag.price2, time2: drag.time2, price3: drag.price3, time3: drag.time3 };
           } else if (drag.kind === 'arc' && d.type === 'arc') {
             dd = { ...d, price1: drag.price1, time1: drag.time1, price2: drag.price2, time2: drag.time2, price3: drag.price3, time3: drag.time3 };
@@ -3776,6 +3909,9 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
             preview = { id: '__preview', type: 'ellipse', price1, time1, price2, time2 };
           else if (tool === 'triangle' && price2 != null && time2 != null)
             preview = { id: '__preview', type: 'triangle', price1, time1, price2, time2,
+              price3: price3 ?? price2, time3: time3 ?? time2 };
+          else if (tool === 'sector' && price2 != null && time2 != null)
+            preview = { id: '__preview', type: 'sector', price1, time1, price2, time2,
               price3: price3 ?? price2, time3: time3 ?? time2 };
           else if (tool === 'arc' && price2 != null && time2 != null)
             preview = { id: '__preview', type: 'arc', price1, time1, price2, time2,
@@ -4282,6 +4418,9 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
     } else if (tool === 'triangle') {
       if (price2 == null || time2 == null || price3 == null || time3 == null) return;
       addDrawing({ id, type: 'triangle', price1, time1, price2, time2, price3, time3 });
+    } else if (tool === 'sector') {
+      if (price2 == null || time2 == null || price3 == null || time3 == null) return;
+      addDrawing({ id, type: 'sector', price1, time1, price2, time2, price3, time3 });
     } else if (tool === 'arc') {
       if (price2 == null || time2 == null || price3 == null || time3 == null) return;
       addDrawing({ id, type: 'arc', price1, time1, price2, time2, price3, time3 });
@@ -4583,7 +4722,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
         }
 
         if (drag.kind === 'triangle' || drag.kind === 'arc' || drag.kind === 'curve' || drag.kind === 'doubleCurve' ||
-            drag.kind === 'trendFibExtension') {
+            drag.kind === 'trendFibExtension' || drag.kind === 'sector') {
           // All 5 store 3 independent anchor points with identical move/p1/p2/p3
           // semantics — a single drag application covers all of them.
           let nx1 = drag.origX1, ny1 = drag.origY1;
@@ -4843,7 +4982,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           if (nearAny) { hoverCursor = 'grab'; break; }
           if (hitTest(d, x, y, chart, series, candlesRef.current)) { hoverCursor = 'move'; break; }
         } else if (d.type === 'triangle' || d.type === 'arc' || d.type === 'curve' || d.type === 'doubleCurve' ||
-            d.type === 'trendFibExtension') {
+            d.type === 'trendFibExtension' || d.type === 'sector') {
           const pts3 = get3PointScreen(d.price1, d.time1, d.price2, d.time2, d.price3, d.time3, chart, series);
           if (!pts3) continue;
           const { x1, y1, x2, y2, x3, y3 } = pts3;
@@ -5076,7 +5215,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
         }
 
         if (d.type === 'triangle' || d.type === 'arc' || d.type === 'curve' || d.type === 'doubleCurve' ||
-            d.type === 'trendFibExtension') {
+            d.type === 'trendFibExtension' || d.type === 'sector') {
           const pts3 = get3PointScreen(d.price1, d.time1, d.price2, d.time2, d.price3, d.time3, chart, series);
           if (!pts3) continue;
           const { x1, y1, x2, y2, x3, y3 } = pts3;
@@ -5273,7 +5412,8 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
             price2: preview.price2, time2: preview.time2,
           });
         } else if (preview.kind === 'channel' || preview.kind === 'triangle' || preview.kind === 'arc' ||
-            preview.kind === 'curve' || preview.kind === 'doubleCurve' || preview.kind === 'trendFibExtension') {
+            preview.kind === 'curve' || preview.kind === 'doubleCurve' || preview.kind === 'trendFibExtension' ||
+            preview.kind === 'sector') {
           updateDrawing(drag.id, {
             price1: preview.price1, time1: preview.time1,
             price2: preview.price2, time2: preview.time2,

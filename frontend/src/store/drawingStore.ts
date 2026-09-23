@@ -56,9 +56,9 @@ export const ACTION_TOOLS: readonly ActionTool[] = ['measure', 'zoomIn'];
 // The "Prediction & measurement" group — Long/Short Position projections and
 // Price/Date Range brackets, grouped under one dropdown just like the others.
 export type PositionRangeTool =
-  | 'longPosition' | 'shortPosition' | 'anchoredVwap' | 'priceRange' | 'dateRange' | 'datePriceRange';
+  | 'longPosition' | 'shortPosition' | 'anchoredVwap' | 'priceRange' | 'dateRange' | 'datePriceRange' | 'sector';
 export const POSITION_RANGE_TOOLS: readonly PositionRangeTool[] = [
-  'longPosition', 'shortPosition', 'anchoredVwap', 'priceRange', 'dateRange', 'datePriceRange',
+  'longPosition', 'shortPosition', 'anchoredVwap', 'priceRange', 'dateRange', 'datePriceRange', 'sector',
 ];
 
 // The "Fibonacci" group — Fib Retracement plus ratio-table variants (Fib
@@ -263,6 +263,18 @@ export interface TriangleDrawing extends LineStyle, FillStyle {
   price1: number; time1: number;
   price2: number; time2: number;
   price3: number; time3: number;
+}
+
+// Sector: an angular wedge — identical 3-point shape to Triangle, but p1 is
+// the apex and p2/p3 set the directions of the two rays (extended to the
+// chart edge at render time), with the pie-wedge between them filled and the
+// interior angle labeled (computed in pixel space, so it isn't stored).
+export interface SectorDrawing extends LineStyle, FillStyle {
+  id: string;
+  type: 'sector';
+  price1: number; time1: number; // apex
+  price2: number; time2: number; // ray A direction
+  price3: number; time3: number; // ray B direction
 }
 
 // Arc: a single quadratic curve from p1 (start) to p2 (end), bulging toward
@@ -732,6 +744,7 @@ export type Drawing =
   | BrushDrawing
   | HighlighterDrawing
   | TriangleDrawing
+  | SectorDrawing
   | ArcDrawing
   | CurveDrawing
   | DoubleCurveDrawing
