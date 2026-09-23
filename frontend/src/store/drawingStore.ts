@@ -66,13 +66,14 @@ export const POSITION_RANGE_TOOLS: readonly PositionRangeTool[] = [
 // The "Fibonacci" group — Fib Retracement plus ratio-table variants (Fib
 // Extension, Trend-based Fib Extension, Fib Channel), grouped under one
 // dropdown just like Trend Line/Shapes/Annotation/Prediction & measurement.
-// 'fibTimeZone' is grouped here for the toolbar flyout only — unlike the other
-// 4, it has no ratio-table/levels (see FibTimeZoneDrawing below) and is
-// deliberately excluded from FibLikeDrawing; fibLevelsFor's FibTool parameter
-// never actually receives it since every call site narrows d.type to the
-// 4 ratio-table literals first.
-export type FibTool = 'fibonacci' | 'fibExtension' | 'trendFibExtension' | 'fibChannel' | 'fibTimeZone';
-export const FIB_TOOLS: readonly FibTool[] = ['fibonacci', 'fibExtension', 'trendFibExtension', 'fibChannel', 'fibTimeZone'];
+// 'fibTimeZone' and 'fibSpeedFan' are grouped here for the toolbar flyout
+// only — unlike the other 4, they have no ratio-table/levels (see
+// FibTimeZoneDrawing/FibSpeedFanDrawing below) and are deliberately excluded
+// from FibLikeDrawing; fibLevelsFor's FibTool parameter never actually
+// receives either since every call site narrows d.type to the 4 ratio-table
+// literals first.
+export type FibTool = 'fibonacci' | 'fibExtension' | 'trendFibExtension' | 'fibChannel' | 'fibTimeZone' | 'fibSpeedFan';
+export const FIB_TOOLS: readonly FibTool[] = ['fibonacci', 'fibExtension', 'trendFibExtension', 'fibChannel', 'fibTimeZone', 'fibSpeedFan'];
 
 // The "Gann" group — Gann Fan, Gann Box, Gann Square — grouped under one
 // dropdown just like Trend Line/Shapes/.../Fibonacci.
@@ -611,6 +612,19 @@ export interface FibTimeZoneDrawing extends LineStyle {
   price2: number; time2: number;
 }
 
+// Fib Speed/Resistance Fan: lives in the Fibonacci flyout but, like Fib Time
+// Zone, is NOT a ratio-table tool (no `levels`, not part of FibLikeDrawing).
+// Identical 2-point shape to GannFanDrawing — price1/time1 is the apex (base
+// start), price2/time2 the base end; the fib-ratio rays are derived at render
+// time as pixel-space dy-scalings of the base vector (see the 'fibSpeedFan'
+// render branch in DrawingCanvas.tsx) rather than stored.
+export interface FibSpeedFanDrawing extends LineStyle {
+  id: string;
+  type: 'fibSpeedFan';
+  price1: number; time1: number;
+  price2: number; time2: number;
+}
+
 // Gann Fan: identical 2-point shape to Ray — price1/time1 is the anchor
 // (apex), price2/time2 is the point that sets the 1x1 ray's direction. The
 // other 6 angle rays (2x1, 3x1, 4x1, 1x2, 1x3, 1x4) are derived at render
@@ -784,6 +798,7 @@ export type Drawing =
   | TrendFibExtensionDrawing
   | FibChannelDrawing
   | FibTimeZoneDrawing
+  | FibSpeedFanDrawing
   | GannFanDrawing
   | GannBoxDrawing
   | GannSquareDrawing

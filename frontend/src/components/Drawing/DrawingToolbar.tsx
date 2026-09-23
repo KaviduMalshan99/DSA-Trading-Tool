@@ -410,6 +410,21 @@ function FibTimeZoneIcon() {
   );
 }
 
+// Fib Speed/Resistance Fan: fib-ratio rays fanning from the apex between
+// the base line and the horizontal, with the base line emphasized.
+function FibSpeedFanIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5" fill="none">
+      <line x1="3" y1="21" x2="21" y2="3" />
+      <line x1="3" y1="21" x2="21" y2="9.9" strokeWidth="1" />
+      <line x1="3" y1="21" x2="21" y2="12" strokeWidth="1" />
+      <line x1="3" y1="21" x2="21" y2="14.1" strokeWidth="1" />
+      <line x1="3" y1="21" x2="21" y2="21" strokeWidth="1" strokeDasharray="2 2" />
+      <circle cx="3" cy="21" r="1.5" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
 // Gann Fan: several rays fanning out from one corner point (the apex),
 // echoing the tool's own anchor+direction shape.
 function GannFanIcon() {
@@ -1084,6 +1099,7 @@ const FIB_ICON: Record<FibTool, React.ReactNode> = {
   trendFibExtension: <TrendFibExtensionIcon />,
   fibChannel: <FibChannelIcon />,
   fibTimeZone: <FibTimeZoneIcon />,
+  fibSpeedFan: <FibSpeedFanIcon />,
 };
 
 // The Fibonacci group's flyout — flat list (no subsections), same pattern as
@@ -1094,13 +1110,13 @@ const FIB_ITEMS: { tool: FibTool; label: string }[] = [
   { tool: 'trendFibExtension', label: 'Trend-based Fib Extension' },
   { tool: 'fibChannel',        label: 'Fib Channel' },
   { tool: 'fibTimeZone',       label: 'Fib Time Zone' },
+  { tool: 'fibSpeedFan',       label: 'Fib Speed/Resistance Fan' },
 ];
 
 const FIB_COMING_SOON: ComingSoonItem[] = [
   { label: 'Fib Circles', icon: <ComingSoonIcon /> },
   { label: 'Fib Spiral', icon: <ComingSoonIcon /> },
   { label: 'Fib Speed/Resistance Arcs', icon: <ComingSoonIcon /> },
-  { label: 'Fib Speed/Resistance Fan', icon: <ComingSoonIcon /> },
   { label: 'Fib Wedge', icon: <ComingSoonIcon /> },
   { label: 'Pitchfan', icon: <ComingSoonIcon /> },
 ];

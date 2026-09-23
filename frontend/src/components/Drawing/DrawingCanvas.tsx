@@ -23,7 +23,7 @@ const CAPTURE_TOOLS = new Set<DrawingTool>([
   'positionForecast',
   'gannFan', 'gannBox', 'gannSquare',
   'abcd', 'xabcd', 'cypher', 'threeDrives', 'headShoulders',
-  'cyclicLines', 'timeCycles', 'sineLine', 'fibTimeZone',
+  'cyclicLines', 'timeCycles', 'sineLine', 'fibTimeZone', 'fibSpeedFan',
 ]);
 
 // Number of clicks each drawing tool needs before it's finalized. Horizontal
@@ -94,6 +94,7 @@ const CLICKS_REQUIRED: Partial<Record<DrawingTool, number>> = {
   timeCycles: 2,
   sineLine: 2,
   fibTimeZone: 2,
+  fibSpeedFan: 2,
 };
 
 // Point-count and per-point letter labels for the Patterns group's connected-
@@ -214,6 +215,12 @@ function drawFibLevelLine(
   ctx.font = '10px monospace';
   ctx.fillText(label, labelX, y - 3);
 }
+
+// Fib Speed/Resistance Fan's ray ratios — shared by the render branch and
+// hitTest so the two can't drift. Deliberately NOT a fibLevelsFor table:
+// the fan has no `levels`/settings modal, each ratio is just a ray. Each
+// ratio's label is String(r) ("0", "0.382", "0.5", "0.618", "1").
+const FIB_FAN_RATIOS = [0, 0.382, 0.5, 0.618, 1];
 
 // Shared ratio set for Gann Box/Square grid divisions.
 const GANN_GRID_RATIOS = [0, 0.25, 0.382, 0.5, 0.618, 0.75, 1.0];
@@ -770,6 +777,72 @@ function renderDrawing(
     if (selected) {
       ctx.beginPath();
       ctx.arc(x1, y1, 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+  } else if (d.type === 'fibSpeedFan') {
+    // Own branch modeled on gannFan — NOT routed through fibLevelsFor. Apex
+    // (base start) and base end; each fib ray shares the base vector's dx and
+    // scales dy by (1 - r) — the retracement convention measured back from
+    // p2, so r=0 is the base line itself (through p2) and r=1 is the
+    // horizontal through the apex.
+    const x0 = timeToX(chart, d.time1);
+    const y0 = priceToY(series, d.price1);
+    const x1p = timeToX(chart, d.time2);
+    const y1p = priceToY(series, d.price2);
+    if (x0 == null || y0 == null || x1p == null || y1p == null) { ctx.restore(); return; }
+
+    const dx = x1p - x0, dy = y1p - y0;
+
+    const baseColor = d.color ?? '#2196F3';
+    const baseOpacity = d.opacity ?? 100;
+    const baseWidth = d.width ?? 1.5;
+    const dashPattern: number[] = d.dash === 'dashed' ? [8, 4] : d.dash === 'dotted' ? [2, 3] : [];
+
+    if (Math.abs(dx) < 1 || Math.abs(dy) < 1) {
+      // degenerate (no time or no price range) — every ray would collapse
+      // onto one line, so fall back to just the base segment
+      ctx.strokeStyle = eraserHover ? '#f85149' : hexToRgba(baseColor, baseOpacity);
+      ctx.lineWidth = baseWidth + (selected ? 1 : 0);
+      ctx.setLineDash(dashPattern);
+      ctx.beginPath();
+      ctx.moveTo(x0, y0);
+      ctx.lineTo(x1p, y1p);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    } else {
+      for (const r of FIB_FAN_RATIOS) {
+        // emphasize the base line (r=0), same as gannFan's 1x1
+        const emphasize = r === 0;
+        const rdx = dx, rdy = dy * (1 - r);
+        const ext = extendLineToRect(x0, y0, x0 + rdx, y0 + rdy, W, H);
+        const fx = ext ? ext.bx : x0 + rdx;
+        const fy = ext ? ext.by : y0 + rdy;
+
+        const lineColor = hexToRgba(baseColor, emphasize ? baseOpacity : Math.max(baseOpacity * 0.5, 15));
+        ctx.strokeStyle = eraserHover ? '#f85149' : lineColor;
+        ctx.lineWidth = (emphasize ? baseWidth + 0.5 : Math.max(baseWidth - 0.5, 1)) + (selected ? 1 : 0);
+        ctx.setLineDash(dashPattern);
+        ctx.beginPath();
+        ctx.moveTo(x0, y0);
+        ctx.lineTo(fx, fy);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        ctx.fillStyle = eraserHover ? '#f85149' : hexToRgba(baseColor, emphasize ? baseOpacity : Math.max(baseOpacity * 0.7, 30));
+        ctx.font = '10px monospace';
+        ctx.fillText(String(r), Math.min(Math.max(fx - 12, 2), W - 36), Math.min(Math.max(fy, 10), H - 4));
+      }
+    }
+
+    ctx.fillStyle = eraserHover ? '#f85149' : baseColor;
+    ctx.beginPath();
+    ctx.arc(x0, y0, 4, 0, Math.PI * 2);
+    ctx.fill();
+
+    if (selected) {
+      ctx.beginPath();
+      ctx.arc(x1p, y1p, 4, 0, Math.PI * 2);
       ctx.fill();
     }
 
@@ -3157,6 +3230,31 @@ function hitTest(
     return false;
   }
 
+  if (d.type === 'fibSpeedFan') {
+    const x0 = timeToX(chart, d.time1);
+    const y0 = priceToY(series, d.price1);
+    const x1 = timeToX(chart, d.time2);
+    const y1 = priceToY(series, d.price2);
+    if (x0 == null || y0 == null || x1 == null || y1 == null) return false;
+    if (Math.hypot(mx - x0, my - y0) < TOL || Math.hypot(mx - x1, my - y1) < TOL) return true;
+
+    const dx = x1 - x0, dy = y1 - y0;
+    // degenerate — same base-segment-only fallback as the render branch
+    if (Math.abs(dx) < 1 || Math.abs(dy) < 1) return distToSegment(mx, my, x0, y0, x1, y1) < TOL;
+
+    // Same FIB_FAN_RATIOS (1 - r) dy-scalings as the render branch, each ray
+    // extended far past the visible area (same trick as gannFan's hitTest).
+    const FAR = 1e6;
+    for (const r of FIB_FAN_RATIOS) {
+      const rdx = dx, rdy = dy * (1 - r);
+      const len = Math.hypot(rdx, rdy) || 1;
+      const fx = x0 + (rdx / len) * FAR;
+      const fy = y0 + (rdy / len) * FAR;
+      if (distToSegment(mx, my, x0, y0, fx, fy) < TOL) return true;
+    }
+    return false;
+  }
+
   if (d.type === 'cyclicLines' || d.type === 'timeCycles') {
     // Same repeating-vertical-line spacing as the render branch (spacing =
     // x2 - x1), but tested in O(1): round to the nearest cycle index k
@@ -3854,7 +3952,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           if (drag.kind === 'trendline' && (d.type === 'trendline' || d.type === 'arrow' || d.type === 'priceNote' ||
               d.type === 'ray' || d.type === 'extendedLine' || d.type === 'infoLine' || d.type === 'trendAngle' ||
               d.type === 'gannFan' || d.type === 'cyclicLines' || d.type === 'timeCycles' || d.type === 'sineLine' ||
-              d.type === 'fibTimeZone')) {
+              d.type === 'fibTimeZone' || d.type === 'fibSpeedFan')) {
             dd = { ...d, price1: drag.price1, time1: drag.time1, price2: drag.price2, time2: drag.time2 };
           } else if (drag.kind === 'channel' && (d.type === 'channel' || d.type === 'rotatedRectangle' || d.type === 'fibChannel')) {
             dd = { ...d, price1: drag.price1, time1: drag.time1, price2: drag.price2, time2: drag.time2,
@@ -3946,6 +4044,8 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
             preview = { id: '__preview', type: 'sineLine', price1, time1, price2, time2 };
           else if (tool === 'fibTimeZone' && price2 != null && time2 != null)
             preview = { id: '__preview', type: 'fibTimeZone', price1, time1, price2, time2 };
+          else if (tool === 'fibSpeedFan' && price2 != null && time2 != null)
+            preview = { id: '__preview', type: 'fibSpeedFan', price1, time1, price2, time2 };
           else if (tool === 'extendedLine' && price2 != null && time2 != null)
             preview = { id: '__preview', type: 'extendedLine', price1, time1, price2, time2 };
           else if (tool === 'infoLine' && price2 != null && time2 != null)
@@ -4448,7 +4548,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
       addDrawing({ id, type: 'trendline', price1, time1, price2, time2 });
     } else if (tool === 'ray' || tool === 'extendedLine' || tool === 'infoLine' || tool === 'trendAngle' ||
         tool === 'gannFan' || tool === 'cyclicLines' || tool === 'timeCycles' || tool === 'sineLine' ||
-        tool === 'fibTimeZone') {
+        tool === 'fibTimeZone' || tool === 'fibSpeedFan') {
       if (price2 == null || time2 == null) return;
       addDrawing({ id, type: tool, price1, time1, price2, time2 });
     } else if (tool === 'hline') {
@@ -5051,7 +5151,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
         if (d.type === 'trendline' || d.type === 'arrow' || d.type === 'priceNote' ||
             d.type === 'ray' || d.type === 'extendedLine' || d.type === 'infoLine' || d.type === 'trendAngle' ||
             d.type === 'gannFan' || d.type === 'cyclicLines' || d.type === 'timeCycles' || d.type === 'sineLine' ||
-            d.type === 'fibTimeZone') {
+            d.type === 'fibTimeZone' || d.type === 'fibSpeedFan') {
           const x1 = timeToX(chart, d.time1), y1 = priceToY(series, d.price1);
           const x2 = timeToX(chart, d.time2), y2 = priceToY(series, d.price2);
           if (x1 == null || y1 == null || x2 == null || y2 == null) continue;
@@ -5167,7 +5267,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
         if (d.type === 'trendline' || d.type === 'arrow' || d.type === 'priceNote' ||
             d.type === 'ray' || d.type === 'extendedLine' || d.type === 'infoLine' || d.type === 'trendAngle' ||
             d.type === 'gannFan' || d.type === 'cyclicLines' || d.type === 'timeCycles' || d.type === 'sineLine' ||
-            d.type === 'fibTimeZone') {
+            d.type === 'fibTimeZone' || d.type === 'fibSpeedFan') {
           const x1 = timeToX(chart, d.time1), y1 = priceToY(series, d.price1);
           const x2 = timeToX(chart, d.time2), y2 = priceToY(series, d.price2);
           if (x1 == null || y1 == null || x2 == null || y2 == null) continue;
