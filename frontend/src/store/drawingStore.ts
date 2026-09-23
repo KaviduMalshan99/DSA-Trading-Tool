@@ -479,6 +479,23 @@ export interface TableDrawing {
   fillOpacity?: number;
 }
 
+export const TABLE_MAX_DIM = 10;
+
+// Rebuilds a row-major `cells` array for a new rows × cols shape, keeping each
+// surviving cell at its (r, c) and filling new cells with ''. Used by the
+// style toolbar's add/remove row/column buttons.
+export function resizeTableCells(
+  cells: string[], rows: number, cols: number, newRows: number, newCols: number,
+): string[] {
+  const out: string[] = [];
+  for (let r = 0; r < newRows; r++) {
+    for (let c = 0; c < newCols; c++) {
+      out.push(r < rows && c < cols ? cells[r * cols + c] ?? '' : '');
+    }
+  }
+  return out;
+}
+
 // Long/Short Position: single-click projection tool — entry line splits a
 // profit zone (toward targetPrice) from a loss zone (toward stopPrice); the
 // box spans time1..time2. For 'longPosition' targetPrice > entryPrice >

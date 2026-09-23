@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState, memo } from 'react';
 import type { IChartApi, ISeriesApi } from 'lightweight-charts';
-import { useDrawingStore, type Drawing, type PositionDrawing } from '../../store/drawingStore';
+import {
+  useDrawingStore, resizeTableCells, TABLE_MAX_DIM, type Drawing, type PositionDrawing,
+} from '../../store/drawingStore';
 import { priceToY, timeToX, computeParallelOffset } from './DrawingCanvas';
 import { FibSettingsModal } from './FibSettingsModal';
 import {
@@ -129,6 +131,14 @@ export const DrawingStyleToolbar = memo(function DrawingStyleToolbar({ sharedCha
       return;
     }
 
+    if (selected.type === 'table') {
+      const x1 = timeToX(chart, selected.time1), y1 = priceToY(series, selected.price1);
+      const x2 = timeToX(chart, selected.time2), y2 = priceToY(series, selected.price2);
+      if (x1 == null || y1 == null || x2 == null || y2 == null) { setPos(null); return; }
+      setPos({ x: (x1 + x2) / 2, y: Math.min(y1, y2) - 46 });
+      return;
+    }
+
     if (selected.type === 'priceRange' || selected.type === 'dateRange' || selected.type === 'datePriceRange') {
       const x1 = timeToX(chart, selected.time1), y1 = priceToY(series, selected.price1);
       const x2 = timeToX(chart, selected.time2), y2 = priceToY(series, selected.price2);
@@ -228,7 +238,7 @@ export const DrawingStyleToolbar = memo(function DrawingStyleToolbar({ sharedCha
       selected.type !== 'brush' && selected.type !== 'arrow' && selected.type !== 'arrowMark' &&
       selected.type !== 'text' && selected.type !== 'priceNote' && selected.type !== 'priceRange' &&
       selected.type !== 'dateRange' && selected.type !== 'datePriceRange' && selected.type !== 'sector' &&
-      selected.type !== 'positionForecast' && !isPositionDrawing(selected)) return null;
+      selected.type !== 'positionForecast' && selected.type !== 'table' && !isPositionDrawing(selected)) return null;
 
   const toolbarStyle: React.CSSProperties = {
     left: Math.max(4, pos.x),
@@ -360,6 +370,50 @@ export const DrawingStyleToolbar = memo(function DrawingStyleToolbar({ sharedCha
         <button
           title="Delete"
           onClick={() => deleteDrawing(note.id)}
+          className="w-7 h-7 flex items-center justify-center rounded text-[var(--text-muted)] hover:text-[#f85149] hover:bg-[var(--bg-hover-alt)]"
+        >
+          <TrashIcon />
+        </button>
+      </div>
+    );
+  }
+
+  if (selected.type === 'table') {
+    const table = selected;
+    // Each grid button reads the latest table from the store (not this
+    // render's copy) and applies one updateDrawing — one undo step.
+    const resize = (dRows: number, dCols: number) => {
+      const t = useDrawingStore.getState().drawings.find((d) => d.id === table.id);
+      if (t?.type !== 'table') return;
+      const rows = Math.min(TABLE_MAX_DIM, Math.max(1, t.rows + dRows));
+      const cols = Math.min(TABLE_MAX_DIM, Math.max(1, t.cols + dCols));
+      if (rows === t.rows && cols === t.cols) return;
+      updateDrawing(t.id, { rows, cols, cells: resizeTableCells(t.cells, t.rows, t.cols, rows, cols) });
+    };
+    const gridBtn = 'h-7 px-1.5 flex items-center justify-center rounded text-[11px] font-medium text-[var(--text-muted)] ' +
+      'hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover-alt)] disabled:opacity-40 disabled:pointer-events-none';
+
+    return (
+      <div ref={toolbarRef} data-drawing-overlay="style-toolbar" className="absolute flex items-center gap-0.5 py-1 px-1 select-none" style={toolbarStyle}>
+        <span title="Grid color" className="px-1">
+          <MiniColorSwatch color={table.color ?? '#2196F3'} onChange={(c) => updateDrawing(table.id, { color: c })} />
+        </span>
+        <span title="Text color" className="px-1">
+          <MiniColorSwatch color={table.textColor ?? '#d1d4dc'} onChange={(c) => updateDrawing(table.id, { textColor: c })} />
+        </span>
+
+        <div className="w-px h-5 bg-[var(--border-color-softer)] mx-0.5" />
+
+        <button title="Add row" className={gridBtn} disabled={table.rows >= TABLE_MAX_DIM} onClick={() => resize(1, 0)}>+Row</button>
+        <button title="Remove last row" className={gridBtn} disabled={table.rows <= 1} onClick={() => resize(-1, 0)}>−Row</button>
+        <button title="Add column" className={gridBtn} disabled={table.cols >= TABLE_MAX_DIM} onClick={() => resize(0, 1)}>+Col</button>
+        <button title="Remove last column" className={gridBtn} disabled={table.cols <= 1} onClick={() => resize(0, -1)}>−Col</button>
+
+        <div className="w-px h-5 bg-[var(--border-color-softer)] mx-0.5" />
+
+        <button
+          title="Delete"
+          onClick={() => deleteDrawing(table.id)}
           className="w-7 h-7 flex items-center justify-center rounded text-[var(--text-muted)] hover:text-[#f85149] hover:bg-[var(--bg-hover-alt)]"
         >
           <TrashIcon />
