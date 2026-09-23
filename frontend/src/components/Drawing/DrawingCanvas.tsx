@@ -23,7 +23,7 @@ const CAPTURE_TOOLS = new Set<DrawingTool>([
   'positionForecast',
   'gannFan', 'gannBox', 'gannSquare',
   'abcd', 'xabcd', 'cypher', 'threeDrives', 'headShoulders',
-  'cyclicLines', 'timeCycles', 'sineLine', 'fibTimeZone', 'fibSpeedFan',
+  'cyclicLines', 'timeCycles', 'sineLine', 'fibTimeZone', 'fibSpeedFan', 'fibCircles',
 ]);
 
 // Number of clicks each drawing tool needs before it's finalized. Horizontal
@@ -95,6 +95,7 @@ const CLICKS_REQUIRED: Partial<Record<DrawingTool, number>> = {
   sineLine: 2,
   fibTimeZone: 2,
   fibSpeedFan: 2,
+  fibCircles: 2,
 };
 
 // Point-count and per-point letter labels for the Patterns group's connected-
@@ -221,6 +222,12 @@ function drawFibLevelLine(
 // the fan has no `levels`/settings modal, each ratio is just a ray. Each
 // ratio's label is String(r) ("0", "0.382", "0.5", "0.618", "1").
 const FIB_FAN_RATIOS = [0, 0.382, 0.5, 0.618, 1];
+
+// Fib Circles' ring ratios (multiples of the center→edge base radius) —
+// shared by the render branch and hitTest so the two can't drift.
+// Deliberately NOT a fibLevelsFor table: like the fan, there's no
+// `levels`/settings modal, each ratio is just a ring labeled String(r).
+const FIB_CIRCLE_RATIOS = [0.236, 0.382, 0.5, 0.618, 1, 1.618, 2.618];
 
 // Shared ratio set for Gann Box/Square grid divisions.
 const GANN_GRID_RATIOS = [0, 0.25, 0.382, 0.5, 0.618, 0.75, 1.0];
@@ -832,6 +839,57 @@ function renderDrawing(
         ctx.fillStyle = eraserHover ? '#f85149' : hexToRgba(baseColor, emphasize ? baseOpacity : Math.max(baseOpacity * 0.7, 30));
         ctx.font = '10px monospace';
         ctx.fillText(String(r), Math.min(Math.max(fx - 12, 2), W - 36), Math.min(Math.max(fy, 10), H - 4));
+      }
+    }
+
+    ctx.fillStyle = eraserHover ? '#f85149' : baseColor;
+    ctx.beginPath();
+    ctx.arc(x0, y0, 4, 0, Math.PI * 2);
+    ctx.fill();
+
+    if (selected) {
+      ctx.beginPath();
+      ctx.arc(x1p, y1p, 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+  } else if (d.type === 'fibCircles') {
+    // Own branch — NOT routed through fibLevelsFor, and NOT the Circle/Ellipse
+    // bounding-box geometry. p1 is the center, p2 an edge point; the base
+    // radius is their pixel distance (recomputed every frame), so the r=1
+    // ring always passes through p2 and every ring stays a true circle.
+    const x0 = timeToX(chart, d.time1);
+    const y0 = priceToY(series, d.price1);
+    const x1p = timeToX(chart, d.time2);
+    const y1p = priceToY(series, d.price2);
+    if (x0 == null || y0 == null || x1p == null || y1p == null) { ctx.restore(); return; }
+
+    const baseR = Math.hypot(x1p - x0, y1p - y0);
+
+    const baseColor = d.color ?? '#2196F3';
+    const baseOpacity = d.opacity ?? 100;
+    const baseWidth = d.width ?? 1.5;
+    const dashPattern: number[] = d.dash === 'dashed' ? [8, 4] : d.dash === 'dotted' ? [2, 3] : [];
+
+    // degenerate (p1 == p2) — no rings, just the center dot below
+    if (baseR >= 1) {
+      for (const r of FIB_CIRCLE_RATIOS) {
+        // emphasize the base ring (r=1, through p2), same as the fan's base line
+        const emphasize = r === 1;
+        const ringR = baseR * r;
+
+        const lineColor = hexToRgba(baseColor, emphasize ? baseOpacity : Math.max(baseOpacity * 0.5, 15));
+        ctx.strokeStyle = eraserHover ? '#f85149' : lineColor;
+        ctx.lineWidth = (emphasize ? baseWidth + 0.5 : Math.max(baseWidth - 0.5, 1)) + (selected ? 1 : 0);
+        ctx.setLineDash(dashPattern);
+        ctx.beginPath();
+        ctx.arc(x0, y0, ringR, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        ctx.fillStyle = eraserHover ? '#f85149' : hexToRgba(baseColor, emphasize ? baseOpacity : Math.max(baseOpacity * 0.7, 30));
+        ctx.font = '10px monospace';
+        ctx.fillText(String(r), Math.min(Math.max(x0, 2), W - 24), Math.min(Math.max(y0 - ringR - 3, 10), H - 4));
       }
     }
 
@@ -3255,6 +3313,24 @@ function hitTest(
     return false;
   }
 
+  if (d.type === 'fibCircles') {
+    const x0 = timeToX(chart, d.time1);
+    const y0 = priceToY(series, d.price1);
+    const x1 = timeToX(chart, d.time2);
+    const y1 = priceToY(series, d.price2);
+    if (x0 == null || y0 == null || x1 == null || y1 == null) return false;
+    if (Math.hypot(mx - x0, my - y0) < TOL || Math.hypot(mx - x1, my - y1) < TOL) return true;
+
+    const baseR = Math.hypot(x1 - x0, y1 - y0);
+    // degenerate — no rings rendered, so only the anchors are hittable
+    if (baseR < 1) return false;
+
+    // Same FIB_CIRCLE_RATIOS rings as the render branch: an exact ring-distance
+    // test, since every ring is a true circle around the center.
+    const dist = Math.hypot(mx - x0, my - y0);
+    return FIB_CIRCLE_RATIOS.some((r) => Math.abs(dist - baseR * r) < TOL);
+  }
+
   if (d.type === 'cyclicLines' || d.type === 'timeCycles') {
     // Same repeating-vertical-line spacing as the render branch (spacing =
     // x2 - x1), but tested in O(1): round to the nearest cycle index k
@@ -3952,7 +4028,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           if (drag.kind === 'trendline' && (d.type === 'trendline' || d.type === 'arrow' || d.type === 'priceNote' ||
               d.type === 'ray' || d.type === 'extendedLine' || d.type === 'infoLine' || d.type === 'trendAngle' ||
               d.type === 'gannFan' || d.type === 'cyclicLines' || d.type === 'timeCycles' || d.type === 'sineLine' ||
-              d.type === 'fibTimeZone' || d.type === 'fibSpeedFan')) {
+              d.type === 'fibTimeZone' || d.type === 'fibSpeedFan' || d.type === 'fibCircles')) {
             dd = { ...d, price1: drag.price1, time1: drag.time1, price2: drag.price2, time2: drag.time2 };
           } else if (drag.kind === 'channel' && (d.type === 'channel' || d.type === 'rotatedRectangle' || d.type === 'fibChannel')) {
             dd = { ...d, price1: drag.price1, time1: drag.time1, price2: drag.price2, time2: drag.time2,
@@ -4046,6 +4122,8 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
             preview = { id: '__preview', type: 'fibTimeZone', price1, time1, price2, time2 };
           else if (tool === 'fibSpeedFan' && price2 != null && time2 != null)
             preview = { id: '__preview', type: 'fibSpeedFan', price1, time1, price2, time2 };
+          else if (tool === 'fibCircles' && price2 != null && time2 != null)
+            preview = { id: '__preview', type: 'fibCircles', price1, time1, price2, time2 };
           else if (tool === 'extendedLine' && price2 != null && time2 != null)
             preview = { id: '__preview', type: 'extendedLine', price1, time1, price2, time2 };
           else if (tool === 'infoLine' && price2 != null && time2 != null)
@@ -4548,7 +4626,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
       addDrawing({ id, type: 'trendline', price1, time1, price2, time2 });
     } else if (tool === 'ray' || tool === 'extendedLine' || tool === 'infoLine' || tool === 'trendAngle' ||
         tool === 'gannFan' || tool === 'cyclicLines' || tool === 'timeCycles' || tool === 'sineLine' ||
-        tool === 'fibTimeZone' || tool === 'fibSpeedFan') {
+        tool === 'fibTimeZone' || tool === 'fibSpeedFan' || tool === 'fibCircles') {
       if (price2 == null || time2 == null) return;
       addDrawing({ id, type: tool, price1, time1, price2, time2 });
     } else if (tool === 'hline') {
@@ -5151,7 +5229,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
         if (d.type === 'trendline' || d.type === 'arrow' || d.type === 'priceNote' ||
             d.type === 'ray' || d.type === 'extendedLine' || d.type === 'infoLine' || d.type === 'trendAngle' ||
             d.type === 'gannFan' || d.type === 'cyclicLines' || d.type === 'timeCycles' || d.type === 'sineLine' ||
-            d.type === 'fibTimeZone' || d.type === 'fibSpeedFan') {
+            d.type === 'fibTimeZone' || d.type === 'fibSpeedFan' || d.type === 'fibCircles') {
           const x1 = timeToX(chart, d.time1), y1 = priceToY(series, d.price1);
           const x2 = timeToX(chart, d.time2), y2 = priceToY(series, d.price2);
           if (x1 == null || y1 == null || x2 == null || y2 == null) continue;
@@ -5267,7 +5345,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
         if (d.type === 'trendline' || d.type === 'arrow' || d.type === 'priceNote' ||
             d.type === 'ray' || d.type === 'extendedLine' || d.type === 'infoLine' || d.type === 'trendAngle' ||
             d.type === 'gannFan' || d.type === 'cyclicLines' || d.type === 'timeCycles' || d.type === 'sineLine' ||
-            d.type === 'fibTimeZone' || d.type === 'fibSpeedFan') {
+            d.type === 'fibTimeZone' || d.type === 'fibSpeedFan' || d.type === 'fibCircles') {
           const x1 = timeToX(chart, d.time1), y1 = priceToY(series, d.price1);
           const x2 = timeToX(chart, d.time2), y2 = priceToY(series, d.price2);
           if (x1 == null || y1 == null || x2 == null || y2 == null) continue;
