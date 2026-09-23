@@ -66,15 +66,16 @@ export const POSITION_RANGE_TOOLS: readonly PositionRangeTool[] = [
 // The "Fibonacci" group — Fib Retracement plus ratio-table variants (Fib
 // Extension, Trend-based Fib Extension, Fib Channel), grouped under one
 // dropdown just like Trend Line/Shapes/Annotation/Prediction & measurement.
-// 'fibTimeZone', 'fibSpeedFan', 'fibCircles', 'fibSpeedArcs' and 'fibWedge'
-// are grouped here for the toolbar flyout only — unlike the other 4, they have
-// no ratio-table/levels (see FibTimeZoneDrawing/FibSpeedFanDrawing/
-// FibCirclesDrawing/FibSpeedArcsDrawing/FibWedgeDrawing below) and are
+// 'fibTimeZone', 'fibSpeedFan', 'fibCircles', 'fibSpeedArcs', 'fibWedge' and
+// 'pitchfan' are grouped here for the toolbar flyout only — unlike the other
+// 4, they have no ratio-table/levels (see FibTimeZoneDrawing/
+// FibSpeedFanDrawing/FibCirclesDrawing/FibSpeedArcsDrawing/FibWedgeDrawing/
+// PitchfanDrawing below) and are
 // deliberately excluded from FibLikeDrawing; fibLevelsFor's FibTool parameter
 // never actually receives any of them since every call site narrows d.type to
 // the 4 ratio-table literals first.
-export type FibTool = 'fibonacci' | 'fibExtension' | 'trendFibExtension' | 'fibChannel' | 'fibTimeZone' | 'fibSpeedFan' | 'fibCircles' | 'fibSpeedArcs' | 'fibWedge';
-export const FIB_TOOLS: readonly FibTool[] = ['fibonacci', 'fibExtension', 'trendFibExtension', 'fibChannel', 'fibTimeZone', 'fibSpeedFan', 'fibCircles', 'fibSpeedArcs', 'fibWedge'];
+export type FibTool = 'fibonacci' | 'fibExtension' | 'trendFibExtension' | 'fibChannel' | 'fibTimeZone' | 'fibSpeedFan' | 'fibCircles' | 'fibSpeedArcs' | 'fibWedge' | 'pitchfan';
+export const FIB_TOOLS: readonly FibTool[] = ['fibonacci', 'fibExtension', 'trendFibExtension', 'fibChannel', 'fibTimeZone', 'fibSpeedFan', 'fibCircles', 'fibSpeedArcs', 'fibWedge', 'pitchfan'];
 
 // The "Gann" group — Gann Fan, Gann Box, Gann Square — grouped under one
 // dropdown just like Trend Line/Shapes/.../Fibonacci.
@@ -665,6 +666,19 @@ export interface FibWedgeDrawing extends LineStyle {
   price3: number; time3: number; // edge B (direction only)
 }
 
+// Pitchfan: same 3-point shape as FibWedgeDrawing, and likewise NOT a
+// ratio-table tool (no `levels`, not part of FibLikeDrawing). p1 is the anchor
+// pivot, p2/p3 the two base pivots; the median and fib-ratio rays run from p1
+// through points lerped along the p2-p3 base, derived at render time (see the
+// 'pitchfan' render branch in DrawingCanvas.tsx).
+export interface PitchfanDrawing extends LineStyle {
+  id: string;
+  type: 'pitchfan';
+  price1: number; time1: number; // anchor
+  price2: number; time2: number; // base pivot A
+  price3: number; time3: number; // base pivot B
+}
+
 // Gann Fan: identical 2-point shape to Ray — price1/time1 is the anchor
 // (apex), price2/time2 is the point that sets the 1x1 ray's direction. The
 // other 6 angle rays (2x1, 3x1, 4x1, 1x2, 1x3, 1x4) are derived at render
@@ -814,6 +828,7 @@ export type Drawing =
   | TriangleDrawing
   | SectorDrawing
   | FibWedgeDrawing
+  | PitchfanDrawing
   | PositionForecastDrawing
   | ArcDrawing
   | CurveDrawing
