@@ -101,6 +101,15 @@ export const DrawingStyleToolbar = memo(function DrawingStyleToolbar({ sharedCha
       return;
     }
 
+    if (selected.type === 'positionForecast') {
+      const x1 = timeToX(chart, selected.time1), y1 = priceToY(series, selected.price1);
+      const x2 = timeToX(chart, selected.time2), y2 = priceToY(series, selected.price2);
+      const x3 = timeToX(chart, selected.time3), y3 = priceToY(series, selected.price3);
+      if (x1 == null || y1 == null || x2 == null || y2 == null || x3 == null || y3 == null) { setPos(null); return; }
+      setPos({ x: (x1 + x2 + x3) / 3, y: Math.min(y1, y2, y3) - 46 });
+      return;
+    }
+
     if (selected.type === 'fibChannel') {
       const lines = computeParallelOffset(
         selected.price1, selected.time1, selected.price2, selected.time2,
@@ -219,7 +228,7 @@ export const DrawingStyleToolbar = memo(function DrawingStyleToolbar({ sharedCha
       selected.type !== 'brush' && selected.type !== 'arrow' && selected.type !== 'arrowMark' &&
       selected.type !== 'text' && selected.type !== 'priceNote' && selected.type !== 'priceRange' &&
       selected.type !== 'dateRange' && selected.type !== 'datePriceRange' && selected.type !== 'sector' &&
-      !isPositionDrawing(selected)) return null;
+      selected.type !== 'positionForecast' && !isPositionDrawing(selected)) return null;
 
   const toolbarStyle: React.CSSProperties = {
     left: Math.max(4, pos.x),
@@ -260,7 +269,7 @@ export const DrawingStyleToolbar = memo(function DrawingStyleToolbar({ sharedCha
   }
 
   if (selected.type === 'rectangle' || selected.type === 'rotatedRectangle' || selected.type === 'circle' ||
-      selected.type === 'sector') {
+      selected.type === 'sector' || selected.type === 'positionForecast') {
     const shape = selected;
     const color = shape.color ?? '#2196F3';
     const width = shape.width ?? 1;

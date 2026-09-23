@@ -711,6 +711,18 @@ function SectorIcon() {
   );
 }
 
+// Position Forecast: a projected path — up-leg, pullback dip, up-leg to the
+// target — over the shaded start->target move zone.
+function PositionForecastIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="4" width="18" height="16" fill="currentColor" fillOpacity="0.2" stroke="none" />
+      <polyline points="3 20 11 9 14 14 21 4" />
+      <circle cx="21" cy="4" r="1.5" fill="currentColor" />
+    </svg>
+  );
+}
+
 function MeasureIcon() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
@@ -1028,6 +1040,7 @@ const POSITION_RANGE_ICON: Record<PositionRangeTool, React.ReactNode> = {
   dateRange: <DateRangeIcon />,
   datePriceRange: <DatePriceRangeIcon />,
   sector: <SectorIcon />,
+  positionForecast: <PositionForecastIcon />,
 };
 
 // The flyout's three labeled sections — "Forecasting" (position projections),
@@ -1038,6 +1051,7 @@ const POSITION_RANGE_FORECASTING_ITEMS: { tool: PositionRangeTool; label: string
   { tool: 'longPosition',  label: 'Long Position' },
   { tool: 'shortPosition', label: 'Short Position' },
   { tool: 'sector',        label: 'Sector' },
+  { tool: 'positionForecast', label: 'Position Forecast' },
 ];
 
 const POSITION_RANGE_VOLUME_ITEMS: { tool: PositionRangeTool; label: string }[] = [
@@ -1055,7 +1069,6 @@ const POSITION_RANGE_ITEMS: { tool: PositionRangeTool; label: string }[] = [
 ];
 
 const FORECASTING_COMING_SOON: ComingSoonItem[] = [
-  { label: 'Position Forecast', icon: <ComingSoonIcon /> },
   { label: 'Bars Pattern', icon: <ComingSoonIcon /> },
   { label: 'Ghost Feed', icon: <ComingSoonIcon /> },
 ];

@@ -20,6 +20,7 @@ const CAPTURE_TOOLS = new Set<DrawingTool>([
   'arrowMarker', 'arrowTool', 'arrowMarkUp', 'arrowMarkDown', 'brush', 'highlighter',
   'text', 'priceNote', 'pin', 'flagMark', 'priceLabel', 'signpost', 'note', 'callout', 'comment', 'measure', 'zoomIn',
   'longPosition', 'shortPosition', 'anchoredVwap', 'priceRange', 'dateRange', 'datePriceRange', 'sector',
+  'positionForecast',
   'gannFan', 'gannBox', 'gannSquare',
   'abcd', 'xabcd', 'cypher', 'threeDrives', 'headShoulders',
   'cyclicLines', 'timeCycles', 'sineLine', 'fibTimeZone',
@@ -56,6 +57,7 @@ const CLICKS_REQUIRED: Partial<Record<DrawingTool, number>> = {
   ellipse: 2,
   triangle: 3,
   sector: 3,
+  positionForecast: 3,
   arc: 3,
   curve: 3,
   doubleCurve: 3,
@@ -1646,6 +1648,74 @@ function renderDrawing(
       }
     }
 
+  } else if (d.type === 'positionForecast') {
+    const pts3 = get3PointScreen(d.price1, d.time1, d.price2, d.time2, d.price3, d.time3, chart, series);
+    if (!pts3) { ctx.restore(); return; }
+    const { x1, y1, x2, y2, x3, y3 } = pts3;
+
+    const baseColor = d.color ?? '#2196F3';
+    const lineColor = eraserHover ? '#f85149' : hexToRgba(baseColor, d.opacity ?? 100);
+    const dashPattern: number[] = d.dash === 'dashed' ? [8, 4] : d.dash === 'dotted' ? [2, 3] : [];
+    const geo = forecastGeometry(x1, y1, x2, y2, x3, y3);
+
+    // Direction of the overall start->target move drives the zone/label tint
+    // (Long/Short Position's profit/loss greens and reds); flat falls back to
+    // the line color.
+    const move = d.price3 - d.price1;
+    const dirColor = move > 0 ? '#089981' : move < 0 ? '#F23645' : baseColor;
+
+    if (geo.kind === 'full' && geo.zone && d.filled !== false) {
+      const z = geo.zone;
+      ctx.fillStyle = eraserHover ? 'rgba(248,81,73,0.1)' : hexToRgba(d.fillColor ?? dirColor, d.fillOpacity ?? 20);
+      ctx.fillRect(z.lx, z.ty, z.rx - z.lx, z.by - z.ty);
+    }
+
+    ctx.strokeStyle = lineColor;
+    ctx.lineWidth = (d.width ?? 1) + (selected ? 0.5 : 0);
+    ctx.setLineDash(dashPattern);
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    if (geo.kind === 'full') ctx.lineTo(x3, y3);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    if (geo.kind === 'full') {
+      // "+3.42% (+12.30) · 18 bars" — the % part is dropped when the start
+      // price is 0, the bars part when the bar interval can't be inferred.
+      const fmt = (p: number) => p.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      const sign = move >= 0 ? '+' : '-';
+      const parts: string[] = [];
+      if (d.price1 !== 0) {
+        const pct = move / d.price1 * 100;
+        parts.push(`${sign}${Math.abs(pct).toFixed(2)}% (${sign}${fmt(Math.abs(move))})`);
+      } else {
+        parts.push(`${sign}${fmt(Math.abs(move))}`);
+      }
+      const barSec = estimateBarIntervalSec(candles);
+      if (barSec != null) parts.push(`${Math.round((d.time3 - d.time1) / barSec)} bars`);
+      const label = parts.join(' · ');
+
+      ctx.font = 'bold 11px sans-serif';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = eraserHover ? '#f85149' : dirColor;
+      const tw = ctx.measureText(label).width;
+      // above the target on an up-move, below it on a down-move — i.e. just
+      // outside the shaded zone
+      const ly = move >= 0 ? y3 - 12 : y3 + 12;
+      ctx.fillText(label, Math.max(4, Math.min(x3 + 8, W - tw - 4)), ly);
+    }
+
+    if (selected) {
+      ctx.fillStyle = eraserHover ? '#f85149' : baseColor;
+      for (const [hx, hy] of [[x1, y1], [x2, y2], [x3, y3]] as const) {
+        ctx.beginPath();
+        ctx.arc(hx, hy, 3.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
   } else if (d.type === 'arc' || d.type === 'curve') {
     const pts3 = get3PointScreen(d.price1, d.time1, d.price2, d.time2, d.price3, d.time3, chart, series);
     if (!pts3) { ctx.restore(); return; }
@@ -2949,6 +3019,26 @@ function sectorGeometry(
   return { kind: 'wedge', aA, aB, diff, ccw: diff < 0 };
 }
 
+// Position Forecast: pixel-space path/zone geometry from start (x1,y1) via
+// pullback (x2,y2) to target (x3,y3). Shared by the render branch and hitTest
+// so the two agree on the degenerate cases — 'leg1' occurs on every preview
+// frame between clicks 2 and 3, since the preview sets p3 = p2. `zone` is the
+// start->target move rect, null when it has no width (p3 straight above/below p1).
+type ForecastGeometry =
+  | { kind: 'leg1' } // p3 within 1px of p2 — only the p1->p2 segment exists
+  | { kind: 'full'; zone: { lx: number; rx: number; ty: number; by: number } | null };
+
+function forecastGeometry(
+  x1: number, y1: number, x2: number, y2: number, x3: number, y3: number,
+): ForecastGeometry {
+  if (Math.hypot(x3 - x2, y3 - y2) < 1) return { kind: 'leg1' };
+  const zone = Math.abs(x3 - x1) < 1 ? null : {
+    lx: Math.min(x1, x3), rx: Math.max(x1, x3),
+    ty: Math.min(y1, y3), by: Math.max(y1, y3),
+  };
+  return { kind: 'full', zone };
+}
+
 // Shared by Arc/Curve (identical math — start p1, end p2, control p3) and by
 // Double Curve's two segments. `t` in [0,1].
 function quadraticPoint(
@@ -3243,6 +3333,18 @@ function hitTest(
     while (rel <= -Math.PI) rel += Math.PI * 2;
     while (rel > Math.PI) rel -= Math.PI * 2;
     return geo.diff > 0 ? rel >= 0 && rel <= geo.diff : rel <= 0 && rel >= geo.diff;
+  }
+
+  if (d.type === 'positionForecast') {
+    const pts3 = get3PointScreen(d.price1, d.time1, d.price2, d.time2, d.price3, d.time3, chart, series);
+    if (!pts3) return false;
+    const { x1, y1, x2, y2, x3, y3 } = pts3;
+    const geo = forecastGeometry(x1, y1, x2, y2, x3, y3);
+    if (distToSegment(mx, my, x1, y1, x2, y2) < TOL) return true;
+    if (geo.kind === 'leg1') return false;
+    if (distToSegment(mx, my, x2, y2, x3, y3) < TOL) return true;
+    const z = geo.zone;
+    return z != null && mx >= z.lx && mx <= z.rx && my >= z.ty && my <= z.by;
   }
 
   if (d.type === 'arc' || d.type === 'curve') {
@@ -3654,7 +3756,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
   const dragRef = useRef<{
     active: boolean;
     kind: 'trendline' | 'channel' | 'flatChannel' | 'disjointChannel' | 'fibonacci' | 'box' | 'path' | 'brush'
-      | 'triangle' | 'arc' | 'curve' | 'doubleCurve' | 'trendFibExtension' | 'sector'
+      | 'triangle' | 'arc' | 'curve' | 'doubleCurve' | 'trendFibExtension' | 'sector' | 'positionForecast'
       | 'arrowMark' | 'note' | 'position' | 'hline' | 'vline' | 'hray';
     id: string;
     mode: 'move' | 'p1' | 'p2' | 'p3' | 'c2' | 'c3' | 'vertex' | 'target' | 'stop' | 'width'
@@ -3675,7 +3777,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
         priceB1: number; timeB1: number; priceB2: number; timeB2: number }
     | { kind: 'fibonacci'; id: string; priceHigh: number; timeHigh: number; priceLow: number; timeLow: number }
     | { kind: 'box'; id: string; price1: number; time1: number; price2: number; time2: number }
-    | { kind: 'triangle' | 'arc' | 'curve' | 'doubleCurve' | 'trendFibExtension' | 'sector'; id: string;
+    | { kind: 'triangle' | 'arc' | 'curve' | 'doubleCurve' | 'trendFibExtension' | 'sector' | 'positionForecast'; id: string;
         price1: number; time1: number; price2: number; time2: number; price3: number; time3: number }
     | { kind: 'path' | 'brush'; id: string; points: { price: number; time: number }[] }
     | { kind: 'arrowMark'; id: string; price: number; time: number }
@@ -3772,6 +3874,8 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           } else if (drag.kind === 'triangle' && d.type === 'triangle') {
             dd = { ...d, price1: drag.price1, time1: drag.time1, price2: drag.price2, time2: drag.time2, price3: drag.price3, time3: drag.time3 };
           } else if (drag.kind === 'sector' && d.type === 'sector') {
+            dd = { ...d, price1: drag.price1, time1: drag.time1, price2: drag.price2, time2: drag.time2, price3: drag.price3, time3: drag.time3 };
+          } else if (drag.kind === 'positionForecast' && d.type === 'positionForecast') {
             dd = { ...d, price1: drag.price1, time1: drag.time1, price2: drag.price2, time2: drag.time2, price3: drag.price3, time3: drag.time3 };
           } else if (drag.kind === 'arc' && d.type === 'arc') {
             dd = { ...d, price1: drag.price1, time1: drag.time1, price2: drag.price2, time2: drag.time2, price3: drag.price3, time3: drag.time3 };
@@ -3912,6 +4016,9 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
               price3: price3 ?? price2, time3: time3 ?? time2 };
           else if (tool === 'sector' && price2 != null && time2 != null)
             preview = { id: '__preview', type: 'sector', price1, time1, price2, time2,
+              price3: price3 ?? price2, time3: time3 ?? time2 };
+          else if (tool === 'positionForecast' && price2 != null && time2 != null)
+            preview = { id: '__preview', type: 'positionForecast', price1, time1, price2, time2,
               price3: price3 ?? price2, time3: time3 ?? time2 };
           else if (tool === 'arc' && price2 != null && time2 != null)
             preview = { id: '__preview', type: 'arc', price1, time1, price2, time2,
@@ -4421,6 +4528,9 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
     } else if (tool === 'sector') {
       if (price2 == null || time2 == null || price3 == null || time3 == null) return;
       addDrawing({ id, type: 'sector', price1, time1, price2, time2, price3, time3 });
+    } else if (tool === 'positionForecast') {
+      if (price2 == null || time2 == null || price3 == null || time3 == null) return;
+      addDrawing({ id, type: 'positionForecast', price1, time1, price2, time2, price3, time3 });
     } else if (tool === 'arc') {
       if (price2 == null || time2 == null || price3 == null || time3 == null) return;
       addDrawing({ id, type: 'arc', price1, time1, price2, time2, price3, time3 });
@@ -4722,7 +4832,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
         }
 
         if (drag.kind === 'triangle' || drag.kind === 'arc' || drag.kind === 'curve' || drag.kind === 'doubleCurve' ||
-            drag.kind === 'trendFibExtension' || drag.kind === 'sector') {
+            drag.kind === 'trendFibExtension' || drag.kind === 'sector' || drag.kind === 'positionForecast') {
           // All 5 store 3 independent anchor points with identical move/p1/p2/p3
           // semantics — a single drag application covers all of them.
           let nx1 = drag.origX1, ny1 = drag.origY1;
@@ -4982,7 +5092,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           if (nearAny) { hoverCursor = 'grab'; break; }
           if (hitTest(d, x, y, chart, series, candlesRef.current)) { hoverCursor = 'move'; break; }
         } else if (d.type === 'triangle' || d.type === 'arc' || d.type === 'curve' || d.type === 'doubleCurve' ||
-            d.type === 'trendFibExtension' || d.type === 'sector') {
+            d.type === 'trendFibExtension' || d.type === 'sector' || d.type === 'positionForecast') {
           const pts3 = get3PointScreen(d.price1, d.time1, d.price2, d.time2, d.price3, d.time3, chart, series);
           if (!pts3) continue;
           const { x1, y1, x2, y2, x3, y3 } = pts3;
@@ -5215,7 +5325,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
         }
 
         if (d.type === 'triangle' || d.type === 'arc' || d.type === 'curve' || d.type === 'doubleCurve' ||
-            d.type === 'trendFibExtension' || d.type === 'sector') {
+            d.type === 'trendFibExtension' || d.type === 'sector' || d.type === 'positionForecast') {
           const pts3 = get3PointScreen(d.price1, d.time1, d.price2, d.time2, d.price3, d.time3, chart, series);
           if (!pts3) continue;
           const { x1, y1, x2, y2, x3, y3 } = pts3;
@@ -5413,7 +5523,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           });
         } else if (preview.kind === 'channel' || preview.kind === 'triangle' || preview.kind === 'arc' ||
             preview.kind === 'curve' || preview.kind === 'doubleCurve' || preview.kind === 'trendFibExtension' ||
-            preview.kind === 'sector') {
+            preview.kind === 'sector' || preview.kind === 'positionForecast') {
           updateDrawing(drag.id, {
             price1: preview.price1, time1: preview.time1,
             price2: preview.price2, time2: preview.time2,

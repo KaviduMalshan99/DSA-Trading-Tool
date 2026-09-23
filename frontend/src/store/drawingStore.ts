@@ -56,9 +56,11 @@ export const ACTION_TOOLS: readonly ActionTool[] = ['measure', 'zoomIn'];
 // The "Prediction & measurement" group — Long/Short Position projections and
 // Price/Date Range brackets, grouped under one dropdown just like the others.
 export type PositionRangeTool =
-  | 'longPosition' | 'shortPosition' | 'anchoredVwap' | 'priceRange' | 'dateRange' | 'datePriceRange' | 'sector';
+  | 'longPosition' | 'shortPosition' | 'anchoredVwap' | 'priceRange' | 'dateRange' | 'datePriceRange' | 'sector'
+  | 'positionForecast';
 export const POSITION_RANGE_TOOLS: readonly PositionRangeTool[] = [
   'longPosition', 'shortPosition', 'anchoredVwap', 'priceRange', 'dateRange', 'datePriceRange', 'sector',
+  'positionForecast',
 ];
 
 // The "Fibonacci" group — Fib Retracement plus ratio-table variants (Fib
@@ -275,6 +277,18 @@ export interface SectorDrawing extends LineStyle, FillStyle {
   price1: number; time1: number; // apex
   price2: number; time2: number; // ray A direction
   price3: number; time3: number; // ray B direction
+}
+
+// Position Forecast: a projected 2-segment price path — same 3-point shape as
+// Sector. p1 is the start, p2 the intermediate pullback, p3 the target; the
+// start->target move is shaded and labeled (% / price / bars, computed at
+// render time, so nothing derived is stored).
+export interface PositionForecastDrawing extends LineStyle, FillStyle {
+  id: string;
+  type: 'positionForecast';
+  price1: number; time1: number; // start
+  price2: number; time2: number; // pullback
+  price3: number; time3: number; // target
 }
 
 // Arc: a single quadratic curve from p1 (start) to p2 (end), bulging toward
@@ -745,6 +759,7 @@ export type Drawing =
   | HighlighterDrawing
   | TriangleDrawing
   | SectorDrawing
+  | PositionForecastDrawing
   | ArcDrawing
   | CurveDrawing
   | DoubleCurveDrawing
