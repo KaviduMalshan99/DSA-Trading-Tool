@@ -10,8 +10,9 @@ const WS_BASE = import.meta.env.VITE_WS_URL ?? 'ws://localhost:8000';
 
 // Mirrors TradingChart.tsx's chartThemeOptions — native lightweight-charts
 // canvas colors can't read CSS custom properties, so we hardcode the
-// per-theme hex pairs that match the design tokens instead.
-function deltaChartThemeOptions(theme: Theme) {
+// per-theme hex pairs that match the design tokens instead. Exported for the
+// other sub-panel charts under the main chart (e.g. RSIPanel).
+export function subChartThemeOptions(theme: Theme) {
   const grid = theme === 'dark' ? '#161b22' : '#e0e3eb';
   const gridHorz = theme === 'dark' ? '#1a2030' : '#e0e3eb';
   const text = theme === 'dark' ? '#c9d1d9' : '#4b5563';
@@ -78,7 +79,7 @@ export function DeltaPanel({ sharedChartRef }: DeltaPanelProps) {
   useEffect(() => {
     if (!containerRef.current) return;
 
-    const themeOpts = deltaChartThemeOptions(theme);
+    const themeOpts = subChartThemeOptions(theme);
     const chart = createChart(containerRef.current, {
       layout: themeOpts.layout,
       grid: themeOpts.grid,
@@ -193,7 +194,7 @@ export function DeltaPanel({ sharedChartRef }: DeltaPanelProps) {
   // recreating the chart, so zoom/pan state and data survive the switch.
   useEffect(() => {
     if (!chartRef.current) return;
-    const themeOpts = deltaChartThemeOptions(theme);
+    const themeOpts = subChartThemeOptions(theme);
     chartRef.current.applyOptions({
       layout: themeOpts.layout,
       grid: themeOpts.grid,

@@ -1,9 +1,16 @@
 import { useState, useRef, useEffect } from 'react';
-import { useIndicatorStore, type IndicatorType } from '../../store/indicatorStore';
+import { useIndicatorStore, type IndicatorType, type SubPanelIndicator } from '../../store/indicatorStore';
 
-const INDICATOR_GROUPS: { header: string; items: { key: IndicatorType; label: string }[] }[] = [
-  { header: 'Moving Averages', items: [{ key: 'ema', label: 'EMA (20/50/100/200)' }] },
-  { header: 'Volatility',      items: [{ key: 'bollinger', label: 'Bollinger Bands' }] },
+// 'overlay' items draw on the main chart and stack (multi-select); 'panel'
+// items share the single sub-panel below it, so picking one swaps the other out.
+type IndicatorItem =
+  | { kind: 'overlay'; key: IndicatorType;     label: string }
+  | { kind: 'panel';   key: SubPanelIndicator; label: string };
+
+const INDICATOR_GROUPS: { header: string; items: IndicatorItem[] }[] = [
+  { header: 'Moving Averages', items: [{ kind: 'overlay', key: 'ema', label: 'EMA (20/50/100/200)' }] },
+  { header: 'Volatility',      items: [{ kind: 'overlay', key: 'bollinger', label: 'Bollinger Bands' }] },
+  { header: 'Oscillators',     items: [{ kind: 'panel', key: 'rsi', label: 'RSI (14)' }] },
 ];
 
 /**
@@ -13,6 +20,8 @@ const INDICATOR_GROUPS: { header: string; items: { key: IndicatorType; label: st
 export function IndicatorsDropdown() {
   const activeIndicators = useIndicatorStore((s) => s.activeIndicators);
   const toggleIndicator  = useIndicatorStore((s) => s.toggleIndicator);
+  const activeSubPanel   = useIndicatorStore((s) => s.activeSubPanel);
+  const toggleSubPanel   = useIndicatorStore((s) => s.toggleSubPanel);
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -62,12 +71,15 @@ export function IndicatorsDropdown() {
               <div className="px-3 pt-2 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)] select-none">
                 {header}
               </div>
-              {items.map(({ key, label }) => {
-                const active = activeIndicators.has(key);
+              {items.map((item) => {
+                const { key, label } = item;
+                const active = item.kind === 'panel'
+                  ? activeSubPanel === item.key
+                  : activeIndicators.has(item.key);
                 return (
                   <button
                     key={key}
-                    onClick={() => toggleIndicator(key)}
+                    onClick={() => (item.kind === 'panel' ? toggleSubPanel(item.key) : toggleIndicator(item.key))}
                     aria-pressed={active}
                     className={`w-full flex items-center gap-2 text-left py-1 text-xs transition-colors border-l-2 pl-2.5 pr-3 ${
                       active

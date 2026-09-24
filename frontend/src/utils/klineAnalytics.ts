@@ -13,7 +13,7 @@
  * require touching the backend or adding a new data source. Live mode is
  * untouched; these ports only run while replay is active.
  *
- * Exception: computeEMA and computeBollinger (below) have no backend
+ * Exception: computeEMA, computeBollinger and computeRSI (below) have no backend
  * counterpart — they're client-only indicators that run live as well as in replay.
  */
 import type { Candle } from '../types/market';
@@ -280,6 +280,47 @@ export function computeBollinger(candles: Candle[], period = 20, mult = 2): Boll
     const sd = Math.sqrt(sq / period);
 
     points.push({ time: candles[i].t, middle, upper: middle + mult * sd, lower: middle - mult * sd });
+  }
+  return points;
+}
+
+// ── RSI (client-only indicator, no backend port) ─────────────────────────────
+
+export interface RSIPoint {
+  time: number;   // candle open time, raw epoch ms
+  value: number;  // 0-100
+}
+
+/**
+ * Wilder's RSI. `candles` must be in chronological order. avgGain/avgLoss are
+ * seeded with the simple average of the first `period` close-to-close changes
+ * (so the first point is emitted at index `period`, the (period+1)-th candle),
+ * then smoothed as avg = (prev·(period-1) + current)/period. Follows
+ * TradingView's zero-division convention: avgLoss 0 → 100, avgGain 0 → 0.
+ * No warm-up points are emitted, so every point sits on a real candle time.
+ */
+export function computeRSI(candles: Candle[], period = 14): RSIPoint[] {
+  if (period < 1 || candles.length <= period) return [];
+
+  const rsi = (gain: number, loss: number) =>
+    loss === 0 ? 100 : gain === 0 ? 0 : 100 - 100 / (1 + gain / loss);
+
+  let avgGain = 0;
+  let avgLoss = 0;
+  for (let i = 1; i <= period; i++) {
+    const change = candles[i].c - candles[i - 1].c;
+    if (change > 0) avgGain += change;
+    else avgLoss -= change;
+  }
+  avgGain /= period;
+  avgLoss /= period;
+
+  const points: RSIPoint[] = [{ time: candles[period].t, value: rsi(avgGain, avgLoss) }];
+  for (let i = period + 1; i < candles.length; i++) {
+    const change = candles[i].c - candles[i - 1].c;
+    avgGain = (avgGain * (period - 1) + Math.max(change, 0)) / period;
+    avgLoss = (avgLoss * (period - 1) + Math.max(-change, 0)) / period;
+    points.push({ time: candles[i].t, value: rsi(avgGain, avgLoss) });
   }
   return points;
 }

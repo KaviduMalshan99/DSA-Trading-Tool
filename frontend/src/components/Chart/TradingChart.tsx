@@ -136,7 +136,9 @@ export function TradingChart({ sharedChartRef, sharedSeriesRef, sharedLineSeries
         // overlapping native price tag on the axis alongside our custom one.
         horzLine: { visible: false, labelVisible: false, ...themeOpts.crosshair.horzLine },
       },
-      rightPriceScale: themeOpts.rightPriceScale,
+      // Same minimumWidth as the sub-panels under this chart (RSIPanel), so
+      // their plot areas are equally wide and the bars line up vertically.
+      rightPriceScale: { ...themeOpts.rightPriceScale, minimumWidth: 72 },
       timeScale: {
         ...themeOpts.timeScale,
         timeVisible: true,

@@ -7,6 +7,7 @@ import { ReplayEngine } from './ReplayEngine';
 import { ChartToolbar } from './ChartToolbar';
 import { ChartLoadingOverlay } from './ChartLoadingOverlay';
 import { DeltaPanel } from '../Overlay/DeltaPanel';
+import { RSIPanel } from '../Overlay/RSIPanel';
 import { FootprintCanvas } from '../Overlay/FootprintCanvas';
 import { HeatmapCanvas } from '../Overlay/HeatmapCanvas';
 import { VolumeProfile } from '../Overlay/VolumeProfile';
@@ -39,6 +40,10 @@ export interface ChartContainerProps {
 export function ChartContainer({ sharedChartRef, sharedSeriesRef, chartAreaRef }: ChartContainerProps) {
   const visibleOverlays = useChartStore((s) => s.visibleOverlays);
   const activeIndicators = useIndicatorStore((s) => s.activeIndicators);
+  const activeSubPanel   = useIndicatorStore((s) => s.activeSubPanel);
+  // Either bottom panel (pro Delta panel or the student indicator sub-panel)
+  // takes a 1-share slice under the chart; with neither, the chart gets it all.
+  const hasBottomPanel = SHOW_DELTA_PANEL || activeSubPanel !== null;
   // The line-mode series is only shared between TradingChart and ReplayEngine
   // (both mounted here), so it's owned here rather than lifted to App.
   const sharedLineSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
@@ -52,8 +57,8 @@ export function ChartContainer({ sharedChartRef, sharedSeriesRef, chartAreaRef }
       <DrawingToolbar />
 
       <div className="flex flex-col flex-1 overflow-hidden">
-      {/* Main candlestick area — 80% with the delta panel, full height without */}
-      <div ref={chartAreaRef} className="relative bg-[var(--bg-app)]" style={{ flex: SHOW_DELTA_PANEL ? '4 4 0%' : '1 1 0%', minHeight: 0 }}>
+      {/* Main candlestick area — 80% with a bottom panel, full height without */}
+      <div ref={chartAreaRef} className="relative bg-[var(--bg-app)]" style={{ flex: hasBottomPanel ? '4 4 0%' : '1 1 0%', minHeight: 0 }}>
         <TradingChart
           sharedChartRef={sharedChartRef}
           sharedSeriesRef={sharedSeriesRef}
@@ -168,6 +173,19 @@ export function ChartContainer({ sharedChartRef, sharedSeriesRef, chartAreaRef }
         {visibleOverlays.has('checklist') && <TradeChecklist />}
         {visibleOverlays.has('scanner') && <ClusterScanner />}
       </div>
+
+      {/* Indicator sub-panel (RSI now; MACD/StochRSI later) — one at a time,
+          chosen in the Indicators menu. Independent of SHOW_DELTA_PANEL. Keyed
+          by indicator so a swap fully remounts (fresh chart, clean teardown). */}
+      {activeSubPanel && (
+        <div
+          key={activeSubPanel}
+          className="relative border-t border-[var(--border-color-soft)]"
+          style={{ flex: '1 1 0%', minHeight: 0 }}
+        >
+          {activeSubPanel === 'rsi' && <RSIPanel sharedChartRef={sharedChartRef} />}
+        </div>
+      )}
 
       {/* Delta panel — 20%. Gated by config/topBarVisibility.ts (off in the Stage 1 student view). */}
       {SHOW_DELTA_PANEL && (
