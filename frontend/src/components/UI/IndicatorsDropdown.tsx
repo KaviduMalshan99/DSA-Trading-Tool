@@ -10,7 +10,13 @@ type IndicatorItem =
 const INDICATOR_GROUPS: { header: string; items: IndicatorItem[] }[] = [
   { header: 'Moving Averages', items: [{ kind: 'overlay', key: 'ema', label: 'EMA (20/50/100/200)' }] },
   { header: 'Volatility',      items: [{ kind: 'overlay', key: 'bollinger', label: 'Bollinger Bands' }] },
-  { header: 'Oscillators',     items: [{ kind: 'panel', key: 'rsi', label: 'RSI (14)' }] },
+  {
+    header: 'Oscillators',
+    items: [
+      { kind: 'panel', key: 'rsi',      label: 'RSI (14)' },
+      { kind: 'panel', key: 'stochRsi', label: 'Stochastic RSI (14,14,3,3)' },
+    ],
+  },
 ];
 
 /**

@@ -13,8 +13,9 @@
  * require touching the backend or adding a new data source. Live mode is
  * untouched; these ports only run while replay is active.
  *
- * Exception: computeEMA, computeBollinger and computeRSI (below) have no backend
- * counterpart — they're client-only indicators that run live as well as in replay.
+ * Exception: computeEMA, computeBollinger, computeRSI and computeStochRSI (below)
+ * have no backend counterpart — they're client-only indicators that run live as
+ * well as in replay.
  */
 import type { Candle } from '../types/market';
 import type {
@@ -323,4 +324,72 @@ export function computeRSI(candles: Candle[], period = 14): RSIPoint[] {
     points.push({ time: candles[i].t, value: rsi(avgGain, avgLoss) });
   }
   return points;
+}
+
+// ── Stochastic RSI (client-only indicator, built on computeRSI) ──────────────
+
+export interface StochRSIData {
+  k: RSIPoint[];  // %K, 0-100
+  d: RSIPoint[];  // %D, 0-100
+}
+
+/**
+ * Stochastic RSI: the stochastic oscillator applied to Wilder's RSI instead of
+ * price. Defaults 14/14/3/3 (rsiLen, stochLen, kSmooth, dSmooth).
+ *   raw = (RSI - min(RSI, stochLen)) / (max - min) · 100
+ *   %K  = SMA(raw, kSmooth),  %D = SMA(%K, dSmooth)
+ * When the window is flat (max === min — e.g. RSI pinned at 100 through a
+ * strong one-way run) the previous raw value is carried forward, or 50 if
+ * there is none yet, so a steady trend doesn't read as 0 / "oversold".
+ * %K and %D are returned separately because %D starts dSmooth-1 bars later;
+ * like computeRSI, no warm-up points are emitted and each point carries the
+ * candle time of its RSI point.
+ */
+export function computeStochRSI(
+  candles: Candle[], rsiLen = 14, stochLen = 14, kSmooth = 3, dSmooth = 3,
+): StochRSIData {
+  const rsi = computeRSI(candles, rsiLen);
+  if (stochLen < 1 || kSmooth < 1 || dSmooth < 1 || rsi.length <= stochLen) {
+    return { k: [], d: [] };
+  }
+
+  // Rolling mean over the last `len` pushed values; null until the window fills.
+  const rollingMean = (len: number) => {
+    const buf: number[] = [];
+    let sum = 0;
+    return (v: number): number | null => {
+      buf.push(v);
+      sum += v;
+      if (buf.length > len) sum -= buf.shift()!;
+      return buf.length === len ? sum / len : null;
+    };
+  };
+  const smoothK = rollingMean(kSmooth);
+  const smoothD = rollingMean(dSmooth);
+
+  const k: RSIPoint[] = [];
+  const d: RSIPoint[] = [];
+  let prevRaw: number | null = null;
+
+  for (let i = stochLen - 1; i < rsi.length; i++) {
+    let min = Infinity;
+    let max = -Infinity;
+    for (let j = i - stochLen + 1; j <= i; j++) {
+      const v = rsi[j].value;
+      if (v < min) min = v;
+      if (v > max) max = v;
+    }
+    const raw: number = max === min
+      ? (prevRaw ?? 50)
+      : ((rsi[i].value - min) / (max - min)) * 100;
+    prevRaw = raw;
+
+    const kVal = smoothK(raw);
+    if (kVal === null) continue;
+    k.push({ time: rsi[i].time, value: kVal });
+
+    const dVal = smoothD(kVal);
+    if (dVal !== null) d.push({ time: rsi[i].time, value: dVal });
+  }
+  return { k, d };
 }
