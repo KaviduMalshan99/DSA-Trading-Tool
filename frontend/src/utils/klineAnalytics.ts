@@ -11,7 +11,10 @@
  * so recomputing locally against that window — using the *same* algorithms —
  * keeps replay in sync with the visible candles automatically and doesn't
  * require touching the backend or adding a new data source. Live mode is
- * untouched; these functions only run while replay is active.
+ * untouched; these ports only run while replay is active.
+ *
+ * Exception: computeEMA (below) has no backend counterpart — it's a
+ * client-only indicator that runs live as well as in replay.
  */
 import type { Candle } from '../types/market';
 import type {
@@ -213,4 +216,33 @@ export function computeLevelsFromIntraday(candles: Candle[], decimals: number, a
     pdl: round(pdl, decimals),
     decimals,
   };
+}
+
+// ── EMA (client-only indicator, no backend port) ─────────────────────────────
+
+export interface EMAPoint {
+  time: number;   // candle open time, raw epoch ms
+  value: number;
+}
+
+/**
+ * `candles` must be in chronological order. Seeded with the SMA of the first
+ * `period` closes (emitted at index period-1), then the standard recurrence
+ * EMA[i] = close[i]·k + EMA[i-1]·(1-k), k = 2/(period+1). No warm-up points
+ * are emitted, so every point sits on a real candle time.
+ */
+export function computeEMA(candles: Candle[], period: number): EMAPoint[] {
+  if (period < 1 || candles.length < period) return [];
+  const k = 2 / (period + 1);
+
+  let sum = 0;
+  for (let i = 0; i < period; i++) sum += candles[i].c;
+  let ema = sum / period;
+
+  const points: EMAPoint[] = [{ time: candles[period - 1].t, value: ema }];
+  for (let i = period; i < candles.length; i++) {
+    ema = candles[i].c * k + ema * (1 - k);
+    points.push({ time: candles[i].t, value: ema });
+  }
+  return points;
 }

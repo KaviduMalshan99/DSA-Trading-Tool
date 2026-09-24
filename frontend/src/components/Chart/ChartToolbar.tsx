@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useChartStore, type ChartType, type OverlayType } from '../../store/chartStore';
 import { TimeframeDropdown } from '../UI/TimeframeDropdown';
+import { IndicatorsDropdown } from '../UI/IndicatorsDropdown';
 import { ReplayControls } from './ReplayControls';
 import { isOverlayVisible } from '../../config/topBarVisibility';
 
@@ -107,6 +108,7 @@ export function ChartToolbar() {
     <div className="flex flex-wrap items-center gap-2 px-3 py-1.5 bg-[var(--bg-panel)] border-b border-[var(--border-color)]">
       <TimeframeDropdown />
       <ChartTypeToggle />
+      <IndicatorsDropdown />
 
       {shownOverlays.length > 0 && (
         <>

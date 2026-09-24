@@ -1,6 +1,7 @@
 import { useRef } from 'react';
 import { type IChartApi, type ISeriesApi } from 'lightweight-charts';
 import { useChartStore } from '../../store/chartStore';
+import { useIndicatorStore } from '../../store/indicatorStore';
 import { TradingChart } from './TradingChart';
 import { ReplayEngine } from './ReplayEngine';
 import { ChartToolbar } from './ChartToolbar';
@@ -13,6 +14,7 @@ import { WhaleMarkers } from '../Overlay/WhaleMarkers';
 import { SMCOverlay } from '../Overlay/SMCOverlay';
 import { LevelsOverlay } from '../Overlay/LevelsOverlay';
 import { VWAPOverlay } from '../Overlay/VWAPOverlay';
+import { EMAOverlay } from '../Overlay/EMAOverlay';
 import { SessionBoxes } from '../Overlay/SessionBoxes';
 import { StructureOverlay } from '../Overlay/StructureOverlay';
 import { AbsorptionOverlay } from '../Overlay/AbsorptionOverlay';
@@ -35,6 +37,7 @@ export interface ChartContainerProps {
 
 export function ChartContainer({ sharedChartRef, sharedSeriesRef, chartAreaRef }: ChartContainerProps) {
   const visibleOverlays = useChartStore((s) => s.visibleOverlays);
+  const activeIndicators = useIndicatorStore((s) => s.activeIndicators);
   // The line-mode series is only shared between TradingChart and ReplayEngine
   // (both mounted here), so it's owned here rather than lifted to App.
   const sharedLineSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
@@ -118,6 +121,11 @@ export function ChartContainer({ sharedChartRef, sharedSeriesRef, chartAreaRef }
             the chart ref — no canvas, no price-coordinate math. */}
         {visibleOverlays.has('vwap') && (
           <VWAPOverlay sharedChartRef={sharedChartRef} />
+        )}
+        {/* Student indicators — gated by indicatorStore, independent of the
+            pro overlay visibility config. Own line series, like VWAP. */}
+        {activeIndicators.has('ema') && (
+          <EMAOverlay sharedChartRef={sharedChartRef} />
         )}
         {visibleOverlays.has('structure') && (
           <StructureOverlay
