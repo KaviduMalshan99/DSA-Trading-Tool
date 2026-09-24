@@ -816,6 +816,20 @@ function PositionForecastIcon() {
   );
 }
 
+// Bars Pattern: three mini candlesticks (wick + body) inside a dashed
+// capture box.
+function BarsPatternIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="2" width="20" height="20" strokeDasharray="2 2" strokeOpacity="0.6" />
+      <path d="M7 5v14M12 8v11M17 4v11" />
+      <rect x="5.5" y="8" width="3" height="7" fill="currentColor" />
+      <rect x="10.5" y="11" width="3" height="5" />
+      <rect x="15.5" y="6" width="3" height="6" fill="currentColor" />
+    </svg>
+  );
+}
+
 function MeasureIcon() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
@@ -1132,6 +1146,7 @@ const POSITION_RANGE_ICON: Record<PositionRangeTool, React.ReactNode> = {
   datePriceRange: <DatePriceRangeIcon />,
   sector: <SectorIcon />,
   positionForecast: <PositionForecastIcon />,
+  barsPattern: <BarsPatternIcon />,
 };
 
 // The flyout's three labeled sections — "Forecasting" (position projections),
@@ -1143,6 +1158,7 @@ const POSITION_RANGE_FORECASTING_ITEMS: { tool: PositionRangeTool; label: string
   { tool: 'shortPosition', label: 'Short Position' },
   { tool: 'sector',        label: 'Sector' },
   { tool: 'positionForecast', label: 'Position Forecast' },
+  { tool: 'barsPattern',   label: 'Bars Pattern' },
 ];
 
 const POSITION_RANGE_VOLUME_ITEMS: { tool: PositionRangeTool; label: string }[] = [
@@ -1160,7 +1176,6 @@ const POSITION_RANGE_ITEMS: { tool: PositionRangeTool; label: string }[] = [
 ];
 
 const FORECASTING_COMING_SOON: ComingSoonItem[] = [
-  { label: 'Bars Pattern', icon: <ComingSoonIcon /> },
   { label: 'Ghost Feed', icon: <ComingSoonIcon /> },
 ];
 

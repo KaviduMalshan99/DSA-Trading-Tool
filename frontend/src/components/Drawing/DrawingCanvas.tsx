@@ -2,6 +2,7 @@ import { useEffect, useRef, useCallback, useState, memo } from 'react';
 import type { IChartApi, ISeriesApi } from 'lightweight-charts';
 import { useDrawingStore, type Drawing, type DrawingTool, type FibTool, type PatternType } from '../../store/drawingStore';
 import { useMarketStore } from '../../store/marketStore';
+import { useCandleStyleStore } from '../../store/candleStyleStore';
 import { toChartTimeSeconds } from '../../utils/chartTime';
 import { computeSessionVWAPFromCandles } from '../../utils/klineAnalytics';
 import { decimalsForPrice } from '../../utils/priceFormat';
@@ -24,7 +25,7 @@ const CAPTURE_TOOLS = new Set<DrawingTool>([
   'gannFan', 'gannBox', 'gannSquare',
   'abcd', 'xabcd', 'cypher', 'threeDrives', 'headShoulders',
   'cyclicLines', 'timeCycles', 'sineLine', 'fibTimeZone', 'fibSpeedFan', 'fibCircles', 'fibSpeedArcs',
-  'fibWedge', 'pitchfan', 'fibSpiral', 'table',
+  'fibWedge', 'pitchfan', 'fibSpiral', 'table', 'barsPattern',
 ]);
 
 // Number of clicks each drawing tool needs before it's finalized. Horizontal
@@ -62,6 +63,7 @@ const CLICKS_REQUIRED: Partial<Record<DrawingTool, number>> = {
   fibWedge: 3,
   pitchfan: 3,
   positionForecast: 3,
+  barsPattern: 2,
   arc: 3,
   curve: 3,
   doubleCurve: 3,
@@ -501,6 +503,16 @@ function computeRegression(candles: Candle[], time1: number, time2: number): Reg
     upperStart: midStart + 2 * stddev, upperEnd: midEnd + 2 * stddev,
     lowerStart: midStart - 2 * stddev, lowerEnd: midEnd - 2 * stddev,
   };
+}
+
+// Bars Pattern: freeze the OHLC of every loaded candle inside time1..time2
+// (chart-seconds; c.t is ms, hence toChartTimeSeconds), oldest first.
+function snapshotBars(candles: Candle[], time1: number, time2: number) {
+  const lo = Math.min(time1, time2), hi = Math.max(time1, time2);
+  return candles
+    .filter((c) => { const t = toChartTimeSeconds(c.t); return t >= lo && t <= hi; })
+    .sort((a, b) => a.t - b.t)
+    .map(({ o, h, l, c }) => ({ o, h, l, c }));
 }
 
 // ── Anchored VWAP: derived from live candle data at render time (like
@@ -1838,6 +1850,75 @@ function renderDrawing(
       }
       ctx.textBaseline = 'alphabetic';
     }
+
+    if (selected) {
+      ctx.fillStyle = eraserHover ? '#f85149' : baseColor;
+      for (const [hx, hy] of [[x1, y1], [x2, y2], [x1, y2], [x2, y1]] as const) {
+        ctx.beginPath();
+        ctx.arc(hx, hy, 3.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+  } else if (d.type === 'barsPattern') {
+    const x1 = timeToX(chart, d.time1);
+    const y1 = priceToY(series, d.price1);
+    const x2 = timeToX(chart, d.time2);
+    const y2 = priceToY(series, d.price2);
+    if (x1 == null || y1 == null || x2 == null || y2 == null) { ctx.restore(); return; }
+
+    const rx = Math.min(x1, x2);
+    const ry = Math.min(y1, y2);
+    const rw = Math.abs(x2 - x1);
+    const rh = Math.abs(y2 - y1);
+    const baseColor = d.color ?? '#2196F3';
+
+    // Empty snapshot (only reachable in the creation preview — finalize
+    // refuses an empty range): just the dashed capture box.
+    if (d.bars.length === 0) {
+      ctx.strokeStyle = eraserHover ? '#f85149' : baseColor;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
+      ctx.strokeRect(rx, ry, rw, rh);
+      ctx.setLineDash([]);
+      ctx.restore();
+      return;
+    }
+
+    // Faint outline while selected so the box being moved/resized is visible.
+    if (selected) {
+      ctx.strokeStyle = eraserHover ? '#f85149' : hexToRgba(baseColor, 40);
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
+      ctx.strokeRect(rx, ry, rw, rh);
+      ctx.setLineDash([]);
+    }
+
+    // Snapshot's low..high maps onto the box's bottom..top; each bar gets an
+    // equal column across the box width, so resizing rescales the pattern.
+    const n = d.bars.length;
+    const colW = rw / n;
+    const bodyW = Math.max(1, colW * 0.7);
+    let pMin = Infinity, pMax = -Infinity;
+    for (const b of d.bars) { if (b.l < pMin) pMin = b.l; if (b.h > pMax) pMax = b.h; }
+    const span = (pMax - pMin) || 1;
+    const py = (p: number) => ry + (pMax - p) / span * rh;
+
+    // same up/down colors as the chart's own candles
+    const style = useCandleStyleStore.getState();
+    ctx.lineWidth = 1;
+    d.bars.forEach((b, i) => {
+      const cx = rx + (i + 0.5) * colW;
+      const up = b.c >= b.o;
+      ctx.strokeStyle = eraserHover ? '#f85149' : up ? style.wickUpColor : style.wickDownColor;
+      ctx.beginPath();
+      ctx.moveTo(cx, py(b.h));
+      ctx.lineTo(cx, py(b.l));
+      ctx.stroke();
+      const yO = py(b.o), yC = py(b.c);
+      ctx.fillStyle = eraserHover ? '#f85149' : up ? style.upColor : style.downColor;
+      ctx.fillRect(cx - bodyW / 2, Math.min(yO, yC), bodyW, Math.max(1, Math.abs(yC - yO)));
+    });
 
     if (selected) {
       ctx.fillStyle = eraserHover ? '#f85149' : baseColor;
@@ -3875,6 +3956,18 @@ function hitTest(
     return mx >= lx - TOL && mx <= rx + TOL && my >= ty - TOL && my <= by + TOL;
   }
 
+  if (d.type === 'barsPattern') {
+    // whole body counts (like Table) so the pattern can be grabbed from inside
+    const x1 = timeToX(chart, d.time1);
+    const y1 = priceToY(series, d.price1);
+    const x2 = timeToX(chart, d.time2);
+    const y2 = priceToY(series, d.price2);
+    if (x1 == null || y1 == null || x2 == null || y2 == null) return false;
+    const lx = Math.min(x1, x2), rx = Math.max(x1, x2);
+    const ty = Math.min(y1, y2), by = Math.max(y1, y2);
+    return mx >= lx - TOL && mx <= rx + TOL && my >= ty - TOL && my <= by + TOL;
+  }
+
   if (d.type === 'rectangle' || d.type === 'gannBox' || d.type === 'gannSquare') {
     const x1 = timeToX(chart, d.time1);
     const y1 = priceToY(series, d.price1);
@@ -4545,7 +4638,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
             };
           } else if (drag.kind === 'fibonacci' && (d.type === 'fibonacci' || d.type === 'fibExtension')) {
             dd = { ...d, priceHigh: drag.priceHigh, timeHigh: drag.timeHigh, priceLow: drag.priceLow, timeLow: drag.timeLow };
-          } else if (drag.kind === 'box' && (d.type === 'rectangle' || d.type === 'circle' || d.type === 'ellipse' || d.type === 'priceRange' || d.type === 'dateRange' || d.type === 'datePriceRange' || d.type === 'gannBox' || d.type === 'gannSquare' || d.type === 'table')) {
+          } else if (drag.kind === 'box' && (d.type === 'rectangle' || d.type === 'circle' || d.type === 'ellipse' || d.type === 'priceRange' || d.type === 'dateRange' || d.type === 'datePriceRange' || d.type === 'gannBox' || d.type === 'gannSquare' || d.type === 'table' || d.type === 'barsPattern')) {
             dd = { ...d, price1: drag.price1, time1: drag.time1, price2: drag.price2, time2: drag.time2 };
           } else if (drag.kind === 'triangle' && d.type === 'triangle') {
             dd = { ...d, price1: drag.price1, time1: drag.time1, price2: drag.price2, time2: drag.time2, price3: drag.price3, time3: drag.time3 };
@@ -4652,6 +4745,9 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
             preview = { id: '__preview', type: 'rectangle', price1, time1, price2, time2 };
           else if (tool === 'table' && price2 != null && time2 != null)
             preview = { id: '__preview', type: 'table', price1, time1, price2, time2, rows: 3, cols: 3, cells: Array(9).fill('') };
+          else if (tool === 'barsPattern' && price2 != null && time2 != null)
+            preview = { id: '__preview', type: 'barsPattern', price1, time1, price2, time2,
+              bars: snapshotBars(candlesRef.current, time1, time2) };
           else if (tool === 'gannBox' && price2 != null && time2 != null)
             preview = { id: '__preview', type: 'gannBox', price1, time1, price2, time2 };
           else if (tool === 'gannSquare' && price2 != null && time2 != null)
@@ -5177,6 +5273,11 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
       // Default 3×3 grid; a tiny box is fine — render skips text in cells too
       // small to hold it.
       addDrawing({ id, type: 'table', price1, time1, price2, time2, rows: 3, cols: 3, cells: Array(9).fill('') });
+    } else if (tool === 'barsPattern') {
+      if (price2 == null || time2 == null) return;
+      const bars = snapshotBars(candlesRef.current, time1, time2);
+      if (bars.length === 0) return; // empty range → no drawing
+      addDrawing({ id, type: 'barsPattern', price1, time1, price2, time2, bars });
     } else if (tool === 'gannBox' || tool === 'gannSquare') {
       if (price2 == null || time2 == null) return;
       addDrawing({ id, type: tool, price1, time1, price2, time2 });
@@ -5821,7 +5922,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           const nearAny = Math.hypot(x - x1, y - y1) < 8 || Math.hypot(x - x2, y - y2) < 8 || Math.hypot(x - x3, y - y3) < 8;
           if (nearAny) { hoverCursor = 'grab'; break; }
           if (hitTest(d, x, y, chart, series, candlesRef.current)) { hoverCursor = 'move'; break; }
-        } else if (d.type === 'rectangle' || d.type === 'circle' || d.type === 'ellipse' || d.type === 'priceRange' || d.type === 'dateRange' || d.type === 'datePriceRange' || d.type === 'gannBox' || d.type === 'gannSquare' || d.type === 'table') {
+        } else if (d.type === 'rectangle' || d.type === 'circle' || d.type === 'ellipse' || d.type === 'priceRange' || d.type === 'dateRange' || d.type === 'datePriceRange' || d.type === 'gannBox' || d.type === 'gannSquare' || d.type === 'table' || d.type === 'barsPattern') {
           const x1 = timeToX(chart, d.time1), y1 = priceToY(series, d.price1);
           const x2 = timeToX(chart, d.time2), y2 = priceToY(series, d.price2);
           if (x1 == null || y1 == null || x2 == null || y2 == null) continue;
@@ -6072,7 +6173,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           return;
         }
 
-        if (d.type === 'rectangle' || d.type === 'circle' || d.type === 'ellipse' || d.type === 'priceRange' || d.type === 'dateRange' || d.type === 'datePriceRange' || d.type === 'gannBox' || d.type === 'gannSquare' || d.type === 'table') {
+        if (d.type === 'rectangle' || d.type === 'circle' || d.type === 'ellipse' || d.type === 'priceRange' || d.type === 'dateRange' || d.type === 'datePriceRange' || d.type === 'gannBox' || d.type === 'gannSquare' || d.type === 'table' || d.type === 'barsPattern') {
           const x1 = timeToX(chart, d.time1), y1 = priceToY(series, d.price1);
           const x2 = timeToX(chart, d.time2), y2 = priceToY(series, d.price2);
           if (x1 == null || y1 == null || x2 == null || y2 == null) continue;

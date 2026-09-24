@@ -59,10 +59,10 @@ export const ACTION_TOOLS: readonly ActionTool[] = ['measure', 'zoomIn'];
 // Price/Date Range brackets, grouped under one dropdown just like the others.
 export type PositionRangeTool =
   | 'longPosition' | 'shortPosition' | 'anchoredVwap' | 'priceRange' | 'dateRange' | 'datePriceRange' | 'sector'
-  | 'positionForecast';
+  | 'positionForecast' | 'barsPattern';
 export const POSITION_RANGE_TOOLS: readonly PositionRangeTool[] = [
   'longPosition', 'shortPosition', 'anchoredVwap', 'priceRange', 'dateRange', 'datePriceRange', 'sector',
-  'positionForecast',
+  'positionForecast', 'barsPattern',
 ];
 
 // The "Fibonacci" group — Fib Retracement plus ratio-table variants (Fib
@@ -294,6 +294,19 @@ export interface PositionForecastDrawing extends LineStyle, FillStyle {
   price1: number; time1: number; // start
   price2: number; time2: number; // pullback
   price3: number; time3: number; // target
+}
+
+// Bars Pattern: a 2-click box (corners named like RectangleDrawing, so it
+// shares the 'box' drag bucket) holding a frozen OHLC snapshot of the candles
+// inside the originally selected time range. The box only positions/scales
+// the snapshot — `bars` never changes after creation, so the pattern stays
+// intact wherever it's dragged and regardless of which candles are loaded.
+export interface BarsPatternDrawing extends LineStyle {
+  id: string;
+  type: 'barsPattern';
+  price1: number; time1: number;
+  price2: number; time2: number;
+  bars: { o: number; h: number; l: number; c: number }[];
 }
 
 // Arc: a single quadratic curve from p1 (start) to p2 (end), bulging toward
@@ -879,6 +892,7 @@ export type Drawing =
   | FibWedgeDrawing
   | PitchfanDrawing
   | PositionForecastDrawing
+  | BarsPatternDrawing
   | ArcDrawing
   | CurveDrawing
   | DoubleCurveDrawing
