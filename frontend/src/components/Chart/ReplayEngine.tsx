@@ -9,7 +9,8 @@
  *     time on a timer paced by `speed`, pausing itself once it catches up
  *     to the newest loaded candle.
  *  3. Series sync: whenever isActive/cursorTime changes, re-renders the
- *     candlestick series from marketStore's candles sliced at cursorTime
+ *     candlestick + line series (via utils/chartSeriesFeed, so they stay in
+ *     step) from marketStore's candles sliced at cursorTime
  *     (entering/exiting/backward steps use setData + restore the prior
  *     visible logical range, exactly like TradingChart's own scroll-back
  *     prepend does, so pan/zoom doesn't jump).
@@ -22,21 +23,18 @@ import { useEffect, useRef } from 'react';
 import type { IChartApi, ISeriesApi, MouseEventParams } from 'lightweight-charts';
 import { useMarketStore } from '../../store/marketStore';
 import { useReplayStore } from '../../store/replayStore';
-import { toChartTime, CHART_TZ_OFFSET_SECONDS } from '../../utils/chartTime';
-import type { Candle } from '../../types/market';
+import { CHART_TZ_OFFSET_SECONDS } from '../../utils/chartTime';
+import { setSeriesData } from '../../utils/chartSeriesFeed';
 
 const BASE_MS_PER_BAR = 700; // interval at 1x; divided by speed for 0.5x/2x/4x
-
-function toBar(c: Candle) {
-  return { time: toChartTime(c.t), open: c.o, high: c.h, low: c.l, close: c.c };
-}
 
 export interface ReplayEngineProps {
   sharedChartRef:  React.RefObject<IChartApi | null>;
   sharedSeriesRef: React.RefObject<ISeriesApi<'Candlestick'> | null>;
+  sharedLineSeriesRef: React.RefObject<ISeriesApi<'Line'> | null>;
 }
 
-export function ReplayEngine({ sharedChartRef, sharedSeriesRef }: ReplayEngineProps) {
+export function ReplayEngine({ sharedChartRef, sharedSeriesRef, sharedLineSeriesRef }: ReplayEngineProps) {
   const isPicking   = useReplayStore((s) => s.isPicking);
   const isActive    = useReplayStore((s) => s.isActive);
   const isPlaying   = useReplayStore((s) => s.isPlaying);
@@ -85,6 +83,7 @@ export function ReplayEngine({ sharedChartRef, sharedSeriesRef }: ReplayEnginePr
   // ── 3. Series sync ─────────────────────────────────────────────────────────
   useEffect(() => {
     const series = sharedSeriesRef.current;
+    const lineSeries = sharedLineSeriesRef.current;
     const chart = sharedChartRef.current;
     const wasActive = wasActiveRef.current;
     wasActiveRef.current = isActive;
@@ -97,26 +96,26 @@ export function ReplayEngine({ sharedChartRef, sharedSeriesRef }: ReplayEnginePr
       if (!wasActive) {
         // Fresh entry — frame the last ~100 bars ending at the start point,
         // same framing TradingChart uses for a fresh historical load.
-        series.setData(visible.map(toBar));
+        setSeriesData(series, lineSeries, visible);
         const total = visible.length;
         chart?.timeScale().setVisibleLogicalRange({ from: Math.max(0, total - 100), to: total - 1 + 5 });
       } else {
         // Stepping/playing — only the tail changes, so restore whatever the
         // view was right before this setData instead of letting it refit.
         const prevRange = chart?.timeScale().getVisibleLogicalRange() ?? null;
-        series.setData(visible.map(toBar));
+        setSeriesData(series, lineSeries, visible);
         if (prevRange) chart?.timeScale().setVisibleLogicalRange(prevRange);
       }
     } else {
       // Just exited replay — resync to the full live dataset and reframe,
       // same framing TradingChart uses for a fresh historical load.
-      series.setData(candles.map(toBar));
+      setSeriesData(series, lineSeries, candles);
       if (chart && candles.length > 0) {
         const total = candles.length;
         chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, total - 100), to: total - 1 + 5 });
       }
     }
-  }, [isActive, cursorTime, sharedSeriesRef, sharedChartRef]);
+  }, [isActive, cursorTime, sharedSeriesRef, sharedLineSeriesRef, sharedChartRef]);
 
   return null;
 }

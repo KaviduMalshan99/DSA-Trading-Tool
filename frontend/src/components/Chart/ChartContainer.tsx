@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import { type IChartApi, type ISeriesApi } from 'lightweight-charts';
 import { useChartStore } from '../../store/chartStore';
 import { TradingChart } from './TradingChart';
@@ -34,6 +35,9 @@ export interface ChartContainerProps {
 
 export function ChartContainer({ sharedChartRef, sharedSeriesRef, chartAreaRef }: ChartContainerProps) {
   const visibleOverlays = useChartStore((s) => s.visibleOverlays);
+  // The line-mode series is only shared between TradingChart and ReplayEngine
+  // (both mounted here), so it's owned here rather than lifted to App.
+  const sharedLineSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
 
   return (
     <div className="flex flex-col h-full">
@@ -49,6 +53,7 @@ export function ChartContainer({ sharedChartRef, sharedSeriesRef, chartAreaRef }
         <TradingChart
           sharedChartRef={sharedChartRef}
           sharedSeriesRef={sharedSeriesRef}
+          sharedLineSeriesRef={sharedLineSeriesRef}
         />
 
         {/* Non-visual — mounted right after TradingChart so the shared refs
@@ -58,6 +63,7 @@ export function ChartContainer({ sharedChartRef, sharedSeriesRef, chartAreaRef }
         <ReplayEngine
           sharedChartRef={sharedChartRef}
           sharedSeriesRef={sharedSeriesRef}
+          sharedLineSeriesRef={sharedLineSeriesRef}
         />
 
         <ChartLoadingOverlay />

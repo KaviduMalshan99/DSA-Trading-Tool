@@ -6,6 +6,8 @@ export type OverlayType =
   | 'smc' | 'levels' | 'vwap' | 'sessions' | 'structure' | 'context'
   | 'absorption' | 'execution' | 'checklist' | 'scanner';
 
+export type ChartType = 'candle' | 'line';
+
 interface ChartState {
   visibleOverlays: Set<OverlayType>;
   visibleRange: { from: number; to: number } | null;
@@ -20,12 +22,17 @@ interface ChartState {
   // FootprintCanvas to mark a "stacked imbalance". Default 3 per the Stage 3
   // Stacked Imbalance spec.
   stackSize: number;
+  // Main price display. The candlestick series always exists (overlays map
+  // prices through it); 'line' makes it transparent and shows a close-price
+  // line series on top instead.
+  chartType: ChartType;
 
   toggleOverlay: (overlay: OverlayType) => void;
   setVisibleRange: (from: number, to: number) => void;
   setCrosshair: (price: number | null, time: number | null) => void;
   setImbalanceRatio: (ratio: number) => void;
   setStackSize: (size: number) => void;
+  setChartType: (type: ChartType) => void;
 }
 
 export const useChartStore = create<ChartState>((set) => ({
@@ -38,6 +45,7 @@ export const useChartStore = create<ChartState>((set) => ({
   crosshairTime: null,
   imbalanceRatio: 3.0,
   stackSize: 3,
+  chartType: 'candle',
 
   toggleOverlay: (overlay) =>
     set((state) => {
@@ -55,4 +63,5 @@ export const useChartStore = create<ChartState>((set) => ({
     set({ crosshairPrice, crosshairTime }),
   setImbalanceRatio: (ratio) => set({ imbalanceRatio: ratio }),
   setStackSize: (size) => set({ stackSize: size }),
+  setChartType: (chartType) => set({ chartType }),
 }));

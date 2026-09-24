@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useChartStore, type OverlayType } from '../../store/chartStore';
+import { useChartStore, type ChartType, type OverlayType } from '../../store/chartStore';
 import { TimeframeDropdown } from '../UI/TimeframeDropdown';
 import { ReplayControls } from './ReplayControls';
 import { isOverlayVisible } from '../../config/topBarVisibility';
@@ -20,6 +20,55 @@ const OVERLAYS: { key: OverlayType; label: string }[] = [
   { key: 'checklist',     label: 'Checklist'   },
   { key: 'scanner',       label: 'Scanner'     },
 ];
+
+function CandlesIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" fill="none">
+      <line x1="7" y1="3" x2="7" y2="21" />
+      <rect x="4" y="7" width="6" height="9" rx="1" fill="currentColor" />
+      <line x1="17" y1="3" x2="17" y2="21" />
+      <rect x="14" y="10" width="6" height="7" rx="1" />
+    </svg>
+  );
+}
+
+function LineIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="3 17 9 11 13 14 21 6" />
+    </svg>
+  );
+}
+
+const CHART_TYPES: { key: ChartType; label: string; Icon: () => JSX.Element }[] = [
+  { key: 'candle', label: 'Candlesticks', Icon: CandlesIcon },
+  { key: 'line',   label: 'Line',         Icon: LineIcon    },
+];
+
+function ChartTypeToggle() {
+  const chartType    = useChartStore((s) => s.chartType);
+  const setChartType = useChartStore((s) => s.setChartType);
+
+  return (
+    <div className="flex items-center rounded border border-[var(--border-color)] overflow-hidden">
+      {CHART_TYPES.map(({ key, label, Icon }) => (
+        <button
+          key={key}
+          onClick={() => setChartType(key)}
+          title={label}
+          aria-pressed={chartType === key}
+          className={`w-7 h-6 flex items-center justify-center transition-colors ${
+            chartType === key
+              ? 'bg-[var(--accent)] text-white'
+              : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'
+          }`}
+        >
+          <Icon />
+        </button>
+      ))}
+    </div>
+  );
+}
 
 export function ChartToolbar() {
   const visibleOverlays  = useChartStore((s) => s.visibleOverlays);
@@ -57,6 +106,7 @@ export function ChartToolbar() {
   return (
     <div className="flex flex-wrap items-center gap-2 px-3 py-1.5 bg-[var(--bg-panel)] border-b border-[var(--border-color)]">
       <TimeframeDropdown />
+      <ChartTypeToggle />
 
       {shownOverlays.length > 0 && (
         <>

@@ -3,10 +3,10 @@ import { createChart, type IChartApi, type ISeriesApi } from 'lightweight-charts
 import { useMarketStore } from '../../store/marketStore';
 import { useChartStore } from '../../store/chartStore';
 import { useReplayStore } from '../../store/replayStore';
-import { useCandleStyleStore } from '../../store/candleStyleStore';
+import { useCandleStyleStore, type CandleStyle } from '../../store/candleStyleStore';
 import { useThemeStore, type Theme } from '../../store/themeStore';
 import { useChartSync } from '../../hooks/useChartSync';
-import { toChartTime } from '../../utils/chartTime';
+import { setSeriesData, updateSeriesBar } from '../../utils/chartSeriesFeed';
 import { decimalsForPrice, formatPrice } from '../../utils/priceFormat';
 import type { Candle } from '../../types/market';
 
@@ -36,17 +36,45 @@ function chartThemeOptions(theme: Theme) {
 
 const WS_BASE = import.meta.env.VITE_WS_URL ?? 'ws://localhost:8000';
 
+const LINE_COLOR = '#2196F3';
+const TRANSPARENT = 'rgba(0,0,0,0)';
+
+// Candlestick options for the current chart mode. The candle series is never
+// set visible:false (it must stay in autoscale and keep priceToCoordinate
+// working for every overlay) — it's made transparent instead. Line mode hides
+// body/borders/wicks and the candle's own price label (the line series shows
+// its own); footprint only dims body/borders so its per-level text reads.
+// Line mode wins wherever the two overlap.
+function candleSeriesOptions(style: CandleStyle, footprint: boolean, line: boolean) {
+  const hideBody = line || footprint || !style.bodyVisible;
+  return {
+    upColor:          hideBody ? TRANSPARENT : style.upColor,
+    downColor:        hideBody ? TRANSPARENT : style.downColor,
+    borderVisible:    line || footprint ? false : style.bordersVisible,
+    borderUpColor:    style.borderUpColor,
+    borderDownColor:  style.borderDownColor,
+    wickVisible:      line ? false : style.wickVisible,
+    wickUpColor:      style.wickUpColor,
+    wickDownColor:    style.wickDownColor,
+    lastValueVisible: !line,
+    priceLineVisible: !line,
+  };
+}
+
 interface TradingChartProps {
   /** Lifted ref so ChartContainer can share it with sibling panels for time-scale sync. */
   sharedChartRef?: React.MutableRefObject<IChartApi | null>;
   /** Lifted ref so FootprintCanvas can call priceToCoordinate on the candlestick series. */
   sharedSeriesRef?: React.MutableRefObject<ISeriesApi<'Candlestick'> | null>;
+  /** Lifted ref to the additive close-price line series (shown in 'line' chart mode). */
+  sharedLineSeriesRef?: React.MutableRefObject<ISeriesApi<'Line'> | null>;
 }
 
-export function TradingChart({ sharedChartRef, sharedSeriesRef }: TradingChartProps) {
+export function TradingChart({ sharedChartRef, sharedSeriesRef, sharedLineSeriesRef }: TradingChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
+  const lineSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
   const [currentPrice, setCurrentPrice] = useState<number | null>(null);
   const [connected, setConnected] = useState(false);
 
@@ -67,6 +95,7 @@ export function TradingChart({ sharedChartRef, sharedSeriesRef }: TradingChartPr
   const { activeSymbol, activeInterval, setCandles, appendCandle, prependCandles } = useMarketStore();
   const { onRangeChange, onCrosshairMove } = useChartSync();
   const visibleOverlays = useChartStore((s) => s.visibleOverlays);
+  const chartType = useChartStore((s) => s.chartType);
   const candleStyle = useCandleStyleStore();
   const theme = useThemeStore((s) => s.theme);
   const replayActive = useReplayStore((s) => s.isActive);
@@ -118,15 +147,17 @@ export function TradingChart({ sharedChartRef, sharedSeriesRef }: TradingChartPr
     });
 
     const style = useCandleStyleStore.getState();
-    const series = chart.addCandlestickSeries({
-      upColor:          style.bodyVisible ? style.upColor : 'rgba(0,0,0,0)',
-      downColor:        style.bodyVisible ? style.downColor : 'rgba(0,0,0,0)',
-      borderVisible:    style.bordersVisible,
-      borderUpColor:    style.borderUpColor,
-      borderDownColor:  style.borderDownColor,
-      wickVisible:      style.wickVisible,
-      wickUpColor:      style.wickUpColor,
-      wickDownColor:    style.wickDownColor,
+    const { visibleOverlays: overlaysNow, chartType: typeNow } = useChartStore.getState();
+    const series = chart.addCandlestickSeries(
+      candleSeriesOptions(style, overlaysNow.has('footprint'), typeNow === 'line'),
+    );
+    // Additive close-price view for 'line' mode — added after the candles so
+    // it draws on top; fed alongside them via utils/chartSeriesFeed.
+    const lineSeries = chart.addLineSeries({
+      visible: typeNow === 'line',
+      color: LINE_COLOR,
+      lineWidth: 2,
+      priceLineVisible: true,
     });
 
     chart.timeScale().subscribeVisibleTimeRangeChange((range) => {
@@ -167,8 +198,10 @@ export function TradingChart({ sharedChartRef, sharedSeriesRef }: TradingChartPr
 
     chartRef.current = chart;
     seriesRef.current = series;
+    lineSeriesRef.current = lineSeries;
     if (sharedChartRef)  sharedChartRef.current  = chart;
     if (sharedSeriesRef) sharedSeriesRef.current = series;
+    if (sharedLineSeriesRef) sharedLineSeriesRef.current = lineSeries;
 
     const observer = new ResizeObserver(() => {
       if (!containerRef.current) return;
@@ -185,10 +218,12 @@ export function TradingChart({ sharedChartRef, sharedSeriesRef }: TradingChartPr
       chart.remove();
       chartRef.current = null;
       seriesRef.current = null;
+      lineSeriesRef.current = null;
       if (sharedChartRef)  sharedChartRef.current  = null;
       if (sharedSeriesRef) sharedSeriesRef.current = null;
+      if (sharedLineSeriesRef) sharedLineSeriesRef.current = null;
     };
-  }, [onRangeChange, onCrosshairMove, sharedChartRef, sharedSeriesRef]);
+  }, [onRangeChange, onCrosshairMove, sharedChartRef, sharedSeriesRef, sharedLineSeriesRef]);
 
   // Re-skin the native chart (grid/axis/crosshair colors) on theme change without
   // recreating the chart, so zoom/pan state and data survive the switch.
@@ -208,22 +243,18 @@ export function TradingChart({ sharedChartRef, sharedSeriesRef }: TradingChartPr
   }, [theme]);
 
   // Apply user-configured candle colors; dim body/borders (not wicks) when the
-  // footprint overlay is active so its per-price-level text reads clearly.
+  // footprint overlay is active so its per-price-level text reads clearly; in
+  // 'line' chart mode make the candles fully transparent and show the line.
   useEffect(() => {
     if (!seriesRef.current) return;
-    const fp = visibleOverlays.has('footprint');
-    seriesRef.current.applyOptions({
-      upColor:          fp ? 'rgba(0,0,0,0)' : (candleStyle.bodyVisible ? candleStyle.upColor : 'rgba(0,0,0,0)'),
-      downColor:        fp ? 'rgba(0,0,0,0)' : (candleStyle.bodyVisible ? candleStyle.downColor : 'rgba(0,0,0,0)'),
-      borderVisible:    fp ? false : candleStyle.bordersVisible,
-      borderUpColor:    candleStyle.borderUpColor,
-      borderDownColor:  candleStyle.borderDownColor,
-      wickVisible:      candleStyle.wickVisible,
-      wickUpColor:      candleStyle.wickUpColor,
-      wickDownColor:    candleStyle.wickDownColor,
-    });
+    const line = chartType === 'line';
+    seriesRef.current.applyOptions(
+      candleSeriesOptions(candleStyle, visibleOverlays.has('footprint'), line),
+    );
+    lineSeriesRef.current?.applyOptions({ visible: line });
   }, [
     visibleOverlays,
+    chartType,
     candleStyle.upColor, candleStyle.downColor,
     candleStyle.borderUpColor, candleStyle.borderDownColor,
     candleStyle.wickUpColor, candleStyle.wickDownColor,
@@ -237,7 +268,7 @@ export function TradingChart({ sharedChartRef, sharedSeriesRef }: TradingChartPr
     useReplayStore.getState().exitReplay();
 
     // Clear stale data immediately so the old symbol doesn't linger
-    seriesRef.current?.setData([]);
+    setSeriesData(seriesRef.current, lineSeriesRef.current, []);
     setCurrentPrice(null);
     setConnected(false);
     oldestTimeRef.current = null;
@@ -270,15 +301,7 @@ export function TradingChart({ sharedChartRef, sharedSeriesRef }: TradingChartPr
             oldestTimeRef.current = msg.candles[0]?.t ?? null;
             reachedStartRef.current = msg.candles.length === 0;
             if (seriesRef.current) {
-              seriesRef.current.setData(
-                msg.candles.map((c) => ({
-                  time: toChartTime(c.t),
-                  open: c.o,
-                  high: c.h,
-                  low: c.l,
-                  close: c.c,
-                }))
-              );
+              setSeriesData(seriesRef.current, lineSeriesRef.current, msg.candles);
               // scrollToRealTime() alone isn't reliable here: if the user had
               // zoomed to an extreme bar spacing on a *previous* symbol, that
               // zoom carries over (the chart instance isn't recreated on
@@ -327,15 +350,7 @@ export function TradingChart({ sharedChartRef, sharedSeriesRef }: TradingChartPr
               // by however many bars were just prepended, so the user's scroll
               // position doesn't jump.
               const prevRange = chartRef.current.timeScale().getVisibleLogicalRange();
-              seriesRef.current.setData(
-                merged.map((c) => ({
-                  time: toChartTime(c.t),
-                  open: c.o,
-                  high: c.h,
-                  low: c.l,
-                  close: c.c,
-                }))
-              );
+              setSeriesData(seriesRef.current, lineSeriesRef.current, merged);
               if (prevRange) {
                 chartRef.current.timeScale().setVisibleLogicalRange({
                   from: prevRange.from + added,
@@ -352,13 +367,7 @@ export function TradingChart({ sharedChartRef, sharedSeriesRef }: TradingChartPr
             const inReplay = useReplayStore.getState().isActive;
             if (!inReplay) {
               if (seriesRef.current) {
-                seriesRef.current.update({
-                  time: toChartTime(c.t),
-                  open: c.o,
-                  high: c.h,
-                  low: c.l,
-                  close: c.c,
-                });
+                updateSeriesBar(seriesRef.current, lineSeriesRef.current, c);
               }
               setCurrentPrice(c.c);
             }
