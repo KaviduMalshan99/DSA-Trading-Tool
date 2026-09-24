@@ -23,6 +23,7 @@ import { DrawingToolbar } from '../Drawing/DrawingToolbar';
 import { DrawingCanvas } from '../Drawing/DrawingCanvas';
 import { DrawingStyleToolbar } from '../Drawing/DrawingStyleToolbar';
 import { FavoritesToolbar } from '../Drawing/FavoritesToolbar';
+import { SHOW_DELTA_PANEL } from '../../config/topBarVisibility';
 
 export interface ChartContainerProps {
   /** Lifted up to App so Toolbar's snapshot button can read/composite the live chart. */
@@ -43,8 +44,8 @@ export function ChartContainer({ sharedChartRef, sharedSeriesRef, chartAreaRef }
       <DrawingToolbar />
 
       <div className="flex flex-col flex-1 overflow-hidden">
-      {/* Main candlestick area — 80% */}
-      <div ref={chartAreaRef} className="relative bg-[var(--bg-app)]" style={{ flex: '4 4 0%', minHeight: 0 }}>
+      {/* Main candlestick area — 80% with the delta panel, full height without */}
+      <div ref={chartAreaRef} className="relative bg-[var(--bg-app)]" style={{ flex: SHOW_DELTA_PANEL ? '4 4 0%' : '1 1 0%', minHeight: 0 }}>
         <TradingChart
           sharedChartRef={sharedChartRef}
           sharedSeriesRef={sharedSeriesRef}
@@ -150,13 +151,15 @@ export function ChartContainer({ sharedChartRef, sharedSeriesRef, chartAreaRef }
         {visibleOverlays.has('scanner') && <ClusterScanner />}
       </div>
 
-      {/* Delta panel — 20% */}
-      <div
-        className="relative border-t border-[var(--border-color-soft)]"
-        style={{ flex: '1 1 0%', minHeight: 0 }}
-      >
-        <DeltaPanel sharedChartRef={sharedChartRef} />
-      </div>
+      {/* Delta panel — 20%. Gated by config/topBarVisibility.ts (off in the Stage 1 student view). */}
+      {SHOW_DELTA_PANEL && (
+        <div
+          className="relative border-t border-[var(--border-color-soft)]"
+          style={{ flex: '1 1 0%', minHeight: 0 }}
+        >
+          <DeltaPanel sharedChartRef={sharedChartRef} />
+        </div>
+      )}
       </div>{/* end flex-col wrapper */}
       </div>{/* end flex row (toolbar + chart) */}
     </div>

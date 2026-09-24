@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useChartStore, type OverlayType } from '../../store/chartStore';
 import { TimeframeDropdown } from '../UI/TimeframeDropdown';
 import { ReplayControls } from './ReplayControls';
+import { isOverlayVisible } from '../../config/topBarVisibility';
 
 const OVERLAYS: { key: OverlayType; label: string }[] = [
   { key: 'heatmap',       label: 'Heatmap'     },
@@ -28,6 +29,8 @@ export function ChartToolbar() {
   const stackSize        = useChartStore((s) => s.stackSize);
   const setStackSize     = useChartStore((s) => s.setStackSize);
   const footprintActive = visibleOverlays.has('footprint');
+  // Only released tools get a button — see config/topBarVisibility.ts.
+  const shownOverlays = OVERLAYS.filter((o) => isOverlayVisible(o.key));
 
   // Local text mirrors of the two number inputs below. A plain
   // value={Math.round(imbalanceRatio * 100)} controlled input snaps back to
@@ -55,10 +58,12 @@ export function ChartToolbar() {
     <div className="flex flex-wrap items-center gap-2 px-3 py-1.5 bg-[var(--bg-panel)] border-b border-[var(--border-color)]">
       <TimeframeDropdown />
 
+      {shownOverlays.length > 0 && (
+        <>
       <div className="w-px h-4 bg-[var(--border-color)] mx-1" />
 
       <div className="flex flex-wrap gap-1">
-        {OVERLAYS.map(({ key, label }) => (
+        {shownOverlays.map(({ key, label }) => (
           <button
             key={key}
             onClick={() => toggleOverlay(key)}
@@ -72,6 +77,8 @@ export function ChartToolbar() {
           </button>
         ))}
       </div>
+        </>
+      )}
 
       {footprintActive && (
         <>

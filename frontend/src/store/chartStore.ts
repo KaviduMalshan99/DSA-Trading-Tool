@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { VISIBLE_OVERLAYS } from '../config/topBarVisibility';
 
 export type OverlayType =
   | 'heatmap' | 'footprint' | 'volumeProfile' | 'whaleMarkers'
@@ -28,9 +29,10 @@ interface ChartState {
 }
 
 export const useChartStore = create<ChartState>((set) => ({
-  // 'context' (the Market Context Dashboard) is visible by default, unlike
-  // the other analytics overlays — it's the summary panel, not a chart layer.
-  visibleOverlays: new Set(['heatmap', 'smc', 'context']),
+  // Only released tools (config/topBarVisibility.ts) can be on at startup, so
+  // a hidden tool — which has no toggle to switch it off — is never enabled.
+  // Full pro-app default was new Set(['heatmap', 'smc', 'context']).
+  visibleOverlays: new Set<OverlayType>(VISIBLE_OVERLAYS),
   visibleRange: null,
   crosshairPrice: null,
   crosshairTime: null,
