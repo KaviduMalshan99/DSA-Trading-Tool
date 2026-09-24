@@ -9,6 +9,7 @@ import { ChartLoadingOverlay } from './ChartLoadingOverlay';
 import { DeltaPanel } from '../Overlay/DeltaPanel';
 import { RSIPanel } from '../Overlay/RSIPanel';
 import { StochRSIPanel } from '../Overlay/StochRSIPanel';
+import { MACDPanel } from '../Overlay/MACDPanel';
 import { FootprintCanvas } from '../Overlay/FootprintCanvas';
 import { HeatmapCanvas } from '../Overlay/HeatmapCanvas';
 import { VolumeProfile } from '../Overlay/VolumeProfile';
@@ -175,7 +176,7 @@ export function ChartContainer({ sharedChartRef, sharedSeriesRef, chartAreaRef }
         {visibleOverlays.has('scanner') && <ClusterScanner />}
       </div>
 
-      {/* Indicator sub-panel (RSI / Stoch RSI; MACD later) — one at a time,
+      {/* Indicator sub-panel (RSI / Stoch RSI / MACD) — one at a time,
           chosen in the Indicators menu. Independent of SHOW_DELTA_PANEL. Keyed
           by indicator so a swap fully remounts (fresh chart, clean teardown). */}
       {activeSubPanel && (
@@ -186,6 +187,7 @@ export function ChartContainer({ sharedChartRef, sharedSeriesRef, chartAreaRef }
         >
           {activeSubPanel === 'rsi' && <RSIPanel sharedChartRef={sharedChartRef} />}
           {activeSubPanel === 'stochRsi' && <StochRSIPanel sharedChartRef={sharedChartRef} />}
+          {activeSubPanel === 'macd' && <MACDPanel sharedChartRef={sharedChartRef} />}
         </div>
       )}
 

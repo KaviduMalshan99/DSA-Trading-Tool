@@ -15,6 +15,7 @@ const INDICATOR_GROUPS: { header: string; items: IndicatorItem[] }[] = [
     items: [
       { kind: 'panel', key: 'rsi',      label: 'RSI (14)' },
       { kind: 'panel', key: 'stochRsi', label: 'Stochastic RSI (14,14,3,3)' },
+      { kind: 'panel', key: 'macd',     label: 'MACD (12,26,9)' },
     ],
   },
 ];

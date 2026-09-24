@@ -13,9 +13,9 @@
  * require touching the backend or adding a new data source. Live mode is
  * untouched; these ports only run while replay is active.
  *
- * Exception: computeEMA, computeBollinger, computeRSI and computeStochRSI (below)
- * have no backend counterpart — they're client-only indicators that run live as
- * well as in replay.
+ * Exception: computeEMA, computeBollinger, computeRSI, computeStochRSI and
+ * computeMACD (below) have no backend counterpart — they're client-only
+ * indicators that run live as well as in replay.
  */
 import type { Candle } from '../types/market';
 import type {
@@ -392,4 +392,63 @@ export function computeStochRSI(
     if (dVal !== null) d.push({ time: rsi[i].time, value: dVal });
   }
   return { k, d };
+}
+
+// ── MACD (client-only indicator, built on an EMA over plain values) ──────────
+
+/**
+ * EMA over an arbitrary number series, with computeEMA's seed and recurrence:
+ * seeded with the SMA of the first `period` values, then
+ * EMA[i] = v[i]·k + EMA[i-1]·(1-k), k = 2/(period+1). Returns
+ * values.length - period + 1 numbers — output j belongs to input index
+ * j + period - 1 (no warm-up entries).
+ */
+export function emaOverValues(values: number[], period: number): number[] {
+  if (period < 1 || values.length < period) return [];
+  const k = 2 / (period + 1);
+
+  let sum = 0;
+  for (let i = 0; i < period; i++) sum += values[i];
+  let ema = sum / period;
+
+  const out: number[] = [ema];
+  for (let i = period; i < values.length; i++) {
+    ema = values[i] * k + ema * (1 - k);
+    out.push(ema);
+  }
+  return out;
+}
+
+export interface MACDData {
+  macd: EMAPoint[];    // EMA(fast) - EMA(slow)
+  signal: EMAPoint[];  // EMA(macd, signal)
+  hist: EMAPoint[];    // macd - signal
+}
+
+/**
+ * MACD, defaults 12/26/9. `candles` must be in chronological order. Both
+ * EMAs run over all closes from index 0 (the fast one isn't restarted at the
+ * slow one's start), matching TradingView. The MACD line starts at index
+ * slow-1; signal and histogram start signal-1 bars later. The three series
+ * are returned separately because of that offset; no warm-up points are
+ * emitted, so every point sits on a real candle time.
+ */
+export function computeMACD(candles: Candle[], fast = 12, slow = 26, signal = 9): MACDData {
+  if (fast < 1 || slow < fast || signal < 1 || candles.length < slow) {
+    return { macd: [], signal: [], hist: [] };
+  }
+
+  const closes = candles.map((c) => c.c);
+  const f = emaOverValues(closes, fast);  // starts at index fast-1
+  const s = emaOverValues(closes, slow);  // starts at index slow-1
+
+  // Both arrays end on the last candle, so a fixed index offset aligns them.
+  const offset = slow - fast;
+  const macd: EMAPoint[] = s.map((sv, j) => ({ time: candles[slow - 1 + j].t, value: f[j + offset] - sv }));
+  if (macd.length < signal) return { macd, signal: [], hist: [] };
+
+  const sig = emaOverValues(macd.map((m) => m.value), signal);
+  const signalPts: EMAPoint[] = sig.map((v, j) => ({ time: macd[j + signal - 1].time, value: v }));
+  const hist: EMAPoint[] = sig.map((v, j) => ({ time: macd[j + signal - 1].time, value: macd[j + signal - 1].value - v }));
+  return { macd, signal: signalPts, hist };
 }
