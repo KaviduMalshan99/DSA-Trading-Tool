@@ -25,7 +25,7 @@ const CAPTURE_TOOLS = new Set<DrawingTool>([
   'gannFan', 'gannBox', 'gannSquare',
   'abcd', 'xabcd', 'cypher', 'threeDrives', 'headShoulders',
   'cyclicLines', 'timeCycles', 'sineLine', 'fibTimeZone', 'fibSpeedFan', 'fibCircles', 'fibSpeedArcs',
-  'fibWedge', 'pitchfan', 'fibSpiral', 'table', 'barsPattern',
+  'fibWedge', 'pitchfan', 'fibSpiral', 'table', 'barsPattern', 'ghostFeed',
 ]);
 
 // Number of clicks each drawing tool needs before it's finalized. Horizontal
@@ -64,6 +64,7 @@ const CLICKS_REQUIRED: Partial<Record<DrawingTool, number>> = {
   pitchfan: 3,
   positionForecast: 3,
   barsPattern: 2,
+  ghostFeed: 1,
   arc: 3,
   curve: 3,
   doubleCurve: 3,
@@ -513,6 +514,44 @@ function snapshotBars(candles: Candle[], time1: number, time2: number) {
     .filter((c) => { const t = toChartTimeSeconds(c.t); return t >= lo && t <= hi; })
     .sort((a, b) => a.t - b.t)
     .map(({ o, h, l, c }) => ({ o, h, l, c }));
+}
+
+// Ghost Feed slot geometry: the anchor's x plus the x of each of the next
+// `count` bar slots, stepped in logical (bar-index) space so the ghosts land on
+// consecutive slots with no weekend/session-gap drift. null when the anchor or
+// the slot spacing can't be resolved.
+function ghostFeedSlots(d: { time: number; count: number }, chart: IChartApi) {
+  const x0 = timeToX(chart, d.time);
+  if (x0 == null) return null;
+  const ts = chart.timeScale();
+  const l0 = ts.coordinateToLogical(x0);
+  if (l0 == null) return null;
+  const L0 = Math.round(l0 as unknown as number);
+  const at = (k: number) => {
+    const c = ts.logicalToCoordinate((L0 + k) as unknown as LWLogical);
+    return c == null ? null : (c as unknown as number);
+  };
+  const s1 = at(1), s2 = at(2);
+  if (s1 == null || s2 == null) return null;
+  const colW = Math.abs(s2 - s1);
+  const xs: number[] = [];
+  for (let k = 1; k <= d.count; k++) {
+    const cx = at(k);
+    if (cx != null) xs.push(cx);
+  }
+  return { x0, colW, xs };
+}
+
+// Ghost Feed wick (half-range, price units), frozen at creation: half the mean
+// high-low range of the last ~14 loaded candles, falling back to 0.1% of the
+// anchor price when there's too little data or the result is degenerate.
+function ghostFeedWick(candles: Candle[], price: number): number {
+  const recent = candles.slice(-14);
+  if (recent.length >= 2) {
+    const w = 0.5 * recent.reduce((s, c) => s + (c.h - c.l), 0) / recent.length;
+    if (Number.isFinite(w) && w > 0) return w;
+  }
+  return Math.abs(price) * 0.001;
 }
 
 // ── Anchored VWAP: derived from live candle data at render time (like
@@ -1927,6 +1966,47 @@ function renderDrawing(
         ctx.arc(hx, hy, 3.5, 0, Math.PI * 2);
         ctx.fill();
       }
+    }
+
+  } else if (d.type === 'ghostFeed') {
+    const slots = ghostFeedSlots(d, chart);
+    const y0 = priceToY(series, d.price);
+    if (!slots || y0 == null) { ctx.restore(); return; }
+    const { x0, colW, xs } = slots;
+    const bodyW = Math.max(1, colW * 0.7);
+    const baseColor = d.color ?? '#9E9E9E';
+    const ghost = eraserHover ? '#f85149' : hexToRgba(baseColor, 40);
+
+    // Flat neutral dojis (o = c = price), so one set of y's serves every slot;
+    // same wick-then-body drawing as Bars Pattern, but on the real price scale.
+    const yH = priceToY(series, d.price + d.wick);
+    const yL = priceToY(series, d.price - d.wick);
+    if (yH == null || yL == null) { ctx.restore(); return; }
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = ghost;
+    ctx.fillStyle = ghost;
+    for (const cx of xs) {
+      ctx.beginPath();
+      ctx.moveTo(cx, yH);
+      ctx.lineTo(cx, yL);
+      ctx.stroke();
+      ctx.fillRect(cx - bodyW / 2, y0 - 0.5, bodyW, 1);
+    }
+
+    if (selected) {
+      if (xs.length > 0) {
+        ctx.strokeStyle = eraserHover ? '#f85149' : hexToRgba(baseColor, 30);
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(x0, y0);
+        ctx.lineTo(xs[xs.length - 1] + colW / 2, y0);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      ctx.fillStyle = eraserHover ? '#f85149' : baseColor;
+      ctx.beginPath();
+      ctx.arc(x0, y0, 3.5, 0, Math.PI * 2);
+      ctx.fill();
     }
 
   } else if (d.type === 'rotatedRectangle') {
@@ -3968,6 +4048,20 @@ function hitTest(
     return mx >= lx - TOL && mx <= rx + TOL && my >= ty - TOL && my <= by + TOL;
   }
 
+  if (d.type === 'ghostFeed') {
+    // whole span of ghost candles, min 8px tall so a tiny wick stays grabbable
+    const slots = ghostFeedSlots(d, chart);
+    const y0 = priceToY(series, d.price);
+    const yH = priceToY(series, d.price + d.wick);
+    const yL = priceToY(series, d.price - d.wick);
+    if (!slots || slots.xs.length === 0 || y0 == null || yH == null || yL == null) return false;
+    const half = slots.colW / 2;
+    // left edge reaches back to the anchor dot (x0) so it's grabbable too
+    const lx = Math.min(slots.x0, ...slots.xs.map((x) => x - half)), rx = Math.max(...slots.xs) + half;
+    const ty = Math.min(yH, yL, y0 - 4), by = Math.max(yH, yL, y0 + 4);
+    return mx >= lx - TOL && mx <= rx + TOL && my >= ty - TOL && my <= by + TOL;
+  }
+
   if (d.type === 'rectangle' || d.type === 'gannBox' || d.type === 'gannSquare') {
     const x1 = timeToX(chart, d.time1);
     const y1 = priceToY(series, d.price1);
@@ -4665,7 +4759,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
             dd = { ...d, points: drag.points };
           } else if (drag.kind === 'arrowMark' && (d.type === 'arrowMark' || d.type === 'pin' ||
               d.type === 'flagMark' || d.type === 'priceLabel' || d.type === 'signpost' || d.type === 'anchoredVwap' ||
-              d.type === 'note' || d.type === 'callout' || d.type === 'comment')) {
+              d.type === 'note' || d.type === 'callout' || d.type === 'comment' || d.type === 'ghostFeed')) {
             dd = { ...d, price: drag.price, time: drag.time };
           } else if (drag.kind === 'note' && d.type === 'text') {
             dd = { ...d, price: drag.price, time: drag.time };
@@ -4858,7 +4952,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
         const isSingleClickTool = tool === 'hline' || tool === 'hray' || tool === 'vline' || tool === 'crossline' ||
           tool === 'arrowMarkUp' || tool === 'arrowMarkDown' || tool === 'longPosition' || tool === 'shortPosition' ||
           tool === 'pin' || tool === 'flagMark' || tool === 'priceLabel' || tool === 'signpost' ||
-          tool === 'note' || tool === 'callout' || tool === 'comment';
+          tool === 'note' || tool === 'callout' || tool === 'comment' || tool === 'ghostFeed';
         if (isSingleClickTool && mousePosRef.current.inside) {
           const { x: mx, y: my } = mousePosRef.current;
           const price = yToPrice(series, my);
@@ -4872,6 +4966,11 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
             else if (tool === 'longPosition' || tool === 'shortPosition') {
               const posBox = defaultPositionBox(tool, price, time, my, series, candlesRef.current);
               if (posBox) preview = { id: '__preview', type: tool, ...posBox };
+            }
+            else if (tool === 'ghostFeed') {
+              if (estimateBarIntervalSec(candlesRef.current) != null)
+                preview = { id: '__preview', type: 'ghostFeed', price, time, count: 10,
+                  wick: ghostFeedWick(candlesRef.current, price) };
             }
             else if (tool === 'pin') preview = { id: '__preview', type: 'pin', price, time };
             else if (tool === 'flagMark') preview = { id: '__preview', type: 'flagMark', price, time };
@@ -5370,6 +5469,13 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
       });
     } else if (tool === 'arrowMarkUp' || tool === 'arrowMarkDown') {
       addDrawing({ id, type: 'arrowMark', variant: tool === 'arrowMarkUp' ? 'up' : 'down', price: price1, time: time1 });
+    } else if (tool === 'ghostFeed') {
+      // need >=2 candles to know the bar spacing the ghosts step along
+      if (estimateBarIntervalSec(candlesRef.current) == null) return;
+      const count = 10;
+      const wick = ghostFeedWick(candlesRef.current, price1);
+      if (count < 1 || !Number.isFinite(wick) || wick <= 0) return;
+      addDrawing({ id, type: 'ghostFeed', price: price1, time: time1, count, wick });
     } else if (tool === 'text') {
       // place empty, then immediately open the inline-edit overlay to type into it
       addDrawing({ id, type: 'text', price: price1, time: time1, text: '' });
@@ -5948,7 +6054,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           if (hitTest(d, x, y, chart, series, candlesRef.current)) { hoverCursor = 'move'; break; }
         } else if (d.type === 'arrowMark' || d.type === 'text' || d.type === 'pin' ||
             d.type === 'flagMark' || d.type === 'priceLabel' || d.type === 'signpost' || d.type === 'anchoredVwap' ||
-            d.type === 'note' || d.type === 'callout' || d.type === 'comment') {
+            d.type === 'note' || d.type === 'callout' || d.type === 'comment' || d.type === 'ghostFeed') {
           if (hitTest(d, x, y, chart, series, candlesRef.current)) { hoverCursor = 'move'; break; }
         } else if (d.type === 'longPosition' || d.type === 'shortPosition') {
           const x1 = timeToX(chart, d.time1), x2 = timeToX(chart, d.time2);
@@ -6263,7 +6369,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
 
         if (d.type === 'arrowMark' || d.type === 'pin' || d.type === 'flagMark' ||
             d.type === 'priceLabel' || d.type === 'signpost' || d.type === 'anchoredVwap' ||
-            d.type === 'note' || d.type === 'callout' || d.type === 'comment') {
+            d.type === 'note' || d.type === 'callout' || d.type === 'comment' || d.type === 'ghostFeed') {
           const x1 = timeToX(chart, d.time), y1 = priceToY(series, d.price);
           if (x1 == null || y1 == null) continue;
           if (!hitTest(d, x, y, chart, series, candlesRef.current)) continue;

@@ -59,10 +59,10 @@ export const ACTION_TOOLS: readonly ActionTool[] = ['measure', 'zoomIn'];
 // Price/Date Range brackets, grouped under one dropdown just like the others.
 export type PositionRangeTool =
   | 'longPosition' | 'shortPosition' | 'anchoredVwap' | 'priceRange' | 'dateRange' | 'datePriceRange' | 'sector'
-  | 'positionForecast' | 'barsPattern';
+  | 'positionForecast' | 'barsPattern' | 'ghostFeed';
 export const POSITION_RANGE_TOOLS: readonly PositionRangeTool[] = [
   'longPosition', 'shortPosition', 'anchoredVwap', 'priceRange', 'dateRange', 'datePriceRange', 'sector',
-  'positionForecast', 'barsPattern',
+  'positionForecast', 'barsPattern', 'ghostFeed',
 ];
 
 // The "Fibonacci" group — Fib Retracement plus ratio-table variants (Fib
@@ -307,6 +307,21 @@ export interface BarsPatternDrawing extends LineStyle {
   price1: number; time1: number;
   price2: number; time2: number;
   bars: { o: number; h: number; l: number; c: number }[];
+}
+
+// Ghost Feed: a 1-click anchor projecting `count` flat, neutral doji "ghost"
+// candles into the next bar slots. Fields are price/time (not price1/time1) so
+// it shares the arrowMark move-only drag bucket. The candles themselves are
+// derived at render (flat at `price`); only `wick` (half-range in price
+// units) is frozen at creation so the ghosts don't resize as data streams in.
+export interface GhostFeedDrawing {
+  id: string;
+  type: 'ghostFeed';
+  price: number;
+  time: number;
+  count: number;
+  wick: number;
+  color?: string;
 }
 
 // Arc: a single quadratic curve from p1 (start) to p2 (end), bulging toward
@@ -893,6 +908,7 @@ export type Drawing =
   | PitchfanDrawing
   | PositionForecastDrawing
   | BarsPatternDrawing
+  | GhostFeedDrawing
   | ArcDrawing
   | CurveDrawing
   | DoubleCurveDrawing

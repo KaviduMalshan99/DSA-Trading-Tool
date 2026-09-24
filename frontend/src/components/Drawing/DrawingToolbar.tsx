@@ -830,6 +830,25 @@ function BarsPatternIcon() {
   );
 }
 
+// Ghost Feed: a solid anchor candle followed by fading, dashed doji outlines
+// projected forward at the same level.
+function GhostFeedIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 6v12" />
+      <rect x="2.5" y="9" width="3" height="6" fill="currentColor" />
+      <g strokeDasharray="1.5 1.5">
+        <path d="M10 9v6" strokeOpacity="0.7" />
+        <rect x="8.5" y="11" width="3" height="2" strokeOpacity="0.7" />
+        <path d="M15 9v6" strokeOpacity="0.5" />
+        <rect x="13.5" y="11" width="3" height="2" strokeOpacity="0.5" />
+        <path d="M20 9v6" strokeOpacity="0.35" />
+        <rect x="18.5" y="11" width="3" height="2" strokeOpacity="0.35" />
+      </g>
+    </svg>
+  );
+}
+
 function MeasureIcon() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
@@ -1147,6 +1166,7 @@ const POSITION_RANGE_ICON: Record<PositionRangeTool, React.ReactNode> = {
   sector: <SectorIcon />,
   positionForecast: <PositionForecastIcon />,
   barsPattern: <BarsPatternIcon />,
+  ghostFeed: <GhostFeedIcon />,
 };
 
 // The flyout's three labeled sections — "Forecasting" (position projections),
@@ -1159,6 +1179,7 @@ const POSITION_RANGE_FORECASTING_ITEMS: { tool: PositionRangeTool; label: string
   { tool: 'sector',        label: 'Sector' },
   { tool: 'positionForecast', label: 'Position Forecast' },
   { tool: 'barsPattern',   label: 'Bars Pattern' },
+  { tool: 'ghostFeed',     label: 'Ghost Feed' },
 ];
 
 const POSITION_RANGE_VOLUME_ITEMS: { tool: PositionRangeTool; label: string }[] = [
@@ -1175,9 +1196,9 @@ const POSITION_RANGE_ITEMS: { tool: PositionRangeTool; label: string }[] = [
   ...POSITION_RANGE_FORECASTING_ITEMS, ...POSITION_RANGE_VOLUME_ITEMS, ...POSITION_RANGE_MEASURES_ITEMS,
 ];
 
-const FORECASTING_COMING_SOON: ComingSoonItem[] = [
-  { label: 'Ghost Feed', icon: <ComingSoonIcon /> },
-];
+// every Forecasting entry is built now; kept (empty) so the section's
+// coming-soon slot stays wired for future additions
+const FORECASTING_COMING_SOON: ComingSoonItem[] = [];
 
 const VOLUME_COMING_SOON: ComingSoonItem[] = [
   { label: 'Fixed Range Volume Profile', icon: <ComingSoonIcon /> },
