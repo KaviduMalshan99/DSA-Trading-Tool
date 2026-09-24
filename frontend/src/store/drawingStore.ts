@@ -68,16 +68,16 @@ export const POSITION_RANGE_TOOLS: readonly PositionRangeTool[] = [
 // The "Fibonacci" group — Fib Retracement plus ratio-table variants (Fib
 // Extension, Trend-based Fib Extension, Fib Channel), grouped under one
 // dropdown just like Trend Line/Shapes/Annotation/Prediction & measurement.
-// 'fibTimeZone', 'fibSpeedFan', 'fibCircles', 'fibSpeedArcs', 'fibWedge' and
-// 'pitchfan' are grouped here for the toolbar flyout only — unlike the other
-// 4, they have no ratio-table/levels (see FibTimeZoneDrawing/
+// 'fibTimeZone', 'fibSpeedFan', 'fibCircles', 'fibSpeedArcs', 'fibWedge',
+// 'pitchfan' and 'fibSpiral' are grouped here for the toolbar flyout only —
+// unlike the other 4, they have no ratio-table/levels (see FibTimeZoneDrawing/
 // FibSpeedFanDrawing/FibCirclesDrawing/FibSpeedArcsDrawing/FibWedgeDrawing/
-// PitchfanDrawing below) and are
+// PitchfanDrawing/FibSpiralDrawing below) and are
 // deliberately excluded from FibLikeDrawing; fibLevelsFor's FibTool parameter
 // never actually receives any of them since every call site narrows d.type to
 // the 4 ratio-table literals first.
-export type FibTool = 'fibonacci' | 'fibExtension' | 'trendFibExtension' | 'fibChannel' | 'fibTimeZone' | 'fibSpeedFan' | 'fibCircles' | 'fibSpeedArcs' | 'fibWedge' | 'pitchfan';
-export const FIB_TOOLS: readonly FibTool[] = ['fibonacci', 'fibExtension', 'trendFibExtension', 'fibChannel', 'fibTimeZone', 'fibSpeedFan', 'fibCircles', 'fibSpeedArcs', 'fibWedge', 'pitchfan'];
+export type FibTool = 'fibonacci' | 'fibExtension' | 'trendFibExtension' | 'fibChannel' | 'fibTimeZone' | 'fibSpeedFan' | 'fibCircles' | 'fibSpeedArcs' | 'fibWedge' | 'pitchfan' | 'fibSpiral';
+export const FIB_TOOLS: readonly FibTool[] = ['fibonacci', 'fibExtension', 'trendFibExtension', 'fibChannel', 'fibTimeZone', 'fibSpeedFan', 'fibCircles', 'fibSpeedArcs', 'fibWedge', 'pitchfan', 'fibSpiral'];
 
 // The "Gann" group — Gann Fan, Gann Box, Gann Square — grouped under one
 // dropdown just like Trend Line/Shapes/.../Fibonacci.
@@ -678,6 +678,18 @@ export interface FibCirclesDrawing extends LineStyle {
   price2: number; time2: number;
 }
 
+// Fib Spiral: a golden (logarithmic) spiral — same 2-point shape as Fib
+// Circles and likewise NOT a ratio-table tool (no `levels`, not part of
+// FibLikeDrawing). price1/time1 is the center, price2/time2 the start point
+// (sets the initial radius and start angle); the radius multiplies by φ every
+// quarter turn, sampled at render time (see sampleFibSpiral in DrawingCanvas.tsx).
+export interface FibSpiralDrawing extends LineStyle {
+  id: string;
+  type: 'fibSpiral';
+  price1: number; time1: number;
+  price2: number; time2: number;
+}
+
 // Fib Speed/Resistance Arcs: the half-circle cousin of Fib Circles — also NOT
 // a ratio-table tool (no `levels`, not part of FibLikeDrawing). price1/time1
 // is the origin, price2/time2 the end; the fib-ratio arcs are fixed
@@ -894,6 +906,7 @@ export type Drawing =
   | FibTimeZoneDrawing
   | FibSpeedFanDrawing
   | FibCirclesDrawing
+  | FibSpiralDrawing
   | FibSpeedArcsDrawing
   | GannFanDrawing
   | GannBoxDrawing

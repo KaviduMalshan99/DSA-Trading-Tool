@@ -24,7 +24,7 @@ const CAPTURE_TOOLS = new Set<DrawingTool>([
   'gannFan', 'gannBox', 'gannSquare',
   'abcd', 'xabcd', 'cypher', 'threeDrives', 'headShoulders',
   'cyclicLines', 'timeCycles', 'sineLine', 'fibTimeZone', 'fibSpeedFan', 'fibCircles', 'fibSpeedArcs',
-  'fibWedge', 'pitchfan', 'table',
+  'fibWedge', 'pitchfan', 'fibSpiral', 'table',
 ]);
 
 // Number of clicks each drawing tool needs before it's finalized. Horizontal
@@ -100,6 +100,7 @@ const CLICKS_REQUIRED: Partial<Record<DrawingTool, number>> = {
   fibTimeZone: 2,
   fibSpeedFan: 2,
   fibCircles: 2,
+  fibSpiral: 2,
   fibSpeedArcs: 2,
 };
 
@@ -251,6 +252,61 @@ const FIB_WEDGE_RATIOS = [0.236, 0.382, 0.5, 0.618, 0.786, 1];
 // from p1 through p2 + t*(p3 - p2), labeled String(t). 0 and 1 pass through
 // p2 and p3, 0.5 is the median.
 const FIB_PITCHFAN_RATIOS = [0, 0.382, 0.5, 0.618, 1];
+
+// Fib Spiral's growth factor (radius multiplies by PHI every quarter turn) and
+// winding: -1 is counterclockwise on screen, since canvas y points down. A
+// CW/CCW toggle could become a stored field later. NOT a fibLevelsFor table.
+const PHI = 1.618;
+const FIB_SPIRAL_DIR = -1;
+
+// Samples Fib Spiral as a polyline — shared by the render branch and hitTest
+// so the two can't drift. p0 is the center, p1 the start point (r0 + start
+// angle). Samples inward until r < 0.5px, then outward from p1 until one point
+// past rMax, so the stroke never produces absurd coordinates. The angular step
+// shrinks with r (chords stay ~3px) so the outer turns don't look faceted.
+// Turn and sample caps are a backstop. Returns [] when degenerate (r0 < 1).
+// The steps don't depend on rMax, so a smaller rMax yields an exact prefix of
+// a larger one's points — render passes the farthest canvas corner
+// (fibSpiralMaxR), hitTest just the mouse's radius + TOL.
+function sampleFibSpiral(
+  x0: number, y0: number, x1: number, y1: number, rMax: number,
+): { x: number; y: number }[] {
+  const r0 = Math.hypot(x1 - x0, y1 - y0);
+  if (r0 < 1) return [];
+  const a0 = Math.atan2(y1 - y0, x1 - x0);
+  const MAX_SAMPLES = 6000, MAX_TURNS_OUT = 8, MAX_TURNS_IN = 6, Q = Math.PI / 2;
+  const pt = (th: number) => {
+    const r = r0 * Math.pow(PHI, th / Q);
+    const a = a0 + th * FIB_SPIRAL_DIR;
+    return { x: x0 + r * Math.cos(a), y: y0 + r * Math.sin(a), r };
+  };
+
+  const inward: { x: number; y: number }[] = [];
+  for (let th = 0, n = 0; th > -MAX_TURNS_IN * 2 * Math.PI && n < MAX_SAMPLES / 2; n++) {
+    const p = pt(th);
+    if (p.r < 0.5) break;
+    th -= Math.min(Math.PI / 90, 3 / p.r);
+    inward.push({ x: p.x, y: p.y });
+  }
+  const pts = inward.reverse(); // center → p1 (θ=0 is the last entry)
+
+  for (let th = 0, n = 0; th < MAX_TURNS_OUT * 2 * Math.PI && n < MAX_SAMPLES / 2; n++) {
+    const p = pt(th);
+    if (n > 0) pts.push({ x: p.x, y: p.y }); // θ=0 already pushed by the inward pass
+    if (p.r > rMax) break;
+    th += Math.min(Math.PI / 90, 3 / p.r);
+  }
+  return pts;
+}
+
+// Distance from (x0,y0) to the farthest canvas corner, plus slack — past this
+// radius every spiral point is off-canvas. The render branch's rMax.
+function fibSpiralMaxR(x0: number, y0: number, W: number, H: number): number {
+  return Math.max(
+    Math.hypot(x0, y0), Math.hypot(W - x0, y0),
+    Math.hypot(x0, H - y0), Math.hypot(W - x0, H - y0),
+  ) + 8;
+}
 
 // Shared ratio set for Gann Box/Square grid divisions.
 const GANN_GRID_RATIOS = [0, 0.25, 0.382, 0.5, 0.618, 0.75, 1.0];
@@ -914,6 +970,46 @@ function renderDrawing(
         ctx.font = '10px monospace';
         ctx.fillText(String(r), Math.min(Math.max(x0, 2), W - 24), Math.min(Math.max(y0 - ringR - 3, 10), H - 4));
       }
+    }
+
+    ctx.fillStyle = eraserHover ? '#f85149' : baseColor;
+    ctx.beginPath();
+    ctx.arc(x0, y0, 4, 0, Math.PI * 2);
+    ctx.fill();
+
+    if (selected) {
+      ctx.beginPath();
+      ctx.arc(x1p, y1p, 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+  } else if (d.type === 'fibSpiral') {
+    // Own branch — NOT routed through fibLevelsFor. p1 is the center, p2 the
+    // start point; the golden spiral is sampled by sampleFibSpiral (shared
+    // with hitTest) and stroked as one polyline, styled like Sine Line.
+    const x0 = timeToX(chart, d.time1);
+    const y0 = priceToY(series, d.price1);
+    const x1p = timeToX(chart, d.time2);
+    const y1p = priceToY(series, d.price2);
+    if (x0 == null || y0 == null || x1p == null || y1p == null) { ctx.restore(); return; }
+
+    const baseColor = d.color ?? '#2196F3';
+    const pts = sampleFibSpiral(x0, y0, x1p, y1p, fibSpiralMaxR(x0, y0, W, H));
+
+    // degenerate (p1 == p2) — no spiral, just the center dot below
+    if (pts.length >= 2) {
+      const lineColor = hexToRgba(baseColor, d.opacity ?? 100);
+      const dashPattern: number[] = d.dash === 'dashed' ? [8, 4] : d.dash === 'dotted' ? [2, 3] : [];
+      ctx.strokeStyle = eraserHover ? '#f85149' : lineColor;
+      ctx.lineWidth = (d.width ?? 1.5) + (selected ? 1 : 0);
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
+      ctx.setLineDash(dashPattern);
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x, pts[0].y);
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+      ctx.stroke();
+      ctx.setLineDash([]);
     }
 
     ctx.fillStyle = eraserHover ? '#f85149' : baseColor;
@@ -3628,6 +3724,25 @@ function hitTest(
     return FIB_CIRCLE_RATIOS.some((r) => Math.abs(dist - baseR * r) < TOL);
   }
 
+  if (d.type === 'fibSpiral') {
+    const x0 = timeToX(chart, d.time1);
+    const y0 = priceToY(series, d.price1);
+    const x1 = timeToX(chart, d.time2);
+    const y1 = priceToY(series, d.price2);
+    if (x0 == null || y0 == null || x1 == null || y1 == null) return false;
+    if (Math.hypot(mx - x0, my - y0) < TOL || Math.hypot(mx - x1, my - y1) < TOL) return true;
+
+    // Same sampleFibSpiral as the render branch, cut off just past the mouse's
+    // radius — points beyond it can't be within TOL, and the samples up to it
+    // are an exact prefix of the rendered ones. Degenerate returns [], so only
+    // the anchors are hittable then.
+    const pts = sampleFibSpiral(x0, y0, x1, y1, Math.hypot(mx - x0, my - y0) + TOL);
+    for (let i = 0; i < pts.length - 1; i++) {
+      if (distToSegment(mx, my, pts[i].x, pts[i].y, pts[i + 1].x, pts[i + 1].y) < TOL) return true;
+    }
+    return false;
+  }
+
   if (d.type === 'fibSpeedArcs') {
     const x0 = timeToX(chart, d.time1);
     const y0 = priceToY(series, d.price1);
@@ -4414,7 +4529,8 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           if (drag.kind === 'trendline' && (d.type === 'trendline' || d.type === 'arrow' || d.type === 'priceNote' ||
               d.type === 'ray' || d.type === 'extendedLine' || d.type === 'infoLine' || d.type === 'trendAngle' ||
               d.type === 'gannFan' || d.type === 'cyclicLines' || d.type === 'timeCycles' || d.type === 'sineLine' ||
-              d.type === 'fibTimeZone' || d.type === 'fibSpeedFan' || d.type === 'fibCircles' || d.type === 'fibSpeedArcs')) {
+              d.type === 'fibTimeZone' || d.type === 'fibSpeedFan' || d.type === 'fibCircles' || d.type === 'fibSpeedArcs' ||
+              d.type === 'fibSpiral')) {
             dd = { ...d, price1: drag.price1, time1: drag.time1, price2: drag.price2, time2: drag.time2 };
           } else if (drag.kind === 'channel' && (d.type === 'channel' || d.type === 'rotatedRectangle' || d.type === 'fibChannel')) {
             dd = { ...d, price1: drag.price1, time1: drag.time1, price2: drag.price2, time2: drag.time2,
@@ -4516,6 +4632,8 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
             preview = { id: '__preview', type: 'fibCircles', price1, time1, price2, time2 };
           else if (tool === 'fibSpeedArcs' && price2 != null && time2 != null)
             preview = { id: '__preview', type: 'fibSpeedArcs', price1, time1, price2, time2 };
+          else if (tool === 'fibSpiral' && price2 != null && time2 != null)
+            preview = { id: '__preview', type: 'fibSpiral', price1, time1, price2, time2 };
           else if (tool === 'extendedLine' && price2 != null && time2 != null)
             preview = { id: '__preview', type: 'extendedLine', price1, time1, price2, time2 };
           else if (tool === 'infoLine' && price2 != null && time2 != null)
@@ -5039,7 +5157,8 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
       addDrawing({ id, type: 'trendline', price1, time1, price2, time2 });
     } else if (tool === 'ray' || tool === 'extendedLine' || tool === 'infoLine' || tool === 'trendAngle' ||
         tool === 'gannFan' || tool === 'cyclicLines' || tool === 'timeCycles' || tool === 'sineLine' ||
-        tool === 'fibTimeZone' || tool === 'fibSpeedFan' || tool === 'fibCircles' || tool === 'fibSpeedArcs') {
+        tool === 'fibTimeZone' || tool === 'fibSpeedFan' || tool === 'fibCircles' || tool === 'fibSpeedArcs' ||
+        tool === 'fibSpiral') {
       if (price2 == null || time2 == null) return;
       addDrawing({ id, type: tool, price1, time1, price2, time2 });
     } else if (tool === 'hline') {
@@ -5653,7 +5772,8 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
         if (d.type === 'trendline' || d.type === 'arrow' || d.type === 'priceNote' ||
             d.type === 'ray' || d.type === 'extendedLine' || d.type === 'infoLine' || d.type === 'trendAngle' ||
             d.type === 'gannFan' || d.type === 'cyclicLines' || d.type === 'timeCycles' || d.type === 'sineLine' ||
-            d.type === 'fibTimeZone' || d.type === 'fibSpeedFan' || d.type === 'fibCircles' || d.type === 'fibSpeedArcs') {
+            d.type === 'fibTimeZone' || d.type === 'fibSpeedFan' || d.type === 'fibCircles' || d.type === 'fibSpeedArcs' ||
+            d.type === 'fibSpiral') {
           const x1 = timeToX(chart, d.time1), y1 = priceToY(series, d.price1);
           const x2 = timeToX(chart, d.time2), y2 = priceToY(series, d.price2);
           if (x1 == null || y1 == null || x2 == null || y2 == null) continue;
@@ -5769,7 +5889,8 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
         if (d.type === 'trendline' || d.type === 'arrow' || d.type === 'priceNote' ||
             d.type === 'ray' || d.type === 'extendedLine' || d.type === 'infoLine' || d.type === 'trendAngle' ||
             d.type === 'gannFan' || d.type === 'cyclicLines' || d.type === 'timeCycles' || d.type === 'sineLine' ||
-            d.type === 'fibTimeZone' || d.type === 'fibSpeedFan' || d.type === 'fibCircles' || d.type === 'fibSpeedArcs') {
+            d.type === 'fibTimeZone' || d.type === 'fibSpeedFan' || d.type === 'fibCircles' || d.type === 'fibSpeedArcs' ||
+            d.type === 'fibSpiral') {
           const x1 = timeToX(chart, d.time1), y1 = priceToY(series, d.price1);
           const x2 = timeToX(chart, d.time2), y2 = priceToY(series, d.price2);
           if (x1 == null || y1 == null || x2 == null || y2 == null) continue;

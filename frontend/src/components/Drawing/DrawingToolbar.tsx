@@ -483,6 +483,17 @@ function PitchfanIcon() {
   );
 }
 
+// Fib Spiral: a golden spiral winding out from a center dot, echoing the
+// tool's center + start point (radius x1.618 every quarter turn).
+function FibSpiralIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M8.4 10 L8.4 10.2 L8.4 10.3 L8.5 10.5 L8.6 10.7 L8.8 10.8 L9 10.9 L9.2 10.9 L9.5 10.9 L9.8 10.8 L10.1 10.6 L10.3 10.3 L10.4 10 L10.5 9.6 L10.5 9.2 L10.3 8.7 L10 8.3 L9.6 7.9 L9 7.7 L8.3 7.6 L7.6 7.6 L6.9 7.9 L6.2 8.4 L5.6 9.1 L5.2 10 L5.1 11.1 L5.2 12.2 L5.6 13.4 L6.4 14.5 L7.5 15.4 L9 16.1 L10.7 16.4 L12.6 16.2 L14.5 15.5 L16.3 14.2 L17.8 12.4 L18.9 10" />
+      <circle cx="9" cy="10" r="1.3" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
 // Gann Fan: several rays fanning out from one corner point (the apex),
 // echoing the tool's own anchor+direction shape.
 function GannFanIcon() {
@@ -1169,6 +1180,7 @@ const FIB_ICON: Record<FibTool, React.ReactNode> = {
   fibSpeedArcs: <FibSpeedArcsIcon />,
   fibWedge: <FibWedgeIcon />,
   pitchfan: <PitchfanIcon />,
+  fibSpiral: <FibSpiralIcon />,
 };
 
 // The Fibonacci group's flyout — flat list (no subsections), same pattern as
@@ -1184,10 +1196,7 @@ const FIB_ITEMS: { tool: FibTool; label: string }[] = [
   { tool: 'fibSpeedArcs',      label: 'Fib Speed/Resistance Arcs' },
   { tool: 'fibWedge',          label: 'Fib Wedge' },
   { tool: 'pitchfan',          label: 'Pitchfan' },
-];
-
-const FIB_COMING_SOON: ComingSoonItem[] = [
-  { label: 'Fib Spiral', icon: <ComingSoonIcon /> },
+  { tool: 'fibSpiral',         label: 'Fib Spiral' },
 ];
 
 const GANN_ICON: Record<GannTool, React.ReactNode> = {
@@ -1705,9 +1714,6 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
                 onToggleFavorite={() => toggleFavorite(tool)}
                 onSelect={() => { setTool(tool); setFibDropdownOpen(false); }}
               />
-            ))}
-            {FIB_COMING_SOON.map((item) => (
-              <ComingSoonMenuItem key={item.label} {...item} />
             ))}
           </div>
         )}
