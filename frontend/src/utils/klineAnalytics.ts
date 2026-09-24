@@ -13,8 +13,8 @@
  * require touching the backend or adding a new data source. Live mode is
  * untouched; these ports only run while replay is active.
  *
- * Exception: computeEMA (below) has no backend counterpart — it's a
- * client-only indicator that runs live as well as in replay.
+ * Exception: computeEMA and computeBollinger (below) have no backend
+ * counterpart — they're client-only indicators that run live as well as in replay.
  */
 import type { Candle } from '../types/market';
 import type {
@@ -243,6 +243,43 @@ export function computeEMA(candles: Candle[], period: number): EMAPoint[] {
   for (let i = period; i < candles.length; i++) {
     ema = candles[i].c * k + ema * (1 - k);
     points.push({ time: candles[i].t, value: ema });
+  }
+  return points;
+}
+
+// ── Bollinger Bands (client-only indicator, no backend port) ─────────────────
+
+export interface BollingerPoint {
+  time: number;   // candle open time, raw epoch ms
+  middle: number;
+  upper: number;
+  lower: number;
+}
+
+/**
+ * `candles` must be in chronological order. For each window of `period` closes
+ * ending at index i (i >= period-1): middle = SMA, sd = population standard
+ * deviation of that window, bands = middle ± mult·sd. Each window is summed
+ * afresh (two-pass) rather than with a rolling sum, so there's no float drift
+ * and variance can't go negative. No warm-up points are emitted.
+ */
+export function computeBollinger(candles: Candle[], period = 20, mult = 2): BollingerPoint[] {
+  if (period < 1 || candles.length < period) return [];
+
+  const points: BollingerPoint[] = [];
+  for (let i = period - 1; i < candles.length; i++) {
+    let sum = 0;
+    for (let j = i - period + 1; j <= i; j++) sum += candles[j].c;
+    const middle = sum / period;
+
+    let sq = 0;
+    for (let j = i - period + 1; j <= i; j++) {
+      const d = candles[j].c - middle;
+      sq += d * d;
+    }
+    const sd = Math.sqrt(sq / period);
+
+    points.push({ time: candles[i].t, middle, upper: middle + mult * sd, lower: middle - mult * sd });
   }
   return points;
 }

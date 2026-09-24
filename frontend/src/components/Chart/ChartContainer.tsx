@@ -15,6 +15,7 @@ import { SMCOverlay } from '../Overlay/SMCOverlay';
 import { LevelsOverlay } from '../Overlay/LevelsOverlay';
 import { VWAPOverlay } from '../Overlay/VWAPOverlay';
 import { EMAOverlay } from '../Overlay/EMAOverlay';
+import { BollingerOverlay } from '../Overlay/BollingerOverlay';
 import { SessionBoxes } from '../Overlay/SessionBoxes';
 import { StructureOverlay } from '../Overlay/StructureOverlay';
 import { AbsorptionOverlay } from '../Overlay/AbsorptionOverlay';
@@ -126,6 +127,9 @@ export function ChartContainer({ sharedChartRef, sharedSeriesRef, chartAreaRef }
             pro overlay visibility config. Own line series, like VWAP. */}
         {activeIndicators.has('ema') && (
           <EMAOverlay sharedChartRef={sharedChartRef} />
+        )}
+        {activeIndicators.has('bollinger') && (
+          <BollingerOverlay sharedChartRef={sharedChartRef} />
         )}
         {visibleOverlays.has('structure') && (
           <StructureOverlay

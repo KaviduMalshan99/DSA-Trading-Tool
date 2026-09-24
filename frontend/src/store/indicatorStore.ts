@@ -5,7 +5,7 @@ import { create } from 'zustand';
  * from chartStore's visibleOverlays: those are the pro order-flow overlays,
  * gated by config/topBarVisibility.ts, while indicators are always available.
  */
-export type IndicatorType = 'ema';
+export type IndicatorType = 'ema' | 'bollinger';
 
 interface IndicatorState {
   activeIndicators: Set<IndicatorType>;

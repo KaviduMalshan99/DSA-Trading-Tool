@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
 import { useIndicatorStore, type IndicatorType } from '../../store/indicatorStore';
 
-const INDICATORS: { key: IndicatorType; label: string }[] = [
-  { key: 'ema', label: 'EMA (20/50/100/200)' },
+const INDICATOR_GROUPS: { header: string; items: { key: IndicatorType; label: string }[] }[] = [
+  { header: 'Moving Averages', items: [{ key: 'ema', label: 'EMA (20/50/100/200)' }] },
+  { header: 'Volatility',      items: [{ key: 'bollinger', label: 'Bollinger Bands' }] },
 ];
 
 /**
@@ -56,27 +57,31 @@ export function IndicatorsDropdown() {
             }
           `}</style>
 
-          <div className="px-3 pt-2 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)] select-none">
-            Moving Averages
-          </div>
-          {INDICATORS.map(({ key, label }) => {
-            const active = activeIndicators.has(key);
-            return (
-              <button
-                key={key}
-                onClick={() => toggleIndicator(key)}
-                aria-pressed={active}
-                className={`w-full flex items-center gap-2 text-left py-1 text-xs transition-colors border-l-2 pl-2.5 pr-3 ${
-                  active
-                    ? 'text-[var(--accent)] border-[var(--accent)] bg-[var(--accent)]/20'
-                    : 'text-[var(--text-secondary)] border-transparent hover:bg-[var(--accent)]/15 hover:text-white'
-                }`}
-              >
-                <span className="w-3 text-center">{active ? '✓' : ''}</span>
-                <span>{label}</span>
-              </button>
-            );
-          })}
+          {INDICATOR_GROUPS.map(({ header, items }) => (
+            <div key={header}>
+              <div className="px-3 pt-2 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)] select-none">
+                {header}
+              </div>
+              {items.map(({ key, label }) => {
+                const active = activeIndicators.has(key);
+                return (
+                  <button
+                    key={key}
+                    onClick={() => toggleIndicator(key)}
+                    aria-pressed={active}
+                    className={`w-full flex items-center gap-2 text-left py-1 text-xs transition-colors border-l-2 pl-2.5 pr-3 ${
+                      active
+                        ? 'text-[var(--accent)] border-[var(--accent)] bg-[var(--accent)]/20'
+                        : 'text-[var(--text-secondary)] border-transparent hover:bg-[var(--accent)]/15 hover:text-white'
+                    }`}
+                  >
+                    <span className="w-3 text-center">{active ? '✓' : ''}</span>
+                    <span>{label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          ))}
 
           <div className="px-3 pt-1.5 pb-1 mt-1 border-t border-[var(--border-color)] text-[10px] text-[var(--text-muted)] select-none">
             More indicators coming soon
