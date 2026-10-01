@@ -207,9 +207,8 @@ export function Toolbar({ chartRef, chartAreaRef }: ToolbarProps) {
 
   return (
     <header className="flex items-center justify-between px-4 py-1 bg-[var(--bg-panel)] border-b border-[var(--border-color)] select-none">
-      <div className="flex items-center gap-2">
-        <span className="text-blue-400 font-bold text-sm tracking-wide">DSA</span>
-        <span className="text-[var(--text-secondary)] font-semibold text-sm">Trading Tool</span>
+      <div className="flex items-center">
+        <span className="text-blue-400 font-bold text-sm tracking-wide">Check Your Chart</span>
       </div>
       <div className="flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
         <button

@@ -46,7 +46,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="DSA Trading Tool API",
+    title="Check Your Chart API",
     version="1.0.0",
     lifespan=lifespan,
 )

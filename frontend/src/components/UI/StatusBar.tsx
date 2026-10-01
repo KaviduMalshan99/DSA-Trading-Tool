@@ -76,7 +76,7 @@ export function StatusBar() {
       <span>{activeInterval}</span>
       <span>{candles.length} candles</span>
       <TimezonePicker />
-      <span>DSA Trading Tool v1.0</span>
+      <span>Check Your Chart v1.0</span>
     </footer>
   );
 }
