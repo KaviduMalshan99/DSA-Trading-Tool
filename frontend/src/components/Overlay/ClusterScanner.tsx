@@ -78,7 +78,7 @@ function fmtNotional(n: number): string {
   return `$${(n / 1_000).toFixed(0)}K`;
 }
 
-/** Wall-clock HH:MM:SS in the app's fixed Asia/Colombo display offset (see chartTime.ts). */
+/** Wall-clock HH:MM:SS in the selected chart timezone (see chartTime.ts). */
 function formatClockTime(epochMs: number): string {
   const d = new Date(toChartTimeSeconds(epochMs) * 1000);
   const hh = String(d.getUTCHours()).padStart(2, '0');

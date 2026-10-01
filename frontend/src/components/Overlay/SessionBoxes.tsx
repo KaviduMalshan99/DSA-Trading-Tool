@@ -162,11 +162,11 @@ export function SessionBoxes({ sharedChartRef }: SessionBoxesProps) {
 
       SESSIONS.forEach((session, sessionIdx) => {
         // Raw UTC epoch-ms, deliberately *not* shifted through
-        // CHART_TZ_OFFSET_SECONDS: these are compared against the candles' own
+        // getChartTzOffsetSeconds(): these are compared against the candles' own
         // raw `t` values to derive a bar index, and the index is what the
-        // library maps to a pixel. The Asia/Colombo shift only exists for
+        // library maps to a pixel. The chart-timezone shift only exists for
         // values handed to lightweight-charts as a `time`, which never happens
-        // on this path — applying it here would slide every band 5.5h off the
+        // on this path — applying it here would slide every band off the
         // candles it describes.
         const startMs = dayStart + session.startHour * 3_600_000;
         let endMs = dayStart + session.endHour * 3_600_000;

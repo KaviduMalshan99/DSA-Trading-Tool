@@ -23,7 +23,7 @@ import { useEffect, useRef } from 'react';
 import type { IChartApi, ISeriesApi, MouseEventParams } from 'lightweight-charts';
 import { useMarketStore } from '../../store/marketStore';
 import { useReplayStore } from '../../store/replayStore';
-import { CHART_TZ_OFFSET_SECONDS } from '../../utils/chartTime';
+import { getChartTzOffsetSeconds } from '../../utils/chartTime';
 import { setSeriesData } from '../../utils/chartSeriesFeed';
 
 const BASE_MS_PER_BAR = 700; // interval at 1x; divided by speed for 0.5x/2x/4x
@@ -50,7 +50,7 @@ export function ReplayEngine({ sharedChartRef, sharedSeriesRef, sharedLineSeries
 
     const handleClick = (param: MouseEventParams) => {
       if (!useReplayStore.getState().isPicking || param.time == null) return;
-      const flooredSeconds = (param.time as number) - CHART_TZ_OFFSET_SECONDS;
+      const flooredSeconds = (param.time as number) - getChartTzOffsetSeconds();
       const candles = useMarketStore.getState().candles;
       const target =
         candles.find((c) => Math.floor(c.t / 1000) === flooredSeconds) ??

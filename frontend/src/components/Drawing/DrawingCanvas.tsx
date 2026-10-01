@@ -3,7 +3,7 @@ import type { IChartApi, ISeriesApi } from 'lightweight-charts';
 import { useDrawingStore, type Drawing, type DrawingTool, type FibTool, type PatternType } from '../../store/drawingStore';
 import { useMarketStore } from '../../store/marketStore';
 import { useCandleStyleStore } from '../../store/candleStyleStore';
-import { toChartTimeSeconds, CHART_TZ_OFFSET_SECONDS } from '../../utils/chartTime';
+import { toChartTimeSeconds, getChartTzOffsetSeconds } from '../../utils/chartTime';
 import { shiftDrawingTimes } from '../../utils/drawingTimeShift';
 import { computeSessionVWAPFromCandles } from '../../utils/klineAnalytics';
 import { decimalsForPrice } from '../../utils/priceFormat';
@@ -462,7 +462,7 @@ function xToTime(chart: IChartApi, x: number): number | null {
 }
 
 // timeSec is already shifted chart-time — format it as UTC so the browser's own
-// zone isn't applied on top of the Asia/Colombo shift.
+// zone isn't applied on top of the chart-timezone shift.
 function fmtTime(timeSec: number): string {
   const d = new Date(timeSec * 1000);
   return d.toLocaleString('en-US', {
@@ -4690,9 +4690,10 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
   // Key whose saved drawings have been loaded into the store; save waits for it.
   const loadedKeyRef = useRef<string | null>(null);
   // On disk drawings are UTC epoch seconds ({ v: 2, drawings }); in the store
-  // they're chart time (UTC + offset). Single reference — swaps to the
-  // timezone store value in a later stage.
-  const currentOffset = CHART_TZ_OFFSET_SECONDS;
+  // they're chart time (UTC + offset of the selected zone). Read once per
+  // mount: ChartContainer remounts this subtree on zone change, so the load
+  // effect re-runs and re-shifts the UTC drawings by the new offset.
+  const currentOffset = getChartTzOffsetSeconds();
 
   useEffect(() => {
     try {

@@ -2,6 +2,7 @@ import { useRef } from 'react';
 import { type IChartApi, type ISeriesApi } from 'lightweight-charts';
 import { useChartStore } from '../../store/chartStore';
 import { useIndicatorStore } from '../../store/indicatorStore';
+import { useTimezoneStore } from '../../store/timezoneStore';
 import { TradingChart } from './TradingChart';
 import { ReplayEngine } from './ReplayEngine';
 import { ChartToolbar } from './ChartToolbar';
@@ -43,6 +44,7 @@ export function ChartContainer({ sharedChartRef, sharedSeriesRef, chartAreaRef }
   const visibleOverlays = useChartStore((s) => s.visibleOverlays);
   const activeIndicators = useIndicatorStore((s) => s.activeIndicators);
   const activeSubPanel   = useIndicatorStore((s) => s.activeSubPanel);
+  const timezone         = useTimezoneStore((s) => s.timezone);
   // Either bottom panel (pro Delta panel or the student indicator sub-panel)
   // takes a 1-share slice under the chart; with neither, the chart gets it all.
   const hasBottomPanel = SHOW_DELTA_PANEL || activeSubPanel !== null;
@@ -58,7 +60,11 @@ export function ChartContainer({ sharedChartRef, sharedSeriesRef, chartAreaRef }
       <div className="flex flex-1 overflow-hidden" style={{ minHeight: 0 }}>
       <DrawingToolbar />
 
-      <div className="flex flex-col flex-1 overflow-hidden">
+      {/* Keyed by timezone: a zone change fully remounts the chart, overlays
+          and sub-panels so every series recomputes with the new offset (see
+          chartTime.ts). Toolbars sit outside and stay mounted. The remount
+          resets the view to the latest candles (historical reload). */}
+      <div key={timezone} className="flex flex-col flex-1 overflow-hidden">
       {/* Main candlestick area — 80% with a bottom panel, full height without */}
       <div ref={chartAreaRef} className="relative bg-[var(--bg-app)]" style={{ flex: hasBottomPanel ? '4 4 0%' : '1 1 0%', minHeight: 0 }}>
         <TradingChart
