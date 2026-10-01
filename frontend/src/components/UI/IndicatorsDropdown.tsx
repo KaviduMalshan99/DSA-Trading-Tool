@@ -1,24 +1,30 @@
 import { useState, useRef, useEffect } from 'react';
 import { useIndicatorStore, type IndicatorType, type SubPanelIndicator } from '../../store/indicatorStore';
+import { FavoriteStarButton } from './FavoriteStarButton';
 
 // 'overlay' items draw on the main chart and stack (multi-select); 'panel'
 // items share the single sub-panel below it, so picking one swaps the other out.
-type IndicatorItem =
-  | { kind: 'overlay'; key: IndicatorType;     label: string }
-  | { kind: 'panel';   key: SubPanelIndicator; label: string };
+// `short` is the compact label used for the favorite pills in the top bar.
+export type IndicatorItem =
+  | { kind: 'overlay'; key: IndicatorType;     label: string; short: string }
+  | { kind: 'panel';   key: SubPanelIndicator; label: string; short: string };
 
 const INDICATOR_GROUPS: { header: string; items: IndicatorItem[] }[] = [
-  { header: 'Moving Averages', items: [{ kind: 'overlay', key: 'ema', label: 'EMA (20/50/100/200)' }] },
-  { header: 'Volatility',      items: [{ kind: 'overlay', key: 'bollinger', label: 'Bollinger Bands' }] },
+  { header: 'Moving Averages', items: [{ kind: 'overlay', key: 'ema', label: 'EMA (20/50/100/200)', short: 'EMA' }] },
+  { header: 'Volatility',      items: [{ kind: 'overlay', key: 'bollinger', label: 'Bollinger Bands', short: 'BB' }] },
   {
     header: 'Oscillators',
     items: [
-      { kind: 'panel', key: 'rsi',      label: 'RSI (14)' },
-      { kind: 'panel', key: 'stochRsi', label: 'Stochastic RSI (14,14,3,3)' },
-      { kind: 'panel', key: 'macd',     label: 'MACD (12,26,9)' },
+      { kind: 'panel', key: 'rsi',      label: 'RSI (14)',                   short: 'RSI' },
+      { kind: 'panel', key: 'stochRsi', label: 'Stochastic RSI (14,14,3,3)', short: 'StochRSI' },
+      { kind: 'panel', key: 'macd',     label: 'MACD (12,26,9)',             short: 'MACD' },
     ],
   },
 ];
+
+// Flat, menu-ordered list — drives the favorite-pill order and lets the top
+// bar turn a stored favorite key back into its item.
+export const INDICATOR_ITEMS: IndicatorItem[] = INDICATOR_GROUPS.flatMap((g) => g.items);
 
 /**
  * Multi-select indicator menu — same shell as TimeframeDropdown, but clicking
@@ -29,6 +35,8 @@ export function IndicatorsDropdown() {
   const toggleIndicator  = useIndicatorStore((s) => s.toggleIndicator);
   const activeSubPanel   = useIndicatorStore((s) => s.activeSubPanel);
   const toggleSubPanel   = useIndicatorStore((s) => s.toggleSubPanel);
+  const favoriteIndicators      = useIndicatorStore((s) => s.favoriteIndicators);
+  const toggleFavoriteIndicator = useIndicatorStore((s) => s.toggleFavoriteIndicator);
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -63,7 +71,7 @@ export function IndicatorsDropdown() {
 
       {open && (
         <div
-          className="absolute top-full left-0 mt-1 z-50 rounded-md border border-[var(--border-color)] bg-[var(--bg-panel-alt)] shadow-2xl py-1 min-w-[180px]"
+          className="absolute top-full left-0 mt-1 z-50 rounded-md border border-[var(--border-color)] bg-[var(--bg-panel-alt)] shadow-2xl py-1 min-w-[200px]"
           style={{ animation: 'indDropdown 120ms ease-out' }}
         >
           <style>{`
@@ -84,19 +92,30 @@ export function IndicatorsDropdown() {
                   ? activeSubPanel === item.key
                   : activeIndicators.has(item.key);
                 return (
-                  <button
+                  <div
                     key={key}
-                    onClick={() => (item.kind === 'panel' ? toggleSubPanel(item.key) : toggleIndicator(item.key))}
-                    aria-pressed={active}
-                    className={`w-full flex items-center gap-2 text-left py-1 text-xs transition-colors border-l-2 pl-2.5 pr-3 ${
+                    className={`w-full flex items-center pr-1 transition-colors border-l-2 ${
                       active
-                        ? 'text-[var(--accent)] border-[var(--accent)] bg-[var(--accent)]/20'
-                        : 'text-[var(--text-secondary)] border-transparent hover:bg-[var(--accent)]/15 hover:text-white'
+                        ? 'border-[var(--accent)] bg-[var(--accent)]/20'
+                        : 'border-transparent hover:bg-[var(--accent)]/15'
                     }`}
                   >
-                    <span className="w-3 text-center">{active ? '✓' : ''}</span>
-                    <span>{label}</span>
-                  </button>
+                    <button
+                      onClick={() => (item.kind === 'panel' ? toggleSubPanel(item.key) : toggleIndicator(item.key))}
+                      aria-pressed={active}
+                      className={`flex-1 flex items-center gap-2 text-left py-1 pl-2.5 pr-3 text-xs transition-colors ${
+                        active ? 'text-[var(--accent)]' : 'text-[var(--text-secondary)] hover:text-white'
+                      }`}
+                    >
+                      <span className="w-3 text-center">{active ? '✓' : ''}</span>
+                      <span>{label}</span>
+                    </button>
+                    <FavoriteStarButton
+                      favorite={favoriteIndicators.includes(key)}
+                      onToggle={() => toggleFavoriteIndicator(key)}
+                      className="h-6"
+                    />
+                  </div>
                 );
               })}
             </div>

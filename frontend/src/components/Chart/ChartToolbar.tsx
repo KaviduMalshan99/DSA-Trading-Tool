@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { useChartStore, type ChartType, type OverlayType } from '../../store/chartStore';
 import { useMarketStore, ALL_INTERVALS } from '../../store/marketStore';
 import { TimeframeDropdown } from '../UI/TimeframeDropdown';
-import { IndicatorsDropdown } from '../UI/IndicatorsDropdown';
+import { IndicatorsDropdown, INDICATOR_ITEMS } from '../UI/IndicatorsDropdown';
+import { useIndicatorStore } from '../../store/indicatorStore';
 import { ReplayControls } from './ReplayControls';
 import { isOverlayVisible } from '../../config/topBarVisibility';
 
@@ -102,6 +103,45 @@ function FavoriteIntervalButtons() {
   );
 }
 
+// Quick-access pills for the indicators starred in the Indicators dropdown,
+// in menu order (INDICATOR_ITEMS). Each pill does exactly what its menu row
+// does: overlays toggle independently, panel pills swap the single sub-panel.
+function FavoriteIndicatorButtons() {
+  const favoriteIndicators = useIndicatorStore((s) => s.favoriteIndicators);
+  const activeIndicators   = useIndicatorStore((s) => s.activeIndicators);
+  const activeSubPanel     = useIndicatorStore((s) => s.activeSubPanel);
+  const toggleIndicator    = useIndicatorStore((s) => s.toggleIndicator);
+  const toggleSubPanel     = useIndicatorStore((s) => s.toggleSubPanel);
+
+  if (favoriteIndicators.length === 0) return null;
+  const sorted = INDICATOR_ITEMS.filter((item) => favoriteIndicators.includes(item.key));
+
+  return (
+    <div className="flex items-center gap-0.5">
+      {sorted.map((item) => {
+        const active = item.kind === 'panel'
+          ? activeSubPanel === item.key
+          : activeIndicators.has(item.key);
+        return (
+          <button
+            key={item.key}
+            onClick={() => (item.kind === 'panel' ? toggleSubPanel(item.key) : toggleIndicator(item.key))}
+            aria-pressed={active}
+            title={item.label}
+            className={`px-2 py-0.5 rounded text-xs font-medium transition-colors ${
+              active
+                ? 'bg-[var(--accent)] text-white'
+                : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'
+            }`}
+          >
+            {item.short}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export function ChartToolbar() {
   const visibleOverlays  = useChartStore((s) => s.visibleOverlays);
   const toggleOverlay    = useChartStore((s) => s.toggleOverlay);
@@ -141,6 +181,7 @@ export function ChartToolbar() {
       <FavoriteIntervalButtons />
       <ChartTypeToggle />
       <IndicatorsDropdown />
+      <FavoriteIndicatorButtons />
 
       {shownOverlays.length > 0 && (
         <>
