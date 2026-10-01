@@ -1918,7 +1918,7 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
       <div className="w-6 border-t border-[var(--border-color-soft)] my-1" />
 
       <button
-        title={keepToolActive ? 'Stay in Drawing Mode: on' : 'Stay in Drawing Mode: off'}
+        title={keepToolActive ? 'Keep Drawing: on' : 'Keep Drawing: off'}
         onClick={toggleKeepToolActive}
         className={`
           w-9 h-9 flex items-center justify-center rounded transition-colors [&_svg]:w-5 [&_svg]:h-5
