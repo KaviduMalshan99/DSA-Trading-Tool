@@ -5,6 +5,9 @@
  * Unlike VWAP there's no backend endpoint: every EMA is computed client-side
  * from marketStore's candles (utils/klineAnalytics.computeEMA), so there's no
  * fetch or poll — the lines simply recompute whenever the candles change.
+ *
+ * Periods and per-line color/width/visibility come from indicatorConfigStore:
+ * a period edit recomputes the data, a style edit only re-styles the series.
  */
 
 import { useEffect, useRef, useState } from 'react';
@@ -14,10 +17,7 @@ import { useReplayStore } from '../../store/replayStore';
 import { toChartTime } from '../../utils/chartTime';
 import { decimalsForPrice } from '../../utils/priceFormat';
 import { computeEMA } from '../../utils/klineAnalytics';
-
-const EMA_PERIODS = [20, 50, 100, 200] as const;
-const EMA_COLORS  = ['#f5c542', '#ff7043', '#26c6da', '#ec407a'] as const;
-const EMA_WIDTHS  = [1, 1, 1.5, 2] as const;
+import { useIndicatorConfigStore } from '../../store/indicatorConfigStore';
 
 export interface EMAOverlayProps {
   sharedChartRef: React.RefObject<IChartApi | null>;
@@ -25,8 +25,9 @@ export interface EMAOverlayProps {
 
 export function EMAOverlay({ sharedChartRef }: EMAOverlayProps) {
   const seriesRef = useRef<ISeriesApi<'Line'>[]>([]);
-  // Latest value per period (null = not enough candles for that period yet).
-  const [current, setCurrent]   = useState<(number | null)[]>(() => EMA_PERIODS.map(() => null));
+  const cfg = useIndicatorConfigStore((s) => s.configs.ema);
+  // Latest value per line (null = not enough candles for that period yet).
+  const [current, setCurrent]   = useState<(number | null)[]>(() => cfg.periods.map(() => null));
   const [decimals, setDecimals] = useState(2);
 
   const candles          = useMarketStore((s) => s.candles);
@@ -38,11 +39,14 @@ export function EMAOverlay({ sharedChartRef }: EMAOverlayProps) {
     const chart = sharedChartRef.current;
     if (!chart) return;
 
-    const series = EMA_PERIODS.map((_, i) =>
+    // Read the config imperatively: edits restyle/recompute the existing series
+    // in the effects below rather than recreating them.
+    const { lines } = useIndicatorConfigStore.getState().configs.ema;
+    const series = lines.map((line) =>
       chart.addLineSeries({
-        color: EMA_COLORS[i],
-        // LineWidth is typed 1-4, but the renderer draws fractional widths fine.
-        lineWidth: EMA_WIDTHS[i] as LineWidth,
+        color: line.color,
+        lineWidth: line.width as LineWidth,
+        visible: line.visible,
         priceLineVisible: false,
         lastValueVisible: false,      // the legend below shows the values instead
         crosshairMarkerVisible: false,
@@ -61,6 +65,7 @@ export function EMAOverlay({ sharedChartRef }: EMAOverlayProps) {
   }, [sharedChartRef]);
 
   // ── Recompute on every candles change (incl. the forming bar's ticks) ─────
+  // and whenever the periods are edited.
   useEffect(() => {
     const series = seriesRef.current;
     if (series.length === 0) return;
@@ -74,7 +79,7 @@ export function EMAOverlay({ sharedChartRef }: EMAOverlayProps) {
     const last = visible.at(-1);
     const dec = last ? decimalsForPrice(last.c) : 2;
 
-    const latest = EMA_PERIODS.map((period, i) => {
+    const latest = cfg.periods.map((period, i) => {
       const points = computeEMA(visible, period);
       series[i].setData(points.map((p) => ({ time: toChartTime(p.time), value: p.value })));
       series[i].applyOptions({
@@ -85,18 +90,27 @@ export function EMAOverlay({ sharedChartRef }: EMAOverlayProps) {
 
     setDecimals(dec);
     setCurrent(latest);
-  }, [candles, replayActive, replayCursorTime]);
+  }, [candles, replayActive, replayCursorTime, cfg.periods]);
 
-  const rows = EMA_PERIODS
-    .map((period, i) => ({ period, color: EMA_COLORS[i], value: current[i] }))
-    .filter((r) => r.value !== null);
+  // ── Re-style on color/width/visibility edits (no recompute) ───────────────
+  useEffect(() => {
+    seriesRef.current.forEach((s, i) => {
+      const line = cfg.lines[i];
+      if (line) s.applyOptions({ color: line.color, lineWidth: line.width as LineWidth, visible: line.visible });
+    });
+  }, [cfg.lines]);
+
+  // Index is the stable identity here — two lines may share a period.
+  const rows = cfg.periods
+    .map((period, i) => ({ i, period, color: cfg.lines[i].color, visible: cfg.lines[i].visible, value: current[i] }))
+    .filter((r) => r.visible && r.value != null);
   if (rows.length === 0) return null;
 
   // Offset below VWAPOverlay's legend row (top-8) so the two never overlap.
   return (
     <div className="absolute top-14 left-3 z-10 flex flex-col gap-0.5 pointer-events-none select-none text-xs font-mono">
-      {rows.map(({ period, color, value }) => (
-        <div key={period} className="flex items-center gap-1.5">
+      {rows.map(({ i, period, color, value }) => (
+        <div key={i} className="flex items-center gap-1.5">
           <span className="w-3 h-0.5 rounded" style={{ background: color }} />
           <span className="font-semibold" style={{ color }}>EMA {period}</span>
           <span style={{ color }}>

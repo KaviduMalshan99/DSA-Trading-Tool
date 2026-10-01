@@ -1,6 +1,14 @@
 import { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useIndicatorStore, type IndicatorType, type SubPanelIndicator } from '../../store/indicatorStore';
 import { FavoriteStarButton } from './FavoriteStarButton';
+import { IndicatorSettingsModal } from './IndicatorSettingsModal';
+import { GearIcon } from '../Drawing/drawingStyleShared';
+import type { IndicatorConfigKey } from '../../store/indicatorConfigStore';
+
+// Indicators whose menu row offers settings + remove. Grows as each
+// indicator is wired to indicatorConfigStore.
+const CONFIGURABLE: ReadonlySet<IndicatorConfigKey> = new Set<IndicatorConfigKey>(['ema']);
 
 // 'overlay' items draw on the main chart and stack (multi-select); 'panel'
 // items share the single sub-panel below it, so picking one swaps the other out.
@@ -38,6 +46,8 @@ export function IndicatorsDropdown() {
   const favoriteIndicators      = useIndicatorStore((s) => s.favoriteIndicators);
   const toggleFavoriteIndicator = useIndicatorStore((s) => s.toggleFavoriteIndicator);
   const [open, setOpen] = useState(false);
+  // Lives outside the menu so the modal survives the menu closing.
+  const [settingsKey, setSettingsKey] = useState<IndicatorConfigKey | null>(null);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -110,6 +120,28 @@ export function IndicatorsDropdown() {
                       <span className="w-3 text-center">{active ? '✓' : ''}</span>
                       <span>{label}</span>
                     </button>
+                    {CONFIGURABLE.has(key) && (
+                      <>
+                        <button
+                          onClick={() => { setOpen(false); setSettingsKey(key); }}
+                          title="Settings"
+                          aria-label={`${item.short} settings`}
+                          className="h-6 w-6 flex items-center justify-center rounded text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover-alt)]"
+                        >
+                          <GearIcon />
+                        </button>
+                        {active && (
+                          <button
+                            onClick={() => (item.kind === 'panel' ? toggleSubPanel(item.key) : toggleIndicator(item.key))}
+                            title="Remove"
+                            aria-label={`Remove ${item.short}`}
+                            className="h-6 w-6 flex items-center justify-center rounded text-base leading-none text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover-alt)]"
+                          >
+                            ×
+                          </button>
+                        )}
+                      </>
+                    )}
                     <FavoriteStarButton
                       favorite={favoriteIndicators.includes(key)}
                       onToggle={() => toggleFavoriteIndicator(key)}
@@ -125,6 +157,13 @@ export function IndicatorsDropdown() {
             More indicators coming soon
           </div>
         </div>
+      )}
+
+      {/* Portaled so the menu's positioned/animated ancestors can't trap the
+          fixed-position backdrop in their stacking context. */}
+      {settingsKey && createPortal(
+        <IndicatorSettingsModal indicatorKey={settingsKey} onClose={() => setSettingsKey(null)} />,
+        document.body,
       )}
     </div>
   );
