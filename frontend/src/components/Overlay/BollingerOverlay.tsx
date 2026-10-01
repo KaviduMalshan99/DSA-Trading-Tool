@@ -1,32 +1,29 @@
 /**
- * BollingerOverlay — Bollinger Bands (SMA-20 middle, ±2σ upper/lower) drawn as
+ * BollingerOverlay — Bollinger Bands (SMA middle, ±kσ upper/lower) drawn as
  * three lightweight-charts line series, modelled on EMAOverlay.
  *
  * Computed client-side from marketStore's candles
  * (utils/klineAnalytics.computeBollinger) — no fetch or poll; the bands simply
  * recompute whenever the candles change.
+ *
+ * Period/multiplier and per-line color/width/visibility come from
+ * indicatorConfigStore: a param edit recomputes, a style edit only re-styles.
  */
 
 import { useEffect, useRef, useState } from 'react';
-import type { IChartApi, ISeriesApi } from 'lightweight-charts';
+import type { IChartApi, ISeriesApi, LineWidth } from 'lightweight-charts';
 import { useMarketStore } from '../../store/marketStore';
 import { useReplayStore } from '../../store/replayStore';
 import { toChartTime } from '../../utils/chartTime';
 import { decimalsForPrice } from '../../utils/priceFormat';
 import { computeBollinger, type BollingerPoint } from '../../utils/klineAnalytics';
+import { useIndicatorConfigStore } from '../../store/indicatorConfigStore';
 
-const BB_PERIOD = 20;
-const BB_MULT   = 2;
+// Series order — matches configs.bollinger.lines: middle, upper, lower.
+const BB_KEYS = ['middle', 'upper', 'lower'] as const satisfies readonly (keyof Omit<BollingerPoint, 'time'>)[];
 
-const MIDDLE_COLOR = '#f5c542';
-const BAND_COLOR   = '#26c6da';
-
-// Series order: middle, upper, lower.
-const BB_LINES = [
-  { key: 'middle', color: MIDDLE_COLOR },
-  { key: 'upper',  color: BAND_COLOR },
-  { key: 'lower',  color: BAND_COLOR },
-] as const satisfies readonly { key: keyof Omit<BollingerPoint, 'time'>; color: string }[];
+// Legend lists upper, middle, lower (price order) — indices into BB_KEYS.
+const LEGEND_ORDER = [1, 0, 2] as const;
 
 export interface BollingerOverlayProps {
   sharedChartRef: React.RefObject<IChartApi | null>;
@@ -34,7 +31,8 @@ export interface BollingerOverlayProps {
 
 export function BollingerOverlay({ sharedChartRef }: BollingerOverlayProps) {
   const seriesRef = useRef<ISeriesApi<'Line'>[]>([]);
-  // Latest band values (null = fewer than BB_PERIOD candles so far).
+  const cfg = useIndicatorConfigStore((s) => s.configs.bollinger);
+  // Latest band values (null = fewer than `period` candles so far).
   const [current, setCurrent]   = useState<BollingerPoint | null>(null);
   const [decimals, setDecimals] = useState(2);
 
@@ -47,10 +45,14 @@ export function BollingerOverlay({ sharedChartRef }: BollingerOverlayProps) {
     const chart = sharedChartRef.current;
     if (!chart) return;
 
-    const series = BB_LINES.map(({ color }) =>
+    // Read the config imperatively: edits restyle/recompute the existing series
+    // in the effects below rather than recreating them.
+    const { lines } = useIndicatorConfigStore.getState().configs.bollinger;
+    const series = lines.map((line) =>
       chart.addLineSeries({
-        color,
-        lineWidth: 1,
+        color: line.color,
+        lineWidth: line.width as LineWidth,
+        visible: line.visible,
         priceLineVisible: false,
         lastValueVisible: false,      // the legend below shows the values instead
         crosshairMarkerVisible: false,
@@ -69,6 +71,7 @@ export function BollingerOverlay({ sharedChartRef }: BollingerOverlayProps) {
   }, [sharedChartRef]);
 
   // ── Recompute on every candles change (incl. the forming bar's ticks) ─────
+  // and whenever period/multiplier are edited.
   useEffect(() => {
     const series = seriesRef.current;
     if (series.length === 0) return;
@@ -82,8 +85,8 @@ export function BollingerOverlay({ sharedChartRef }: BollingerOverlayProps) {
     const last = visible.at(-1);
     const dec = last ? decimalsForPrice(last.c) : 2;
 
-    const points = computeBollinger(visible, BB_PERIOD, BB_MULT);
-    BB_LINES.forEach(({ key }, i) => {
+    const points = computeBollinger(visible, cfg.period, cfg.mult);
+    BB_KEYS.forEach((key, i) => {
       series[i].setData(points.map((p) => ({ time: toChartTime(p.time), value: p[key] })));
       series[i].applyOptions({
         priceFormat: { type: 'price', precision: dec, minMove: Math.pow(10, -dec) },
@@ -92,21 +95,35 @@ export function BollingerOverlay({ sharedChartRef }: BollingerOverlayProps) {
 
     setDecimals(dec);
     setCurrent(points.at(-1) ?? null);
-  }, [candles, replayActive, replayCursorTime]);
+  }, [candles, replayActive, replayCursorTime, cfg.period, cfg.mult]);
 
-  if (!current) return null;
+  // ── Re-style on color/width/visibility edits (no recompute) ───────────────
+  useEffect(() => {
+    seriesRef.current.forEach((s, i) => {
+      const line = cfg.lines[i];
+      if (line) s.applyOptions({ color: line.color, lineWidth: line.width as LineWidth, visible: line.visible });
+    });
+  }, [cfg.lines]);
+
+  const rows = LEGEND_ORDER
+    .map((i) => ({ key: BB_KEYS[i], line: cfg.lines[i] }))
+    .filter(({ line }) => line?.visible);
+  if (!current || rows.length === 0) return null;
 
   const fmt = (v: number) =>
     v.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
 
+  // The title takes the first visible line's color.
+  const titleColor = rows[0].line.color;
+
   // Offset below EMAOverlay's legend (top-14, up to four rows) so they never overlap.
   return (
     <div className="absolute top-[8.5rem] left-3 z-10 flex items-center gap-1.5 pointer-events-none select-none text-xs font-mono">
-      <span className="w-3 h-0.5 rounded" style={{ background: BAND_COLOR }} />
-      <span className="font-semibold" style={{ color: BAND_COLOR }}>BB ({BB_PERIOD},{BB_MULT})</span>
-      <span style={{ color: BAND_COLOR }}>{fmt(current.upper)}</span>
-      <span style={{ color: MIDDLE_COLOR }}>{fmt(current.middle)}</span>
-      <span style={{ color: BAND_COLOR }}>{fmt(current.lower)}</span>
+      <span className="w-3 h-0.5 rounded" style={{ background: titleColor }} />
+      <span className="font-semibold" style={{ color: titleColor }}>BB ({cfg.period},{cfg.mult})</span>
+      {rows.map(({ key, line }) => (
+        <span key={key} style={{ color: line.color }}>{fmt(current[key])}</span>
+      ))}
     </div>
   );
 }

@@ -4,11 +4,11 @@ import { useIndicatorStore, type IndicatorType, type SubPanelIndicator } from '.
 import { FavoriteStarButton } from './FavoriteStarButton';
 import { IndicatorSettingsModal } from './IndicatorSettingsModal';
 import { GearIcon } from '../Drawing/drawingStyleShared';
-import type { IndicatorConfigKey } from '../../store/indicatorConfigStore';
+import { useIndicatorConfigStore, type IndicatorConfigKey } from '../../store/indicatorConfigStore';
 
 // Indicators whose menu row offers settings + remove. Grows as each
 // indicator is wired to indicatorConfigStore.
-const CONFIGURABLE: ReadonlySet<IndicatorConfigKey> = new Set<IndicatorConfigKey>(['ema']);
+const CONFIGURABLE: ReadonlySet<IndicatorConfigKey> = new Set<IndicatorConfigKey>(['ema', 'bollinger']);
 
 // 'overlay' items draw on the main chart and stack (multi-select); 'panel'
 // items share the single sub-panel below it, so picking one swaps the other out.
@@ -45,6 +45,8 @@ export function IndicatorsDropdown() {
   const toggleSubPanel   = useIndicatorStore((s) => s.toggleSubPanel);
   const favoriteIndicators      = useIndicatorStore((s) => s.favoriteIndicators);
   const toggleFavoriteIndicator = useIndicatorStore((s) => s.toggleFavoriteIndicator);
+  const bbPeriod = useIndicatorConfigStore((s) => s.configs.bollinger.period);
+  const bbMult   = useIndicatorConfigStore((s) => s.configs.bollinger.mult);
   const [open, setOpen] = useState(false);
   // Lives outside the menu so the modal survives the menu closing.
   const [settingsKey, setSettingsKey] = useState<IndicatorConfigKey | null>(null);
@@ -97,7 +99,9 @@ export function IndicatorsDropdown() {
                 {header}
               </div>
               {items.map((item) => {
-                const { key, label } = item;
+                const { key } = item;
+                // Bollinger's label tracks its configured params.
+                const label = key === 'bollinger' ? `Bollinger Bands (${bbPeriod},${bbMult})` : item.label;
                 const active = item.kind === 'panel'
                   ? activeSubPanel === item.key
                   : activeIndicators.has(item.key);

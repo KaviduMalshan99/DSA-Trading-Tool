@@ -22,11 +22,12 @@ const TITLES: Record<IndicatorConfigKey, string> = {
 };
 
 /**
- * Integer input that keeps its own text while typing (so "2" on the way to
- * "200" doesn't snap back) and commits on blur/Enter. Invalid text (non-integer
- * or < 1) is discarded and the field reverts to the stored value.
+ * Number input that keeps its own text while typing (so "2" on the way to
+ * "200" doesn't snap back) and commits on blur/Enter. Invalid text is discarded
+ * and the field reverts to the stored value: by default it must be an integer
+ * >= 1; with `decimal` any finite number > 0 is accepted.
  */
-function PeriodInput({ value, onCommit }: { value: number; onCommit: (v: number) => void }) {
+function PeriodInput({ value, onCommit, decimal = false }: { value: number; onCommit: (v: number) => void; decimal?: boolean }) {
   const [text, setText] = useState(String(value));
   const [lastValue, setLastValue] = useState(value);
   // Resync the mirror when the stored value changes from outside (Reset).
@@ -37,7 +38,8 @@ function PeriodInput({ value, onCommit }: { value: number; onCommit: (v: number)
 
   const commit = () => {
     const n = Number(text.trim());
-    if (Number.isInteger(n) && n >= 1) {
+    const valid = decimal ? Number.isFinite(n) && n > 0 : Number.isInteger(n) && n >= 1;
+    if (valid) {
       if (n !== value) onCommit(n);
       setText(String(n));
     } else {
@@ -48,8 +50,8 @@ function PeriodInput({ value, onCommit }: { value: number; onCommit: (v: number)
   return (
     <input
       type="number"
-      min={1}
-      step={1}
+      min={decimal ? 0 : 1}
+      step={decimal ? 0.1 : 1}
       value={text}
       onChange={(e) => setText(e.target.value)}
       onBlur={commit}
@@ -96,6 +98,52 @@ function EMAStyle() {
           <div className="flex items-center gap-2">
             <MiniColorSwatch color={line.color} onChange={(c) => setLine('ema', i, { color: c })} />
             <MiniWidthPicker width={line.width} onChange={(w) => setLine('ema', i, { width: w })} />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function BollingerInputs() {
+  const period    = useIndicatorConfigStore((s) => s.configs.bollinger.period);
+  const mult      = useIndicatorConfigStore((s) => s.configs.bollinger.mult);
+  const setParams = useIndicatorConfigStore((s) => s.setParams);
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center justify-between">
+        <span className="text-sm text-[var(--text-secondary)]">Length</span>
+        <PeriodInput value={period} onCommit={(v) => setParams('bollinger', { period: v })} />
+      </div>
+      <div className="flex items-center justify-between">
+        <span className="text-sm text-[var(--text-secondary)]">StdDev multiplier</span>
+        <PeriodInput decimal value={mult} onCommit={(v) => setParams('bollinger', { mult: v })} />
+      </div>
+    </div>
+  );
+}
+
+// Row labels in configs.bollinger.lines order: middle, upper, lower.
+const BB_LINE_LABELS = ['Basis', 'Upper', 'Lower'] as const;
+
+function BollingerStyle() {
+  const lines   = useIndicatorConfigStore((s) => s.configs.bollinger.lines);
+  const setLine = useIndicatorConfigStore((s) => s.setLine);
+  return (
+    <div className="flex flex-col gap-3">
+      {lines.map((line, i) => (
+        <div key={BB_LINE_LABELS[i]} className="flex items-center justify-between">
+          <label className="flex items-center gap-2 text-sm text-[var(--text-secondary)]">
+            <input
+              type="checkbox"
+              checked={line.visible}
+              onChange={(e) => setLine('bollinger', i, { visible: e.target.checked })}
+            />
+            {BB_LINE_LABELS[i]}
+          </label>
+          <div className="flex items-center gap-2">
+            <MiniColorSwatch color={line.color} onChange={(c) => setLine('bollinger', i, { color: c })} />
+            <MiniWidthPicker width={line.width} onChange={(w) => setLine('bollinger', i, { width: w })} />
           </div>
         </div>
       ))}
@@ -158,6 +206,8 @@ export function IndicatorSettingsModal({ indicatorKey, onClose }: Props) {
         <div className="p-4" style={{ flex: 1, overflow: 'visible' }}>
           {indicatorKey === 'ema' ? (
             tab === 'inputs' ? <EMAInputs /> : <EMAStyle />
+          ) : indicatorKey === 'bollinger' ? (
+            tab === 'inputs' ? <BollingerInputs /> : <BollingerStyle />
           ) : (
             <div className="text-sm text-[var(--text-muted)]">Settings for this indicator are coming soon.</div>
           )}
