@@ -29,6 +29,10 @@ const CAPTURE_TOOLS = new Set<DrawingTool>([
   'fibWedge', 'pitchfan', 'fibSpiral', 'table', 'barsPattern', 'ghostFeed',
 ]);
 
+// Drawing tools show the custom crosshair (like TradingView) so students can line
+// up measurements. Eraser keeps its own 'not-allowed' cursor and no crosshair.
+const isCrosshairDrawingTool = (t: DrawingTool) => CAPTURE_TOOLS.has(t) && t !== 'eraser';
+
 // Number of clicks each drawing tool needs before it's finalized. Horizontal
 // Line/Ray and Vertical Line only need one point; Parallel Channel and Rotated
 // Rectangle need a third click. Path and Brush aren't listed here — they use a
@@ -4607,7 +4611,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
   }, []);
 
   const applyCursor = useCallback((tool: DrawingTool) => {
-    applyCursorValue(CURSOR_STYLE[tool] ?? 'default');
+    applyCursorValue(CURSOR_STYLE[tool] ?? (isCrosshairDrawingTool(tool) ? 'none' : 'default'));
   }, [applyCursorValue]);
 
   // Drag-to-edit for every drawing type once it's selected with a cursor-group
@@ -5073,7 +5077,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
       // same crosshair plus an extra spotlight ring so presenters can highlight where
       // they're pointing.
       const cursorTool = activeToolRef.current;
-      if ((cursorTool === 'cross' || cursorTool === 'dot' || cursorTool === 'demonstration') && mousePosRef.current.inside) {
+      if ((cursorTool === 'cross' || cursorTool === 'dot' || cursorTool === 'demonstration' || isCrosshairDrawingTool(cursorTool)) && mousePosRef.current.inside) {
         const { x: mx } = mousePosRef.current;
         const nearestTime = getNearestCandleTime(chart, mx, candlesRef.current);
         const verticalX = nearestTime == null ? mx : timeToX(chart, nearestTime);
@@ -5636,6 +5640,8 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           scheduleRender();
         }
       }
+      // Redraw on plain hover too so the crosshair follows the pointer.
+      scheduleRender();
       return;
     }
 
@@ -6730,7 +6736,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
       <canvas
         ref={canvasRef}
         className="absolute inset-0"
-        style={{ cursor: CURSOR_STYLE[activeTool] ?? 'crosshair', pointerEvents: capturesPointerEvents ? 'all' : 'none' }}
+        style={{ cursor: CURSOR_STYLE[activeTool] ?? (isCrosshairDrawingTool(activeTool) ? 'none' : 'default'), pointerEvents: capturesPointerEvents ? 'all' : 'none' }}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
