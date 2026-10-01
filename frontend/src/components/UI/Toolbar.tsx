@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { IChartApi } from 'lightweight-charts';
 import { useMarketStore } from '../../store/marketStore';
+import { useDrawingStore } from '../../store/drawingStore';
 import { captureChartSnapshot, canvasToBlob, downloadCanvas } from '../../utils/chartSnapshot';
 import { ChartSettingsModal } from './ChartSettingsModal';
 import { PositionCalculator } from './PositionCalculator';
@@ -9,6 +10,24 @@ import { AlertsManager } from './AlertsManager';
 interface ToolbarProps {
   chartRef:     React.RefObject<IChartApi | null>;
   chartAreaRef: React.RefObject<HTMLDivElement>;
+}
+
+function UndoIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" fill="none">
+      <path d="M9 14 4 9l5-5" />
+      <path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />
+    </svg>
+  );
+}
+
+function RedoIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" fill="none">
+      <path d="m15 14 5-5-5-5" />
+      <path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13" />
+    </svg>
+  );
 }
 
 function CameraIcon() {
@@ -181,6 +200,10 @@ export function Toolbar({ chartRef, chartAreaRef }: ToolbarProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [calcOpen, setCalcOpen] = useState(false);
   const [alertsOpen, setAlertsOpen] = useState(false);
+  const canUndo = useDrawingStore((s) => s.history.length > 0 && !s.drawingsLocked);
+  const canRedo = useDrawingStore((s) => s.redoStack.length > 0 && !s.drawingsLocked);
+  const undo = useDrawingStore((s) => s.undo);
+  const redo = useDrawingStore((s) => s.redo);
 
   return (
     <header className="flex items-center justify-between px-4 py-1 bg-[var(--bg-panel)] border-b border-[var(--border-color)] select-none">
@@ -189,6 +212,22 @@ export function Toolbar({ chartRef, chartAreaRef }: ToolbarProps) {
         <span className="text-[var(--text-secondary)] font-semibold text-sm">Trading Tool</span>
       </div>
       <div className="flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
+        <button
+          onClick={undo}
+          disabled={!canUndo}
+          title="Undo (Ctrl+Z)"
+          className="w-9 h-9 flex items-center justify-center rounded text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] disabled:opacity-40 disabled:cursor-default disabled:hover:bg-transparent disabled:hover:text-[var(--text-muted)]"
+        >
+          <UndoIcon />
+        </button>
+        <button
+          onClick={redo}
+          disabled={!canRedo}
+          title="Redo (Ctrl+Y)"
+          className="w-9 h-9 flex items-center justify-center rounded text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] disabled:opacity-40 disabled:cursor-default disabled:hover:bg-transparent disabled:hover:text-[var(--text-muted)]"
+        >
+          <RedoIcon />
+        </button>
         <SnapshotMenu chartRef={chartRef} chartAreaRef={chartAreaRef} />
         <button
           onClick={() => setCalcOpen(true)}

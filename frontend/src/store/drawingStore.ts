@@ -1003,6 +1003,9 @@ interface DrawingState {
   // undo generic across every drawing kind for free: it doesn't know or care
   // what changed, only what the array looked like a moment ago.
   history: Drawing[][];
+  // Mirror of `history` for Ctrl+Y / Ctrl+Shift+Z: undo pushes the current
+  // `drawings` here before restoring; any new mutation clears it.
+  redoStack: Drawing[][];
   selectedId: string | null;
 
   setTool: (tool: DrawingTool) => void;
@@ -1013,6 +1016,7 @@ interface DrawingState {
   clearAll: () => void;
   loadDrawings: (drawings: Drawing[]) => void;
   undo: () => void;
+  redo: () => void;
   toggleKeepToolActive: () => void;
   toggleDrawingsLocked: () => void;
   toggleDrawingsHidden: () => void;
@@ -1103,6 +1107,7 @@ export const useDrawingStore = create<DrawingState>((set) => ({
   favoritesBarPos: null,
   drawings: [],
   history: [],
+  redoStack: [],
   selectedId: null,
 
   setTool: (tool) =>
@@ -1137,11 +1142,12 @@ export const useDrawingStore = create<DrawingState>((set) => ({
   addDrawing: (drawing) =>
     set((s) => {
       lastMutation = null;
-      return { history: pushHistory(s.history, s.drawings), drawings: [...s.drawings, drawing] };
+      return { history: pushHistory(s.history, s.drawings), redoStack: [], drawings: [...s.drawings, drawing] };
     }),
   updateDrawing: (id, patch) =>
     set((s) => ({
       history: pushHistoryFor(s.history, s.drawings, id),
+      redoStack: [],
       drawings: s.drawings.map((d) => (d.id === id ? ({ ...d, ...patch } as Drawing) : d)),
     })),
   deleteDrawing: (id) =>
@@ -1149,6 +1155,7 @@ export const useDrawingStore = create<DrawingState>((set) => ({
       lastMutation = null;
       return {
         history: pushHistory(s.history, s.drawings),
+        redoStack: [],
         drawings: s.drawings.filter((d) => d.id !== id),
         selectedId: null,
       };
@@ -1157,17 +1164,35 @@ export const useDrawingStore = create<DrawingState>((set) => ({
   clearAll: () =>
     set((s) => {
       lastMutation = null;
-      return { history: pushHistory(s.history, s.drawings), drawings: [], selectedId: null };
+      return { history: pushHistory(s.history, s.drawings), redoStack: [], drawings: [], selectedId: null };
     }),
   // A fresh symbol/interval's persisted drawings aren't part of this session's
-  // undo timeline — reset history rather than carrying over stale snapshots.
-  loadDrawings: (drawings) => { lastMutation = null; set({ drawings, history: [] }); },
+  // undo timeline — reset both stacks rather than carrying over stale
+  // snapshots (otherwise redo could resurrect another symbol's drawings).
+  loadDrawings: (drawings) => { lastMutation = null; set({ drawings, history: [], redoStack: [], selectedId: null }); },
   undo: () =>
     set((s) => {
       if (s.history.length === 0) return {};
       lastMutation = null;
       const prev = s.history[s.history.length - 1];
-      return { drawings: prev, history: s.history.slice(0, -1), selectedId: null };
+      return {
+        drawings: prev,
+        history: s.history.slice(0, -1),
+        redoStack: pushHistory(s.redoStack, s.drawings),
+        selectedId: null,
+      };
+    }),
+  redo: () =>
+    set((s) => {
+      if (s.redoStack.length === 0) return {};
+      lastMutation = null;
+      const next = s.redoStack[s.redoStack.length - 1];
+      return {
+        drawings: next,
+        redoStack: s.redoStack.slice(0, -1),
+        history: pushHistory(s.history, s.drawings),
+        selectedId: null,
+      };
     }),
   toggleKeepToolActive: () => set((s) => ({ keepToolActive: !s.keepToolActive })),
   toggleDrawingsLocked: () => set((s) => ({ drawingsLocked: !s.drawingsLocked })),

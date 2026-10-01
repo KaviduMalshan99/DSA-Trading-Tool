@@ -4569,7 +4569,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
   const {
     activeTool, drawings, selectedId, magnetEnabled, lastCursorMode,
     keepToolActive, drawingsLocked, drawingsHidden,
-    addDrawing, updateDrawing, deleteDrawing, selectDrawing, setTool, undo,
+    addDrawing, updateDrawing, deleteDrawing, selectDrawing, setTool, undo, redo,
   } = useDrawingStore();
   const mousePosRef = useRef<{ x: number; y: number; inside: boolean }>({ x: 0, y: 0, inside: false });
   const hoverPriceRef = useRef<number | null>(null);
@@ -6703,11 +6703,17 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           e.preventDefault();
           undo();
         }
+      } else if ((e.ctrlKey || e.metaKey) && ((e.shiftKey && (e.key === 'z' || e.key === 'Z')) || (!e.shiftKey && (e.key === 'y' || e.key === 'Y')))) {
+        e.preventDefault();
+        // Mid-placement: no-op — the in-progress shape isn't in history, and
+        // redoing underneath it would desync the placement state.
+        if (drawingRef.current.active || freeformRef.current.active) return;
+        if (!drawingsLockedRef.current) redo();
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [deleteDrawing, scheduleRender, undo, selectDrawing]);
+  }, [deleteDrawing, scheduleRender, undo, redo, selectDrawing]);
 
   // Trendline/hline/rectangle/fibonacci/eraser capture all events (chart
   // pan/zoom blocked — intentional while placing points or erasing).
