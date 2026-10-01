@@ -178,7 +178,7 @@ export function ContextDashboard() {
 
   return (
     <div
-      className="absolute top-2 right-3 z-20 select-none text-xs font-mono"
+      className="absolute top-2 right-3 z-20 select-none cursor-default text-xs font-mono"
       style={{
         background: 'var(--bg-panel)',
         border: '1px solid var(--border-color-soft)',

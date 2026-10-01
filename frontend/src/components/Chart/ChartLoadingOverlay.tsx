@@ -8,7 +8,7 @@ export function ChartLoadingOverlay() {
   if (hasCandles) return null;
 
   return (
-    <div className="absolute inset-0 z-30 flex items-center justify-center pointer-events-none">
+    <div className="absolute inset-0 z-30 flex items-center justify-center pointer-events-none cursor-default">
       <div className="flex items-center gap-2 text-[var(--text-muted)] text-sm">
         <span className="w-3.5 h-3.5 rounded-full border-2 border-current border-t-transparent animate-spin" />
         Loading...

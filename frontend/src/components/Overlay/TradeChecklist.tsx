@@ -230,7 +230,7 @@ export function TradeChecklist() {
 
   return (
     <div
-      className="absolute bottom-3 right-3 z-20 select-none text-xs font-mono"
+      className="absolute bottom-3 right-3 z-20 select-none cursor-default text-xs font-mono"
       style={{
         background: 'var(--bg-panel)',
         border: '1px solid var(--border-color-soft)',

@@ -90,3 +90,10 @@ body {
 .themed-placeholder::placeholder {
   color: var(--text-muted);
 }
+
+/* The chart area carries cursor:none for Cross/Dot/Demonstration; overlays
+   inside it (style toolbar, favorites bar, fib modal) get a normal pointer.
+   The text-edit textarea keeps its native text cursor. */
+[data-drawing-overlay]:not(textarea) {
+  cursor: default;
+}

@@ -215,7 +215,7 @@ export function ClusterScanner() {
 
   return (
     <div
-      className="absolute bottom-3 left-3 z-20 select-none text-xs font-mono flex flex-col"
+      className="absolute bottom-3 left-3 z-20 select-none cursor-default text-xs font-mono flex flex-col"
       style={{
         background: 'var(--bg-panel)',
         border: '1px solid var(--border-color-soft)',

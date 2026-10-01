@@ -132,7 +132,7 @@ export function ExecutionDashboard() {
 
   return (
     <div
-      className="absolute z-20 select-none text-xs font-mono"
+      className="absolute z-20 select-none cursor-default text-xs font-mono"
       style={{
         top: 56, // clears the symbol legend (top-2) and VWAP's label (top-8)
         left: 12,

@@ -4597,7 +4597,10 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
   const applyCursorValue = useCallback((cursor: string) => {
     const doc = containerRef.current?.ownerDocument;
     const target = containerRef.current?.parentElement as HTMLElement | null;
-    if (doc?.body) doc.body.style.cursor = cursor;
+    // Scope the cursor to the chart area. Body only carries a drag cursor while
+    // a drag is active (so it persists if the pointer leaves the chart); 'none'
+    // must never reach body or the pointer vanishes app-wide.
+    if (doc?.body) doc.body.style.cursor = dragRef.current?.active && cursor !== 'none' ? cursor : '';
     if (target) target.style.cursor = cursor;
     if (canvasRef.current) canvasRef.current.style.cursor = cursor;
   }, []);
@@ -5190,7 +5193,9 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
     scheduleRender();
     return () => {
       const doc = containerRef.current?.ownerDocument;
+      const target = containerRef.current?.parentElement as HTMLElement | null;
       if (doc?.body) doc.body.style.cursor = '';
+      if (target) target.style.cursor = '';
     };
   }, [activeTool, applyCursor, scheduleRender, commitEdit]);
 
@@ -5666,6 +5671,14 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
     // a click lands exactly on a button's icon glyph rather than its padding.
     const isOverlayTarget = (e: MouseEvent) =>
       e.target instanceof Element && e.target.closest('[data-drawing-overlay]') != null;
+    // Pixel bounds alone aren't enough: a top-bar dropdown (Timeframe/Indicators)
+    // or modal can be drawn over the canvas rect while not being part of the chart.
+    // The chart area wrapper (this overlay's parent) excludes those, so require the
+    // event's actual target to live inside it before treating it as "over the chart".
+    const isOverChart = (e: MouseEvent) => {
+      const chartArea = containerRef.current?.parentElement;
+      return chartArea != null && e.target instanceof Node && chartArea.contains(e.target);
+    };
 
     const onWinMove = (e: MouseEvent) => {
       const canvas = canvasRef.current;
@@ -5955,13 +5968,22 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
         return;
       }
 
-      if (isOverlayTarget(e)) return;
+      if (isOverlayTarget(e)) {
+        // hide the crosshair under the style toolbar rather than freezing it
+        if (mousePosRef.current.inside) {
+          mousePosRef.current = { ...mousePosRef.current, inside: false };
+          scheduleRender();
+        }
+        return;
+      }
 
       const tool = activeToolRef.current;
       if (CAPTURE_TOOLS.has(tool)) return;
 
-      const inside = x >= 0 && y >= 0 && x <= rect.width && y <= rect.height;
+      const wasInside = mousePosRef.current.inside;
+      const inside = isOverChart(e) && x >= 0 && y >= 0 && x <= rect.width && y <= rect.height;
       mousePosRef.current = { x, y, inside };
+      if (wasInside && !inside) scheduleRender();
       const price = inside && series ? yToPrice(series, y) : null;
       hoverPriceRef.current = price ?? null;
 
@@ -6079,6 +6101,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
 
     const onWinDownCapture = (e: MouseEvent) => {
       if (isOverlayTarget(e)) return;
+      if (!isOverChart(e)) return; // e.g. a dropdown/menu drawn over the chart
       const canvas = canvasRef.current;
       const chart  = sharedChartRef.current;
       const series = sharedSeriesRef.current;
@@ -6505,6 +6528,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
     const onWinDown = (e: MouseEvent) => {
       if (dragRef.current?.active) return; // handled by onWinDownCapture
       if (isOverlayTarget(e)) return;
+      if (!isOverChart(e)) return; // e.g. a dropdown/menu drawn over the chart
       const canvas = canvasRef.current;
       const chart  = sharedChartRef.current;
       const series = sharedSeriesRef.current;
@@ -6532,6 +6556,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
     // active, so the canvas itself isn't capturing events) reopens it for editing.
     const onWinDblClick = (e: MouseEvent) => {
       if (isOverlayTarget(e)) return;
+      if (!isOverChart(e)) return; // e.g. a dropdown/menu drawn over the chart
       const canvas = canvasRef.current;
       const chart  = sharedChartRef.current;
       const series = sharedSeriesRef.current;
