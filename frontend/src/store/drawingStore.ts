@@ -971,6 +971,12 @@ interface DrawingState {
   lastPatternTool: PatternTool;
   // Same idea for the Cycles group's dropdown button icon.
   lastCyclesTool: CyclesTool;
+  // The merged "Gann & Fibonacci" flyout button's icon/click target — the last
+  // Fib or Gann tool picked, whichever half of the flyout it came from.
+  lastFibGannTool: FibTool | GannTool;
+  // Same idea for the merged Patterns flyout (Patterns + Cycles). Only real
+  // PatternTool/CyclesTool values — its 'triangle' row is a ShapeTool.
+  lastPatternCyclesTool: PatternTool | CyclesTool;
   // Cursor-group tools keep the chart interactive; the legacy magic snap mode is not exposed.
   magnetEnabled: boolean;
   // "Stay in Drawing Mode" — off (default) matches TradingView: finishing a
@@ -1086,6 +1092,8 @@ export const useDrawingStore = create<DrawingState>((set) => ({
   lastGannTool: 'gannFan',
   lastPatternTool: 'abcd',
   lastCyclesTool: 'cyclicLines',
+  lastFibGannTool: 'fibonacci',
+  lastPatternCyclesTool: 'abcd',
   magnetEnabled: false,
   keepToolActive: false,
   drawingsLocked: false,
@@ -1121,6 +1129,8 @@ export const useDrawingStore = create<DrawingState>((set) => ({
         lastGannTool: gannGroup ? tool : s.lastGannTool,
         lastPatternTool: patternGroup ? tool : s.lastPatternTool,
         lastCyclesTool: cyclesGroup ? tool : s.lastCyclesTool,
+        lastFibGannTool: isFibTool(tool) || isGannTool(tool) ? tool : s.lastFibGannTool,
+        lastPatternCyclesTool: isPatternTool(tool) || isCyclesTool(tool) ? tool : s.lastPatternCyclesTool,
         magnetEnabled: cursorGroup ? false : s.magnetEnabled,
       };
     }),

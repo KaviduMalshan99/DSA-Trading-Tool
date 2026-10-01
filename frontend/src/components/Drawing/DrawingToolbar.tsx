@@ -1370,8 +1370,8 @@ function ComingSoonMenuItem({ label, icon }: ComingSoonItem) {
 
 export const DrawingToolbar = memo(function DrawingToolbar() {
   const {
-    activeTool, lastCursorMode, lastTrendTool, lastShapeTool, lastAnnotationTool, lastPositionRangeTool, lastFibTool,
-    lastGannTool, lastPatternTool, lastCyclesTool,
+    activeTool, lastCursorMode, lastTrendTool, lastShapeTool, lastAnnotationTool, lastPositionRangeTool,
+    lastFibGannTool, lastPatternCyclesTool,
     drawings, setTool, selectedId, deleteDrawing, clearAll,
     keepToolActive, drawingsLocked, drawingsHidden, toggleKeepToolActive, toggleDrawingsLocked, toggleDrawingsHidden,
     favoriteTools, favoritesBarOpen, toggleFavorite, toggleFavoritesBar,
@@ -1381,20 +1381,16 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
   const [shapeDropdownOpen, setShapeDropdownOpen] = useState(false);
   const [annotationDropdownOpen, setAnnotationDropdownOpen] = useState(false);
   const [positionRangeDropdownOpen, setPositionRangeDropdownOpen] = useState(false);
-  const [fibDropdownOpen, setFibDropdownOpen] = useState(false);
-  const [gannDropdownOpen, setGannDropdownOpen] = useState(false);
-  const [patternDropdownOpen, setPatternDropdownOpen] = useState(false);
-  const [cyclesDropdownOpen, setCyclesDropdownOpen] = useState(false);
+  const [fibGannDropdownOpen, setFibGannDropdownOpen] = useState(false);
+  const [patternCyclesDropdownOpen, setPatternCyclesDropdownOpen] = useState(false);
   const [deleteMenuOpen, setDeleteMenuOpen] = useState(false);
   const cursorGroupRef = useRef<HTMLDivElement>(null);
   const trendGroupRef = useRef<HTMLDivElement>(null);
   const shapeGroupRef = useRef<HTMLDivElement>(null);
   const annotationGroupRef = useRef<HTMLDivElement>(null);
   const positionRangeGroupRef = useRef<HTMLDivElement>(null);
-  const fibGroupRef = useRef<HTMLDivElement>(null);
-  const gannGroupRef = useRef<HTMLDivElement>(null);
-  const patternGroupRef = useRef<HTMLDivElement>(null);
-  const cyclesGroupRef = useRef<HTMLDivElement>(null);
+  const fibGannGroupRef = useRef<HTMLDivElement>(null);
+  const patternCyclesGroupRef = useRef<HTMLDivElement>(null);
   const deleteGroupRef = useRef<HTMLDivElement>(null);
 
   const cursorFlyoutMaxHeight = useFlyoutMaxHeight(cursorDropdownOpen, cursorGroupRef);
@@ -1402,10 +1398,8 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
   const shapeFlyoutMaxHeight = useFlyoutMaxHeight(shapeDropdownOpen, shapeGroupRef);
   const annotationFlyoutMaxHeight = useFlyoutMaxHeight(annotationDropdownOpen, annotationGroupRef);
   const positionRangeFlyoutMaxHeight = useFlyoutMaxHeight(positionRangeDropdownOpen, positionRangeGroupRef);
-  const fibFlyoutMaxHeight = useFlyoutMaxHeight(fibDropdownOpen, fibGroupRef);
-  const gannFlyoutMaxHeight = useFlyoutMaxHeight(gannDropdownOpen, gannGroupRef);
-  const patternFlyoutMaxHeight = useFlyoutMaxHeight(patternDropdownOpen, patternGroupRef);
-  const cyclesFlyoutMaxHeight = useFlyoutMaxHeight(cyclesDropdownOpen, cyclesGroupRef);
+  const fibGannFlyoutMaxHeight = useFlyoutMaxHeight(fibGannDropdownOpen, fibGannGroupRef);
+  const patternCyclesFlyoutMaxHeight = useFlyoutMaxHeight(patternCyclesDropdownOpen, patternCyclesGroupRef);
   const deleteFlyoutMaxHeight = useFlyoutMaxHeight(deleteMenuOpen, deleteGroupRef, 'bottom');
 
   const isCursorGroupActive = (CURSOR_MODES as readonly string[]).includes(activeTool);
@@ -1420,11 +1414,13 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
   // — kept simple rather than having two group buttons light up for one tool.
   const isPatternGroupActive = (PATTERN_TOOLS as readonly string[]).includes(activeTool);
   const isCyclesGroupActive = (CYCLES_TOOLS as readonly string[]).includes(activeTool);
+  // Merged flyout buttons — lit when either half's tool is active.
+  const isFibGannGroupActive = isFibGroupActive || isGannGroupActive;
+  const isPatternCyclesGroupActive = isPatternGroupActive || isCyclesGroupActive;
 
   useEffect(() => {
     if (!cursorDropdownOpen && !trendDropdownOpen && !shapeDropdownOpen && !annotationDropdownOpen &&
-        !positionRangeDropdownOpen && !fibDropdownOpen && !gannDropdownOpen && !patternDropdownOpen &&
-        !cyclesDropdownOpen && !deleteMenuOpen) return;
+        !positionRangeDropdownOpen && !fibGannDropdownOpen && !patternCyclesDropdownOpen && !deleteMenuOpen) return;
     const onOutsideMouseDown = (e: MouseEvent) => {
       const target = e.target as Node;
       if (cursorGroupRef.current && !cursorGroupRef.current.contains(target)) setCursorDropdownOpen(false);
@@ -1432,15 +1428,13 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
       if (shapeGroupRef.current && !shapeGroupRef.current.contains(target)) setShapeDropdownOpen(false);
       if (annotationGroupRef.current && !annotationGroupRef.current.contains(target)) setAnnotationDropdownOpen(false);
       if (positionRangeGroupRef.current && !positionRangeGroupRef.current.contains(target)) setPositionRangeDropdownOpen(false);
-      if (fibGroupRef.current && !fibGroupRef.current.contains(target)) setFibDropdownOpen(false);
-      if (gannGroupRef.current && !gannGroupRef.current.contains(target)) setGannDropdownOpen(false);
-      if (patternGroupRef.current && !patternGroupRef.current.contains(target)) setPatternDropdownOpen(false);
-      if (cyclesGroupRef.current && !cyclesGroupRef.current.contains(target)) setCyclesDropdownOpen(false);
+      if (fibGannGroupRef.current && !fibGannGroupRef.current.contains(target)) setFibGannDropdownOpen(false);
+      if (patternCyclesGroupRef.current && !patternCyclesGroupRef.current.contains(target)) setPatternCyclesDropdownOpen(false);
       if (deleteGroupRef.current && !deleteGroupRef.current.contains(target)) setDeleteMenuOpen(false);
     };
     document.addEventListener('mousedown', onOutsideMouseDown);
     return () => document.removeEventListener('mousedown', onOutsideMouseDown);
-  }, [cursorDropdownOpen, trendDropdownOpen, shapeDropdownOpen, annotationDropdownOpen, positionRangeDropdownOpen, fibDropdownOpen, gannDropdownOpen, patternDropdownOpen, cyclesDropdownOpen, deleteMenuOpen]);
+  }, [cursorDropdownOpen, trendDropdownOpen, shapeDropdownOpen, annotationDropdownOpen, positionRangeDropdownOpen, fibGannDropdownOpen, patternCyclesDropdownOpen, deleteMenuOpen]);
 
   return (
     <div className="flex flex-col items-center gap-1 py-2 px-1 bg-[var(--bg-panel)] border-r border-[var(--border-color-soft)] select-none"
@@ -1708,37 +1702,40 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
 
       <div className="w-6 border-t border-[var(--border-color-soft)] my-1" />
 
-      <div className="relative group" ref={fibGroupRef}>
+      <div className="relative group" ref={fibGannGroupRef}>
         <button
-          title="Fibonacci tools"
-          onClick={() => { setTool(lastFibTool); setFibDropdownOpen(false); }}
+          title="Gann & Fibonacci"
+          onClick={() => { setTool(lastFibGannTool); setFibGannDropdownOpen(false); }}
           className={`
             relative w-9 h-9 flex items-center justify-center rounded transition-colors [&_svg]:w-5 [&_svg]:h-5
-            ${isFibGroupActive
+            ${isFibGannGroupActive
               ? 'bg-[var(--accent)] text-white'
               : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'}
           `}
         >
-          {FIB_ICON[lastFibTool]}
+          {ALL_TOOL_ICON[lastFibGannTool]}
         </button>
         <button
-          aria-label="Fibonacci tool options"
-          title="Fibonacci tool options"
-          onClick={() => setFibDropdownOpen((v) => !v)}
+          aria-label="Gann & Fibonacci tool options"
+          title="Gann & Fibonacci tool options"
+          onClick={() => setFibGannDropdownOpen((v) => !v)}
           className={`
             absolute bottom-0 right-0 w-3 h-3 flex items-center justify-center
             opacity-0 group-hover:opacity-100 transition-opacity
-            ${isFibGroupActive ? 'text-white' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'}
+            ${isFibGannGroupActive ? 'text-white' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'}
           `}
         >
           <CornerArrow />
         </button>
 
-        {fibDropdownOpen && (
+        {fibGannDropdownOpen && (
           <div
             className={FLYOUT_CLASS_TOP}
-            style={{ ...FLYOUT_STYLE_BASE, width: 240, maxHeight: fibFlyoutMaxHeight }}
+            style={{ ...FLYOUT_STYLE_BASE, width: 240, maxHeight: fibGannFlyoutMaxHeight }}
           >
+            <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)] select-none">
+              Fibonacci
+            </div>
             {FIB_ITEMS.map(({ tool, label }) => (
               <FavoritableMenuItem
                 key={tool}
@@ -1748,44 +1745,12 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
                 active={activeTool === tool}
                 favorite={favoriteTools.includes(tool)}
                 onToggleFavorite={() => toggleFavorite(tool)}
-                onSelect={() => { setTool(tool); setFibDropdownOpen(false); }}
+                onSelect={() => { setTool(tool); setFibGannDropdownOpen(false); }}
               />
             ))}
-          </div>
-        )}
-      </div>
-
-      <div className="relative group" ref={gannGroupRef}>
-        <button
-          title="Gann tools"
-          onClick={() => { setTool(lastGannTool); setGannDropdownOpen(false); }}
-          className={`
-            relative w-9 h-9 flex items-center justify-center rounded transition-colors [&_svg]:w-5 [&_svg]:h-5
-            ${isGannGroupActive
-              ? 'bg-[var(--accent)] text-white'
-              : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'}
-          `}
-        >
-          {GANN_ICON[lastGannTool]}
-        </button>
-        <button
-          aria-label="Gann tool options"
-          title="Gann tool options"
-          onClick={() => setGannDropdownOpen((v) => !v)}
-          className={`
-            absolute bottom-0 right-0 w-3 h-3 flex items-center justify-center
-            opacity-0 group-hover:opacity-100 transition-opacity
-            ${isGannGroupActive ? 'text-white' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'}
-          `}
-        >
-          <CornerArrow />
-        </button>
-
-        {gannDropdownOpen && (
-          <div
-            className={FLYOUT_CLASS_TOP}
-            style={{ ...FLYOUT_STYLE_BASE, width: 240, maxHeight: gannFlyoutMaxHeight }}
-          >
+            <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)] select-none">
+              Gann
+            </div>
             {GANN_ITEMS.map(({ tool, label }) => (
               <FavoritableMenuItem
                 key={tool}
@@ -1795,44 +1760,47 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
                 active={activeTool === tool}
                 favorite={favoriteTools.includes(tool)}
                 onToggleFavorite={() => toggleFavorite(tool)}
-                onSelect={() => { setTool(tool); setGannDropdownOpen(false); }}
+                onSelect={() => { setTool(tool); setFibGannDropdownOpen(false); }}
               />
             ))}
           </div>
         )}
       </div>
 
-      <div className="relative group" ref={patternGroupRef}>
+      <div className="relative group" ref={patternCyclesGroupRef}>
         <button
-          title="Pattern tools"
-          onClick={() => { setTool(lastPatternTool); setPatternDropdownOpen(false); }}
+          title="Patterns"
+          onClick={() => { setTool(lastPatternCyclesTool); setPatternCyclesDropdownOpen(false); }}
           className={`
             relative w-9 h-9 flex items-center justify-center rounded transition-colors [&_svg]:w-5 [&_svg]:h-5
-            ${isPatternGroupActive
+            ${isPatternCyclesGroupActive
               ? 'bg-[var(--accent)] text-white'
               : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'}
           `}
         >
-          {PATTERN_ICON[lastPatternTool]}
+          {ALL_TOOL_ICON[lastPatternCyclesTool]}
         </button>
         <button
           aria-label="Pattern tool options"
           title="Pattern tool options"
-          onClick={() => setPatternDropdownOpen((v) => !v)}
+          onClick={() => setPatternCyclesDropdownOpen((v) => !v)}
           className={`
             absolute bottom-0 right-0 w-3 h-3 flex items-center justify-center
             opacity-0 group-hover:opacity-100 transition-opacity
-            ${isPatternGroupActive ? 'text-white' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'}
+            ${isPatternCyclesGroupActive ? 'text-white' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'}
           `}
         >
           <CornerArrow />
         </button>
 
-        {patternDropdownOpen && (
+        {patternCyclesDropdownOpen && (
           <div
             className={FLYOUT_CLASS_TOP}
-            style={{ ...FLYOUT_STYLE_BASE, width: 240, maxHeight: patternFlyoutMaxHeight }}
+            style={{ ...FLYOUT_STYLE_BASE, width: 240, maxHeight: patternCyclesFlyoutMaxHeight }}
           >
+            <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)] select-none">
+              Patterns
+            </div>
             {PATTERN_ITEMS.map(({ tool, label }) => (
               <FavoritableMenuItem
                 key={tool}
@@ -1842,44 +1810,12 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
                 active={activeTool === tool}
                 favorite={favoriteTools.includes(tool)}
                 onToggleFavorite={() => toggleFavorite(tool)}
-                onSelect={() => { setTool(tool); setPatternDropdownOpen(false); }}
+                onSelect={() => { setTool(tool); setPatternCyclesDropdownOpen(false); }}
               />
             ))}
-          </div>
-        )}
-      </div>
-
-      <div className="relative group" ref={cyclesGroupRef}>
-        <button
-          title="Cycles tools"
-          onClick={() => { setTool(lastCyclesTool); setCyclesDropdownOpen(false); }}
-          className={`
-            relative w-9 h-9 flex items-center justify-center rounded transition-colors [&_svg]:w-5 [&_svg]:h-5
-            ${isCyclesGroupActive
-              ? 'bg-[var(--accent)] text-white'
-              : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'}
-          `}
-        >
-          {CYCLES_ICON[lastCyclesTool]}
-        </button>
-        <button
-          aria-label="Cycles tool options"
-          title="Cycles tool options"
-          onClick={() => setCyclesDropdownOpen((v) => !v)}
-          className={`
-            absolute bottom-0 right-0 w-3 h-3 flex items-center justify-center
-            opacity-0 group-hover:opacity-100 transition-opacity
-            ${isCyclesGroupActive ? 'text-white' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'}
-          `}
-        >
-          <CornerArrow />
-        </button>
-
-        {cyclesDropdownOpen && (
-          <div
-            className={FLYOUT_CLASS_TOP}
-            style={{ ...FLYOUT_STYLE_BASE, width: 240, maxHeight: cyclesFlyoutMaxHeight }}
-          >
+            <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)] select-none">
+              Cycles
+            </div>
             {CYCLES_ITEMS.map(({ tool, label }) => (
               <FavoritableMenuItem
                 key={tool}
@@ -1889,7 +1825,7 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
                 active={activeTool === tool}
                 favorite={favoriteTools.includes(tool)}
                 onToggleFavorite={() => toggleFavorite(tool)}
-                onSelect={() => { setTool(tool); setCyclesDropdownOpen(false); }}
+                onSelect={() => { setTool(tool); setPatternCyclesDropdownOpen(false); }}
               />
             ))}
           </div>
