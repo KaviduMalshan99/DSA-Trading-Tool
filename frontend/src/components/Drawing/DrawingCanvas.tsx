@@ -460,10 +460,12 @@ function xToTime(chart: IChartApi, x: number): number | null {
   return Math.round(anchorTime + (logical - anchorIdx) * interval);
 }
 
+// timeSec is already shifted chart-time — format it as UTC so the browser's own
+// zone isn't applied on top of the Asia/Colombo shift.
 function fmtTime(timeSec: number): string {
   const d = new Date(timeSec * 1000);
   return d.toLocaleString('en-US', {
-    month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false,
+    month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'UTC',
   });
 }
 

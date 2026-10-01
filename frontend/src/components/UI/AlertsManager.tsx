@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMarketStore } from '../../store/marketStore';
 import { useAlertsStore, type Alert, type AlertType, type AlertSideFilter, type LevelKind, type NewAlertInput } from '../../store/alertsStore';
 import { formatPrice } from '../../utils/priceFormat';
+import { formatChartClock } from '../../utils/chartTime';
 
 interface Props {
   onClose: () => void;
@@ -212,7 +213,7 @@ export function AlertsManager({ onClose }: Props) {
                         <span>{alert.rearm ? 'Re-arm' : 'One-shot'}</span>
                         {inactive && <span className="text-[#d29922]">· inactive (switch symbol)</span>}
                         {alert.triggered && alert.lastFiredAt && (
-                          <span>· fired {new Date(alert.lastFiredAt).toLocaleTimeString()}</span>
+                          <span>· fired {formatChartClock(alert.lastFiredAt)}</span>
                         )}
                       </div>
                     </div>

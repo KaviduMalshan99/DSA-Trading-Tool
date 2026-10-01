@@ -1,4 +1,5 @@
 import { useMarketStore } from '../../store/marketStore';
+import { CHART_TZ_LABEL, CHART_TZ_CITY } from '../../utils/chartTime';
 
 export function StatusBar() {
   const { activeSymbol, activeInterval, isLoading, candles } = useMarketStore();
@@ -9,7 +10,8 @@ export function StatusBar() {
       <span>{activeSymbol}</span>
       <span>{activeInterval}</span>
       <span>{candles.length} candles</span>
-      <span className="ml-auto">DSA Trading Tool v1.0</span>
+      <span className="ml-auto" title="Chart timezone">{CHART_TZ_LABEL} · {CHART_TZ_CITY}</span>
+      <span>DSA Trading Tool v1.0</span>
     </footer>
   );
 }

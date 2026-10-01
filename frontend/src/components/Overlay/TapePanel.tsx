@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useMarketStore } from '../../store/marketStore';
 import { useReplayStore } from '../../store/replayStore';
 import { decimalsForPrice } from '../../utils/priceFormat';
+import { formatChartClock } from '../../utils/chartTime';
 
 const WS_BASE  = import.meta.env.VITE_WS_URL ?? 'ws://localhost:8000';
 const MAX_ROWS = 150;
@@ -14,13 +15,8 @@ interface Trade {
   side:  'buy' | 'sell';
 }
 
-function fmtTime(ms: number): string {
-  const d = new Date(ms);
-  const hh = String(d.getHours()).padStart(2, '0');
-  const mm = String(d.getMinutes()).padStart(2, '0');
-  const ss = String(d.getSeconds()).padStart(2, '0');
-  return `${hh}:${mm}:${ss}`;
-}
+// Raw epoch-ms in the chart's zone, not the browser's, so tape times match the axis.
+const fmtTime = formatChartClock;
 
 function medianNotional(trades: Trade[]): number {
   if (trades.length === 0) return 0;
