@@ -4686,15 +4686,26 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
 
   // ── localStorage persistence ──────────────────────────────────────────────
   const storageKey = `dsa_drawings_${activeSymbol}_${activeInterval}`;
+  // Key whose saved drawings have been loaded into the store; save waits for it.
+  const loadedKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     try {
       const raw = localStorage.getItem(storageKey);
-      if (raw) useDrawingStore.getState().loadDrawings(JSON.parse(raw) as Drawing[]);
-    } catch { /* ignore */ }
+      // No saved data → clear, so the previous key's drawings don't carry over.
+      useDrawingStore.getState().loadDrawings(raw ? JSON.parse(raw) as Drawing[] : []);
+    } catch {
+      useDrawingStore.getState().loadDrawings([]); // corrupt data → clear, don't carry over
+    }
+    loadedKeyRef.current = storageKey;
   }, [storageKey]);
 
   useEffect(() => {
+    if (loadedKeyRef.current !== storageKey) return;
+    // In the commit where the key changes, `drawings` is still the previous key's
+    // render-time value (the load above just replaced the store) — skip; the
+    // re-render triggered by loadDrawings saves the correct array.
+    if (drawings !== useDrawingStore.getState().drawings) return;
     try {
       localStorage.setItem(storageKey, JSON.stringify(drawings));
     } catch { /* ignore */ }
