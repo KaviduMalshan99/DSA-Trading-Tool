@@ -7,10 +7,8 @@ import { TradingChart } from './TradingChart';
 import { ReplayEngine } from './ReplayEngine';
 import { ChartToolbar } from './ChartToolbar';
 import { ChartLoadingOverlay } from './ChartLoadingOverlay';
+import { SubPanelSlot } from './SubPanelSlot';
 import { DeltaPanel } from '../Overlay/DeltaPanel';
-import { RSIPanel } from '../Overlay/RSIPanel';
-import { StochRSIPanel } from '../Overlay/StochRSIPanel';
-import { MACDPanel } from '../Overlay/MACDPanel';
 import { FootprintCanvas } from '../Overlay/FootprintCanvas';
 import { HeatmapCanvas } from '../Overlay/HeatmapCanvas';
 import { VolumeProfile } from '../Overlay/VolumeProfile';
@@ -43,11 +41,10 @@ export interface ChartContainerProps {
 export function ChartContainer({ sharedChartRef, sharedSeriesRef, chartAreaRef }: ChartContainerProps) {
   const visibleOverlays = useChartStore((s) => s.visibleOverlays);
   const activeIndicators = useIndicatorStore((s) => s.activeIndicators);
-  const activeSubPanel   = useIndicatorStore((s) => s.activeSubPanel);
   const timezone         = useTimezoneStore((s) => s.timezone);
-  // Either bottom panel (pro Delta panel or the student indicator sub-panel)
-  // takes a 1-share slice under the chart; with neither, the chart gets it all.
-  const hasBottomPanel = SHOW_DELTA_PANEL || activeSubPanel !== null;
+  // Chart column (chart area + bottom panels) — SubPanelSlot measures it to
+  // turn divider drag distance into a height ratio.
+  const wrapperRef = useRef<HTMLDivElement>(null);
   // The line-mode series is only shared between TradingChart and ReplayEngine
   // (both mounted here), so it's owned here rather than lifted to App.
   const sharedLineSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
@@ -64,9 +61,9 @@ export function ChartContainer({ sharedChartRef, sharedSeriesRef, chartAreaRef }
           and sub-panels so every series recomputes with the new offset (see
           chartTime.ts). Toolbars sit outside and stay mounted. The remount
           resets the view to the latest candles (historical reload). */}
-      <div key={timezone} className="flex flex-col flex-1 overflow-hidden">
-      {/* Main candlestick area — 80% with a bottom panel, full height without */}
-      <div ref={chartAreaRef} className="relative bg-[var(--bg-app)]" style={{ flex: hasBottomPanel ? '4 4 0%' : '1 1 0%', minHeight: 0 }}>
+      <div key={timezone} ref={wrapperRef} className="flex flex-col flex-1 overflow-hidden">
+      {/* Main candlestick area — takes whatever height the bottom panels leave */}
+      <div ref={chartAreaRef} className="relative bg-[var(--bg-app)]" style={{ flex: '1 1 0%', minHeight: 0 }}>
         <TradingChart
           sharedChartRef={sharedChartRef}
           sharedSeriesRef={sharedSeriesRef}
@@ -182,20 +179,11 @@ export function ChartContainer({ sharedChartRef, sharedSeriesRef, chartAreaRef }
         {visibleOverlays.has('scanner') && <ClusterScanner />}
       </div>
 
-      {/* Indicator sub-panel (RSI / Stoch RSI / MACD) — one at a time,
-          chosen in the Indicators menu. Independent of SHOW_DELTA_PANEL. Keyed
-          by indicator so a swap fully remounts (fresh chart, clean teardown). */}
-      {activeSubPanel && (
-        <div
-          key={activeSubPanel}
-          className="relative border-t border-[var(--border-color-soft)]"
-          style={{ flex: '1 1 0%', minHeight: 0 }}
-        >
-          {activeSubPanel === 'rsi' && <RSIPanel sharedChartRef={sharedChartRef} />}
-          {activeSubPanel === 'stochRsi' && <StochRSIPanel sharedChartRef={sharedChartRef} />}
-          {activeSubPanel === 'macd' && <MACDPanel sharedChartRef={sharedChartRef} />}
-        </div>
-      )}
+      {/* Indicator sub-panel (RSI / Stoch RSI / MACD) with its resize divider —
+          one at a time, chosen in the Indicators menu. Independent of
+          SHOW_DELTA_PANEL. Renders nothing when no sub-panel is active; owns
+          its own store subscriptions so dragging doesn't re-render this tree. */}
+      <SubPanelSlot wrapperRef={wrapperRef} sharedChartRef={sharedChartRef} />
 
       {/* Delta panel — 20%. Gated by config/topBarVisibility.ts (off in the Stage 1 student view). */}
       {SHOW_DELTA_PANEL && (

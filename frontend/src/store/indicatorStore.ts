@@ -37,6 +37,28 @@ function loadInitialFavoriteIndicators(): IndicatorKey[] {
   return [];
 }
 
+const SUBPANEL_RATIO_KEY = 'dsa-subpanel-ratio';
+const DEFAULT_SUBPANEL_RATIO = 0.2;
+export const MIN_SUBPANEL_RATIO = 0.1;
+export const MAX_SUBPANEL_RATIO = 0.6;
+
+function clampSubPanelRatio(r: number): number {
+  return Math.min(Math.max(r, MIN_SUBPANEL_RATIO), MAX_SUBPANEL_RATIO);
+}
+
+function loadInitialSubPanelRatio(): number {
+  try {
+    const raw = localStorage.getItem(SUBPANEL_RATIO_KEY);
+    if (raw) {
+      const parsed: unknown = JSON.parse(raw);
+      if (typeof parsed === 'number' && Number.isFinite(parsed)) {
+        return clampSubPanelRatio(parsed);
+      }
+    }
+  } catch { /* ignore malformed/blocked storage */ }
+  return DEFAULT_SUBPANEL_RATIO;
+}
+
 interface IndicatorState {
   activeIndicators: Set<IndicatorType>;
   // Per-indicator settings (e.g. EMA periods/colors) will live here once
@@ -48,16 +70,24 @@ interface IndicatorState {
   /** Indicators starred in the Indicators dropdown; persisted to localStorage. */
   favoriteIndicators: IndicatorKey[];
 
+  /** Fraction of the chart-column height the sub-panel takes; persisted to localStorage. */
+  subPanelRatio: number;
+
   toggleIndicator: (indicator: IndicatorType) => void;
   /** Selecting a panel indicator swaps out any other; selecting the active one hides the panel. */
   toggleSubPanel: (indicator: SubPanelIndicator) => void;
   toggleFavoriteIndicator: (key: IndicatorKey) => void;
+  /** Live update (called every frame while dragging the divider) — does not persist. */
+  setSubPanelRatio: (ratio: number) => void;
+  /** Writes the current ratio to localStorage — called once when the drag ends. */
+  persistSubPanelRatio: () => void;
 }
 
 export const useIndicatorStore = create<IndicatorState>((set, get) => ({
   activeIndicators: new Set<IndicatorType>(),
   activeSubPanel: null,
   favoriteIndicators: loadInitialFavoriteIndicators(),
+  subPanelRatio: loadInitialSubPanelRatio(),
 
   toggleIndicator: (indicator) =>
     set((state) => {
@@ -82,5 +112,11 @@ export const useIndicatorStore = create<IndicatorState>((set, get) => ({
       : [...favs, key];
     set({ favoriteIndicators: next });
     try { localStorage.setItem(FAV_INDICATORS_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+  },
+
+  setSubPanelRatio: (ratio) => set({ subPanelRatio: clampSubPanelRatio(ratio) }),
+
+  persistSubPanelRatio: () => {
+    try { localStorage.setItem(SUBPANEL_RATIO_KEY, JSON.stringify(get().subPanelRatio)); } catch { /* ignore */ }
   },
 }));
