@@ -120,13 +120,14 @@ const PATTERN_POINT_LABELS: Record<PatternType, string[]> = {
   headShoulders: ['LS', '', 'H', '', 'RS'],
 };
 
-const DOT_CURSOR = `url("data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5" fill="#111827"/><circle cx="12" cy="12" r="2.5" fill="#ffffff"/></svg>')}" ) 12 12, pointer`;
-
+// Cross/Dot/Demonstration draw their own bar-snapped crosshair in the render
+// loop, so the OS cursor is hidden for them — otherwise the native cursor sits
+// at the raw pointer, up to half a bar away from the snapped overlay.
 const CURSOR_STYLE: Record<string, string> = {
-  cross: 'crosshair',
-  dot: DOT_CURSOR,
+  cross: 'none',
+  dot: 'none',
   arrow: 'default',
-  demonstration: 'default',
+  demonstration: 'none',
   eraser: 'not-allowed',
 };
 
