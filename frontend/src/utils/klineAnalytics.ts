@@ -13,9 +13,9 @@
  * require touching the backend or adding a new data source. Live mode is
  * untouched; these ports only run while replay is active.
  *
- * Exception: computeEMA, computeBollinger, computeRSI, computeStochRSI and
- * computeMACD (below) have no backend counterpart — they're client-only
- * indicators that run live as well as in replay.
+ * Exception: computeEMA, computeBollinger, computeRSI, computeRSIMA,
+ * computeStochRSI and computeMACD (below) have no backend counterpart —
+ * they're client-only indicators that run live as well as in replay.
  */
 import type { Candle } from '../types/market';
 import type {
@@ -324,6 +324,38 @@ export function computeRSI(candles: Candle[], period = 14): RSIPoint[] {
     points.push({ time: candles[i].t, value: rsi(avgGain, avgLoss) });
   }
   return points;
+}
+
+// ── RSI moving average (client-only, SMA over computeRSI) ────────────────────
+
+/**
+ * Simple moving average over an arbitrary number series, the SMA counterpart
+ * of emaOverValues: returns values.length - period + 1 numbers — output j
+ * belongs to input index j + period - 1 (no warm-up entries). Uses a rolling
+ * sum (O(n)); float drift is negligible for bounded inputs like RSI.
+ */
+export function smaOverValues(values: number[], period: number): number[] {
+  if (period < 1 || values.length < period) return [];
+  let sum = 0;
+  for (let i = 0; i < period; i++) sum += values[i];
+  const out: number[] = [sum / period];
+  for (let i = period; i < values.length; i++) {
+    sum += values[i] - values[i - period];
+    out.push(sum / period);
+  }
+  return out;
+}
+
+/**
+ * SMA(maPeriod) of Wilder's RSI(rsiPeriod) — TradingView's default RSI
+ * "smoothing line". Each point carries its RSI point's candle time; the first
+ * one lands at candle index rsiPeriod + maPeriod - 1. No warm-up points are
+ * emitted; returns [] if there aren't enough candles.
+ */
+export function computeRSIMA(candles: Candle[], rsiPeriod = 14, maPeriod = 14): RSIPoint[] {
+  const rsi = computeRSI(candles, rsiPeriod);
+  const ma = smaOverValues(rsi.map((p) => p.value), maPeriod);
+  return ma.map((value, j) => ({ time: rsi[j + maPeriod - 1].time, value }));
 }
 
 // ── Stochastic RSI (client-only indicator, built on computeRSI) ──────────────
