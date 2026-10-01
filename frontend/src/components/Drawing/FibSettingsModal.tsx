@@ -33,6 +33,50 @@ const FIB_TITLES: Record<FibLikeDrawing['type'], string> = {
   fibChannel: 'Fib Channel',
 };
 
+/** Level ratio field. Keeps a local text mirror so partial decimals ("0.",
+ * "-", ".6") survive while typing, and only writes the parsed ratio to the
+ * store on blur/Enter. Unlike PeriodInput, 0 and negatives are valid ratios. */
+function FibRatioInput({ value, enabled, onCommit }: {
+  value: number;
+  enabled: boolean;
+  onCommit: (v: number) => void;
+}) {
+  const [text, setText] = useState(String(value));
+  const [lastValue, setLastValue] = useState(value);
+  // Resync the mirror when the stored ratio changes from outside (Cancel/reset).
+  if (value !== lastValue) {
+    setLastValue(value);
+    setText(String(value));
+  }
+
+  const commit = () => {
+    const n = Number(text.trim());
+    if (text.trim() !== '' && Number.isFinite(n) && Math.abs(n) <= 100) {
+      if (n !== value) onCommit(n);
+      setText(String(n));
+    } else {
+      setText(String(value));
+    }
+  };
+
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      value={text}
+      onChange={(e) => { if (/^-?\d*\.?\d*$/.test(e.target.value)) setText(e.target.value); }}
+      onBlur={commit}
+      onKeyDown={(e) => { if (e.key === 'Enter') commit(); }}
+      disabled={!enabled}
+      className="w-16 text-xs px-1.5 py-1 rounded font-mono"
+      style={{
+        background: 'var(--bg-app)', border: '1px solid var(--border-color-softer)',
+        color: enabled ? 'var(--text-secondary)' : 'var(--border-color)',
+      }}
+    />
+  );
+}
+
 export function FibSettingsModal({ fib, onClose }: Props) {
   const { updateDrawing, deleteDrawing } = useDrawingStore();
   // Snapshot taken once, when the modal mounts — Cancel restores this so
@@ -147,19 +191,10 @@ export function FibSettingsModal({ fib, onClose }: Props) {
                         checked={lvl.enabled}
                         onChange={(e) => setLevel(i, { enabled: e.target.checked })}
                       />
-                      <input
-                        type="text"
+                      <FibRatioInput
                         value={lvl.pct}
-                        onChange={(e) => {
-                          const n = Number(e.target.value);
-                          setLevel(i, { pct: Number.isFinite(n) ? n : lvl.pct });
-                        }}
-                        disabled={!lvl.enabled}
-                        className="w-16 text-xs px-1.5 py-1 rounded font-mono"
-                        style={{
-                          background: 'var(--bg-app)', border: '1px solid var(--border-color-softer)',
-                          color: lvl.enabled ? 'var(--text-secondary)' : 'var(--border-color)',
-                        }}
+                        enabled={lvl.enabled}
+                        onCommit={(n) => setLevel(i, { pct: n })}
                       />
                       <MiniColorSwatch color={lvl.color ?? defaults.color} onChange={(c) => setLevel(i, { color: c })} />
                     </div>
