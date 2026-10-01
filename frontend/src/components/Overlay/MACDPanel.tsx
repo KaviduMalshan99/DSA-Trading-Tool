@@ -113,6 +113,7 @@ export function MACDPanel({ sharedChartRef }: MACDPanelProps) {
       lineWidth: 1.5 as LineWidth,
       priceLineVisible: false,
       lastValueVisible: true,
+      crosshairMarkerVisible: false,
       priceFormat: { type: 'price', precision: 2, minMove: 0.01 },
     });
     const macdSeries = lineSeries(MACD_COLOR);

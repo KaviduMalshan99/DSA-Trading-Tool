@@ -168,6 +168,7 @@ export function RSIPanel({ sharedChartRef }: RSIPanelProps) {
       lineWidth: 1.5 as LineWidth,
       priceLineVisible: false,
       lastValueVisible: true,
+      crosshairMarkerVisible: false,
       priceFormat: { type: 'price', precision: 2, minMove: 0.01 },
       autoscaleInfoProvider: rsi01,
     });

@@ -92,6 +92,7 @@ export function StochRSIPanel({ sharedChartRef }: StochRSIPanelProps) {
       lineWidth: 1.5 as LineWidth,
       priceLineVisible: false,
       lastValueVisible: true,
+      crosshairMarkerVisible: false,
       priceFormat: { type: 'price', precision: 2, minMove: 0.01 },
       // Pin the scale to the oscillator's full 0-100 range.
       autoscaleInfoProvider: () => ({ priceRange: { minValue: 0, maxValue: 100 } }),

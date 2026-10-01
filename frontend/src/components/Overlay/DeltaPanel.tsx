@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { createChart, type IChartApi, type ISeriesApi, type Time } from 'lightweight-charts';
+import { createChart, CrosshairMode, type IChartApi, type ISeriesApi, type Time } from 'lightweight-charts';
 import { useMarketStore } from '../../store/marketStore';
 import { useThemeStore, type Theme } from '../../store/themeStore';
 import { useDeltaStore } from '../../store/deltaStore';
@@ -29,6 +29,8 @@ export function subChartThemeOptions(theme: Theme) {
       horzLines: { color: gridHorz },
     },
     crosshair: {
+      // Follow the pointer freely — Magnet (the default) snaps onto the series value.
+      mode: CrosshairMode.Normal,
       vertLine: { color: crosshair, labelBackgroundColor: crosshairLabelBg },
       horzLine: { color: crosshair, labelBackgroundColor: crosshairLabelBg },
     },
