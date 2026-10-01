@@ -4,6 +4,7 @@ import { useWatchlistStore } from '../../store/watchlistStore';
 import { api } from '../../services/api';
 import type { MarketType } from '../../types/market';
 import { CoinIcon } from '../UI/CoinIcon';
+import { CoinTagFlag } from './CoinTagFlag';
 
 const MARKETS: MarketType[] = ['crypto', 'forex', 'stocks'];
 const SEARCH_DEBOUNCE_MS = 300;
@@ -103,13 +104,13 @@ export function SymbolList() {
                 <div
                   key={sym}
                   onClick={() => setActiveSymbol(sym)}
-                  className={`w-full flex items-center justify-between gap-2 px-3 py-2 text-sm font-mono transition-colors border-l-2 cursor-pointer ${
+                  className={`group w-full flex items-center justify-between gap-2 px-3 py-2 text-sm font-mono transition-colors border-l-2 cursor-pointer ${
                     activeSymbol === sym
                       ? 'bg-blue-600/20 text-blue-300 border-blue-500'
                       : 'text-[var(--text-secondary)] hover:bg-[var(--bg-panel)] border-transparent'
                   }`}
                 >
-                  <span className="flex items-center gap-2"><CoinIcon symbol={sym} size={18} /><span>{sym}</span></span>
+                  <span className="flex items-center gap-2">{!isSearching && <CoinTagFlag symbol={sym} />}<CoinIcon symbol={sym} size={18} /><span>{sym}</span></span>
                   {isSearching && (
                     <button
                       onClick={(e) => { e.stopPropagation(); if (!inWatchlist) addSymbol(sym); }}
