@@ -25,9 +25,15 @@ const TITLES: Record<IndicatorConfigKey, string> = {
  * Number input that keeps its own text while typing (so "2" on the way to
  * "200" doesn't snap back) and commits on blur/Enter. Invalid text is discarded
  * and the field reverts to the stored value: by default it must be an integer
- * >= 1; with `decimal` any finite number > 0 is accepted.
+ * >= 1; with `decimal` any finite number > 0 is accepted. `validate` adds an
+ * extra (e.g. cross-field) check on top.
  */
-function PeriodInput({ value, onCommit, decimal = false }: { value: number; onCommit: (v: number) => void; decimal?: boolean }) {
+function PeriodInput({ value, onCommit, decimal = false, validate }: {
+  value: number;
+  onCommit: (v: number) => void;
+  decimal?: boolean;
+  validate?: (v: number) => boolean;
+}) {
   const [text, setText] = useState(String(value));
   const [lastValue, setLastValue] = useState(value);
   // Resync the mirror when the stored value changes from outside (Reset).
@@ -38,7 +44,8 @@ function PeriodInput({ value, onCommit, decimal = false }: { value: number; onCo
 
   const commit = () => {
     const n = Number(text.trim());
-    const valid = decimal ? Number.isFinite(n) && n > 0 : Number.isInteger(n) && n >= 1;
+    const valid = (decimal ? Number.isFinite(n) && n > 0 : Number.isInteger(n) && n >= 1)
+      && (!validate || validate(n));
     if (valid) {
       if (n !== value) onCommit(n);
       setText(String(n));
@@ -197,6 +204,83 @@ function RSIStyle() {
   );
 }
 
+/** Checkbox + color + width row per line, labelled in `cfg.lines` order. */
+function LineStyleRows({ indicatorKey, labels }: { indicatorKey: 'stochRsi' | 'macd'; labels: readonly string[] }) {
+  const lines   = useIndicatorConfigStore((s) => s.configs[indicatorKey].lines);
+  const setLine = useIndicatorConfigStore((s) => s.setLine);
+  return (
+    <div className="flex flex-col gap-3">
+      {lines.map((line, i) => (
+        <div key={labels[i]} className="flex items-center justify-between">
+          <label className="flex items-center gap-2 text-sm text-[var(--text-secondary)]">
+            <input
+              type="checkbox"
+              checked={line.visible}
+              onChange={(e) => setLine(indicatorKey, i, { visible: e.target.checked })}
+            />
+            {labels[i]}
+          </label>
+          <div className="flex items-center gap-2">
+            <MiniColorSwatch color={line.color} onChange={(c) => setLine(indicatorKey, i, { color: c })} />
+            <MiniWidthPicker width={line.width} onChange={(w) => setLine(indicatorKey, i, { width: w })} />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function StochRSIInputs() {
+  const cfg       = useIndicatorConfigStore((s) => s.configs.stochRsi);
+  const setParams = useIndicatorConfigStore((s) => s.setParams);
+  const fields = [
+    { label: 'RSI Length',   key: 'rsiLength'   },
+    { label: 'Stoch Length', key: 'stochLength' },
+    { label: '%K Smooth',    key: 'kSmooth'     },
+    { label: '%D Smooth',    key: 'dSmooth'     },
+  ] as const;
+  return (
+    <div className="flex flex-col gap-3">
+      {fields.map(({ label, key }) => (
+        <div key={key} className="flex items-center justify-between">
+          <span className="text-sm text-[var(--text-secondary)]">{label}</span>
+          <PeriodInput value={cfg[key]} onCommit={(v) => setParams('stochRsi', { [key]: v })} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Row labels in configs.stochRsi.lines order: %K, %D.
+const STOCH_LINE_LABELS = ['%K', '%D'] as const;
+
+function MACDInputs() {
+  const cfg       = useIndicatorConfigStore((s) => s.configs.macd);
+  const setParams = useIndicatorConfigStore((s) => s.setParams);
+  // fast must stay below slow — computeMACD returns nothing otherwise and the
+  // panel would go blank — so an edit that breaks it reverts.
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center justify-between">
+        <span className="text-sm text-[var(--text-secondary)]">Fast Length</span>
+        <PeriodInput value={cfg.fast} validate={(v) => v < cfg.slow} onCommit={(v) => setParams('macd', { fast: v })} />
+      </div>
+      <div className="flex items-center justify-between">
+        <span className="text-sm text-[var(--text-secondary)]">Slow Length</span>
+        <PeriodInput value={cfg.slow} validate={(v) => v > cfg.fast} onCommit={(v) => setParams('macd', { slow: v })} />
+      </div>
+      <div className="flex items-center justify-between">
+        <span className="text-sm text-[var(--text-secondary)]">Signal Smoothing</span>
+        <PeriodInput value={cfg.signal} onCommit={(v) => setParams('macd', { signal: v })} />
+      </div>
+      <div className="text-xs text-[var(--text-muted)]">Fast length must be less than slow length.</div>
+    </div>
+  );
+}
+
+// Row labels in configs.macd.lines order: MACD, signal.
+const MACD_LINE_LABELS = ['MACD', 'Signal'] as const;
+
 export function IndicatorSettingsModal({ indicatorKey, onClose }: Props) {
   const [tab, setTab] = useState<Tab>('inputs');
   // Snapshot taken once, on mount — Cancel restores it so live-previewed
@@ -256,8 +340,10 @@ export function IndicatorSettingsModal({ indicatorKey, onClose }: Props) {
             tab === 'inputs' ? <BollingerInputs /> : <BollingerStyle />
           ) : indicatorKey === 'rsi' ? (
             tab === 'inputs' ? <RSIInputs /> : <RSIStyle />
+          ) : indicatorKey === 'stochRsi' ? (
+            tab === 'inputs' ? <StochRSIInputs /> : <LineStyleRows indicatorKey="stochRsi" labels={STOCH_LINE_LABELS} />
           ) : (
-            <div className="text-sm text-[var(--text-muted)]">Settings for this indicator are coming soon.</div>
+            tab === 'inputs' ? <MACDInputs /> : <LineStyleRows indicatorKey="macd" labels={MACD_LINE_LABELS} />
           )}
         </div>
 

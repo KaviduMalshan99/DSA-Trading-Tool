@@ -1,5 +1,6 @@
 /**
- * StochRSIPanel — Stochastic RSI (14,14,3,3) in its own chart below the main
+ * StochRSIPanel — Stochastic RSI (params from indicatorConfigStore, default
+ * 14,14,3,3) in its own chart below the main
  * chart, the second single-slot sub-panel indicator (indicatorStore.activeSubPanel).
  *
  * A copy of RSIPanel's pattern (chart instance, index-based one-way sync,
@@ -15,17 +16,11 @@ import {
 import { useMarketStore } from '../../store/marketStore';
 import { useReplayStore } from '../../store/replayStore';
 import { useThemeStore } from '../../store/themeStore';
+import { useIndicatorConfigStore, type LineStyle as LineStyleCfg } from '../../store/indicatorConfigStore';
 import { toChartTime } from '../../utils/chartTime';
 import { computeStochRSI, type RSIPoint } from '../../utils/klineAnalytics';
 import { subChartThemeOptions } from './DeltaPanel';
 import { AXIS_MIN_WIDTH, refLineColors } from './RSIPanel';
-
-const RSI_LEN   = 14;
-const STOCH_LEN = 14;
-const K_SMOOTH  = 3;
-const D_SMOOTH  = 3;
-const K_COLOR   = '#2962ff';
-const D_COLOR   = '#ff6d00';
 
 interface StochRSIPanelProps {
   /** Ref to the main candlestick chart — this panel follows its time scale. */
@@ -37,6 +32,9 @@ export function StochRSIPanel({ sharedChartRef }: StochRSIPanelProps) {
   const chartRef     = useRef<IChartApi | null>(null);
   const kSeriesRef   = useRef<ISeriesApi<'Line'> | null>(null);
   const dSeriesRef   = useRef<ISeriesApi<'Line'> | null>(null);
+  // Line-less series that carries the reference levels, so hiding %K in
+  // settings doesn't take the 80/50/20 lines with it.
+  const refSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
   const bandLinesRef = useRef<IPriceLine[]>([]);   // 80 / 20
   const midLineRef   = useRef<IPriceLine | null>(null);  // 50
 
@@ -46,6 +44,7 @@ export function StochRSIPanel({ sharedChartRef }: StochRSIPanelProps) {
   const theme            = useThemeStore((s) => s.theme);
   const replayActive     = useReplayStore((s) => s.isActive);
   const replayCursorTime = useReplayStore((s) => s.cursorTime);
+  const cfg              = useIndicatorConfigStore((s) => s.configs.stochRsi);
 
   // Same as RSIPanel: keep this panel's price axis as wide as the main chart's
   // so the two plot areas (and their bars) line up vertically.
@@ -86,25 +85,32 @@ export function StochRSIPanel({ sharedChartRef }: StochRSIPanelProps) {
       height: containerRef.current.clientHeight,
     });
 
-    const lineSeries = (color: string) => chart.addLineSeries({
-      color,
-      // LineWidth is typed 1-4, but the renderer draws fractional widths fine.
-      lineWidth: 1.5 as LineWidth,
+    const baseOpts = {
       priceLineVisible: false,
-      lastValueVisible: true,
       crosshairMarkerVisible: false,
-      priceFormat: { type: 'price', precision: 2, minMove: 0.01 },
+      priceFormat: { type: 'price' as const, precision: 2, minMove: 0.01 },
       // Pin the scale to the oscillator's full 0-100 range.
       autoscaleInfoProvider: () => ({ priceRange: { minValue: 0, maxValue: 100 } }),
+    };
+    const refSeries = chart.addLineSeries({ ...baseOpts, lineVisible: false, lastValueVisible: false });
+    // Read the config imperatively: edits restyle/recompute the existing
+    // series in the effects below rather than recreating the chart.
+    const [kLine, dLine] = useIndicatorConfigStore.getState().configs.stochRsi.lines;
+    const lineSeries = (style: LineStyleCfg) => chart.addLineSeries({
+      ...baseOpts,
+      color: style.color,
+      lineWidth: style.width as LineWidth,
+      visible: style.visible,
+      lastValueVisible: true,
     });
-    const kSeries = lineSeries(K_COLOR);
-    const dSeries = lineSeries(D_COLOR);
+    const kSeries = lineSeries(kLine);
+    const dSeries = lineSeries(dLine);
 
     // Price lines survive setData, so the reference levels are created once —
-    // on %K only, so they aren't drawn twice.
+    // on the never-hidden ref series, so they aren't drawn twice.
     const colors = refLineColors(theme);
     const refLine = (price: number, color: string, lineStyle: LineStyle) =>
-      kSeries.createPriceLine({
+      refSeries.createPriceLine({
         price, color, lineWidth: 1, lineStyle, axisLabelVisible: false, title: '',
       });
     bandLinesRef.current = [
@@ -116,6 +122,7 @@ export function StochRSIPanel({ sharedChartRef }: StochRSIPanelProps) {
     chartRef.current   = chart;
     kSeriesRef.current = kSeries;
     dSeriesRef.current = dSeries;
+    refSeriesRef.current = refSeries;
 
     // One-directional sync by logical (bar index) range, as in RSIPanel: the
     // data effect pads both series to the candle count, so index N is the same
@@ -152,6 +159,7 @@ export function StochRSIPanel({ sharedChartRef }: StochRSIPanelProps) {
       chartRef.current   = null;
       kSeriesRef.current = null;
       dSeriesRef.current = null;
+      refSeriesRef.current = null;
       bandLinesRef.current = [];
       midLineRef.current   = null;
     };
@@ -177,10 +185,12 @@ export function StochRSIPanel({ sharedChartRef }: StochRSIPanelProps) {
   }, [theme]);
 
   // ── Recompute on every candles change (incl. the forming bar's ticks) ─────
+  // and whenever the lengths / smoothing are edited.
   useEffect(() => {
-    const kSeries = kSeriesRef.current;
-    const dSeries = dSeriesRef.current;
-    if (!kSeries || !dSeries) return;
+    const kSeries   = kSeriesRef.current;
+    const dSeries   = dSeriesRef.current;
+    const refSeries = refSeriesRef.current;
+    if (!kSeries || !dSeries || !refSeries) return;
 
     // In replay, marketStore still holds the full window — slice at the cursor
     // exactly as ReplayEngine does for the main chart, so bar counts match.
@@ -188,7 +198,7 @@ export function StochRSIPanel({ sharedChartRef }: StochRSIPanelProps) {
       ? candles.filter((c) => c.t <= replayCursorTime)
       : candles;
 
-    const { k, d } = computeStochRSI(visible, RSI_LEN, STOCH_LEN, K_SMOOTH, D_SMOOTH);
+    const { k, d } = computeStochRSI(visible, cfg.rsiLength, cfg.stochLength, cfg.kSmooth, cfg.dSmooth);
 
     // %D starts dSmooth-1 bars after %K, so each series gets its own
     // whitespace padding — both end up exactly visible.length entries long,
@@ -197,7 +207,10 @@ export function StochRSIPanel({ sharedChartRef }: StochRSIPanelProps) {
       ...visible.slice(0, visible.length - points.length).map((c) => ({ time: toChartTime(c.t) })),
       ...points.map((p) => ({ time: toChartTime(p.time), value: p.value })),
     ];
-    kSeries.setData(padded(k));
+    // The ref series needs data of its own for its price lines to render.
+    const kData = padded(k);
+    kSeries.setData(kData);
+    refSeries.setData(kData);
     dSeries.setData(padded(d));
 
     // setData can refit this chart's own range — pull it back to the main one.
@@ -207,26 +220,38 @@ export function StochRSIPanel({ sharedChartRef }: StochRSIPanelProps) {
 
     setCurrent(k.length ? { k: k.at(-1)!.value, d: d.at(-1)?.value ?? null } : null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [candles, replayActive, replayCursorTime, sharedChartRef]);
+  }, [candles, replayActive, replayCursorTime, sharedChartRef,
+      cfg.rsiLength, cfg.stochLength, cfg.kSmooth, cfg.dSmooth]);
+
+  // ── Re-style on color/width/visibility edits (no recompute) ───────────────
+  useEffect(() => {
+    const [kLine, dLine] = cfg.lines;
+    kSeriesRef.current?.applyOptions({ color: kLine.color, lineWidth: kLine.width as LineWidth, visible: kLine.visible });
+    dSeriesRef.current?.applyOptions({ color: dLine.color, lineWidth: dLine.width as LineWidth, visible: dLine.visible });
+  }, [cfg.lines]);
+
+  const [kLine, dLine] = cfg.lines;
+  const showK = current !== null && kLine.visible;
+  const showD = current !== null && current.d !== null && dLine.visible;
 
   return (
     <div className="relative w-full h-full">
       {/* Stat overlay */}
       <div className="absolute top-1 left-3 z-10 flex items-center gap-1.5 pointer-events-none select-none text-xs font-mono">
         <span className="text-[var(--text-muted)] font-sans">
-          Stoch RSI ({RSI_LEN},{STOCH_LEN},{K_SMOOTH},{D_SMOOTH})
+          Stoch RSI ({cfg.rsiLength},{cfg.stochLength},{cfg.kSmooth},{cfg.dSmooth})
         </span>
-        {current !== null && (
+        {(showK || showD) && <span className="text-[var(--text-muted)]">·</span>}
+        {showK && (
           <>
-            <span className="text-[var(--text-muted)]">·</span>
             <span className="text-[var(--text-muted)] font-sans">K</span>
-            <span style={{ color: K_COLOR }}>{current.k.toFixed(2)}</span>
-            {current.d !== null && (
-              <>
-                <span className="text-[var(--text-muted)] font-sans">D</span>
-                <span style={{ color: D_COLOR }}>{current.d.toFixed(2)}</span>
-              </>
-            )}
+            <span style={{ color: kLine.color }}>{current!.k.toFixed(2)}</span>
+          </>
+        )}
+        {showD && (
+          <>
+            <span className="text-[var(--text-muted)] font-sans">D</span>
+            <span style={{ color: dLine.color }}>{current!.d!.toFixed(2)}</span>
           </>
         )}
       </div>

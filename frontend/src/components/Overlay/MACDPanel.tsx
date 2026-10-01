@@ -1,5 +1,6 @@
 /**
- * MACDPanel — MACD (12,26,9) in its own chart below the main chart, the third
+ * MACDPanel — MACD (params from indicatorConfigStore, default 12,26,9) in its
+ * own chart below the main chart, the third
  * single-slot sub-panel indicator (indicatorStore.activeSubPanel).
  *
  * Same shell as RSIPanel/StochRSIPanel (chart instance, index-based one-way
@@ -17,17 +18,13 @@ import {
 import { useMarketStore } from '../../store/marketStore';
 import { useReplayStore } from '../../store/replayStore';
 import { useThemeStore } from '../../store/themeStore';
+import { useIndicatorConfigStore, type LineStyle as LineStyleCfg } from '../../store/indicatorConfigStore';
 import { toChartTime } from '../../utils/chartTime';
 import { decimalsForPrice } from '../../utils/priceFormat';
 import { computeMACD, type EMAPoint } from '../../utils/klineAnalytics';
 import { subChartThemeOptions } from './DeltaPanel';
 import { AXIS_MIN_WIDTH, refLineColors } from './RSIPanel';
 
-const FAST         = 12;
-const SLOW         = 26;
-const SIGNAL       = 9;
-const MACD_COLOR   = '#2962ff';
-const SIGNAL_COLOR = '#ff6d00';
 // Histogram: strong color while the bar grows away from zero, pale while it
 // shrinks back toward it.
 const HIST_UP        = '#26a641';
@@ -59,6 +56,7 @@ export function MACDPanel({ sharedChartRef }: MACDPanelProps) {
   const theme            = useThemeStore((s) => s.theme);
   const replayActive     = useReplayStore((s) => s.isActive);
   const replayCursorTime = useReplayStore((s) => s.cursorTime);
+  const cfg              = useIndicatorConfigStore((s) => s.configs.macd);
 
   // Same as RSIPanel: keep this panel's price axis as wide as the main chart's
   // so the two plot areas (and their bars) line up vertically.
@@ -107,22 +105,26 @@ export function MACDPanel({ sharedChartRef }: MACDPanelProps) {
       priceLineVisible: false,
     });
 
-    const lineSeries = (color: string) => chart.addLineSeries({
-      color,
-      // LineWidth is typed 1-4, but the renderer draws fractional widths fine.
-      lineWidth: 1.5 as LineWidth,
+    // Read the config imperatively: edits restyle/recompute the existing
+    // series in the effects below rather than recreating the chart.
+    const [macdLine, sigLine] = useIndicatorConfigStore.getState().configs.macd.lines;
+    const lineSeries = (style: LineStyleCfg) => chart.addLineSeries({
+      color: style.color,
+      lineWidth: style.width as LineWidth,
+      visible: style.visible,
       priceLineVisible: false,
       lastValueVisible: true,
       crosshairMarkerVisible: false,
       priceFormat: { type: 'price', precision: 2, minMove: 0.01 },
     });
-    const macdSeries = lineSeries(MACD_COLOR);
-    const sigSeries  = lineSeries(SIGNAL_COLOR);
+    const macdSeries = lineSeries(macdLine);
+    const sigSeries  = lineSeries(sigLine);
 
     // Widen the normal autoscale to always include 0, so the zero line stays
     // on screen through a long one-sided trend. The scale merges every
-    // series' range, so doing it on one series is enough.
-    macdSeries.applyOptions({
+    // series' range, so doing it on one series is enough — the histogram,
+    // since it's never hidden (a hidden series drops out of autoscale).
+    histSeries.applyOptions({
       autoscaleInfoProvider: (original: () => AutoscaleInfo | null) => {
         const res = original();
         if (!res?.priceRange) return res;
@@ -137,8 +139,8 @@ export function MACDPanel({ sharedChartRef }: MACDPanelProps) {
     });
 
     // Price lines survive setData, so the zero line is created once — on the
-    // MACD line only, so it isn't drawn more than once.
-    zeroLineRef.current = macdSeries.createPriceLine({
+    // histogram, so hiding the MACD/signal lines in settings doesn't take it along.
+    zeroLineRef.current = histSeries.createPriceLine({
       price: 0,
       color: refLineColors(theme).mid,
       lineWidth: 1,
@@ -211,6 +213,7 @@ export function MACDPanel({ sharedChartRef }: MACDPanelProps) {
   }, [theme]);
 
   // ── Recompute on every candles change (incl. the forming bar's ticks) ─────
+  // and whenever fast / slow / signal are edited.
   useEffect(() => {
     const histSeries = histSeriesRef.current;
     const macdSeries = macdSeriesRef.current;
@@ -223,7 +226,7 @@ export function MACDPanel({ sharedChartRef }: MACDPanelProps) {
       ? candles.filter((c) => c.t <= replayCursorTime)
       : candles;
 
-    const { macd, signal, hist } = computeMACD(visible, FAST, SLOW, SIGNAL);
+    const { macd, signal, hist } = computeMACD(visible, cfg.fast, cfg.slow, cfg.signal);
 
     // Size precision off MACD's own magnitude: price-based decimals give 2
     // for anything >= 1, which rounds e.g. XRP's ~±0.005 MACD to 0.00.
@@ -279,24 +282,37 @@ export function MACDPanel({ sharedChartRef }: MACDPanelProps) {
         }
       : null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [candles, replayActive, replayCursorTime, sharedChartRef]);
+  }, [candles, replayActive, replayCursorTime, sharedChartRef, cfg.fast, cfg.slow, cfg.signal]);
+
+  // ── Re-style on color/width/visibility edits (no recompute) ───────────────
+  useEffect(() => {
+    const [macdLine, sigLine] = cfg.lines;
+    macdSeriesRef.current?.applyOptions({ color: macdLine.color, lineWidth: macdLine.width as LineWidth, visible: macdLine.visible });
+    sigSeriesRef.current?.applyOptions({ color: sigLine.color, lineWidth: sigLine.width as LineWidth, visible: sigLine.visible });
+  }, [cfg.lines]);
+
+  const [macdLine, sigLine] = cfg.lines;
 
   return (
     <div className="relative w-full h-full">
       {/* Stat overlay */}
       <div className="absolute top-1 left-3 z-10 flex items-center gap-1.5 pointer-events-none select-none text-xs font-mono">
         <span className="text-[var(--text-muted)] font-sans">
-          MACD ({FAST},{SLOW},{SIGNAL})
+          MACD ({cfg.fast},{cfg.slow},{cfg.signal})
         </span>
         {current !== null && (
           <>
             <span className="text-[var(--text-muted)]">·</span>
-            <span className="text-[var(--text-muted)] font-sans">MACD</span>
-            <span style={{ color: MACD_COLOR }}>{current.macd.toFixed(current.decimals)}</span>
-            {current.signal !== null && (
+            {macdLine.visible && (
+              <>
+                <span className="text-[var(--text-muted)] font-sans">MACD</span>
+                <span style={{ color: macdLine.color }}>{current.macd.toFixed(current.decimals)}</span>
+              </>
+            )}
+            {sigLine.visible && current.signal !== null && (
               <>
                 <span className="text-[var(--text-muted)] font-sans">Signal</span>
-                <span style={{ color: SIGNAL_COLOR }}>{current.signal.toFixed(current.decimals)}</span>
+                <span style={{ color: sigLine.color }}>{current.signal.toFixed(current.decimals)}</span>
               </>
             )}
             {current.hist !== null && (
