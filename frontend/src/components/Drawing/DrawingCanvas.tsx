@@ -3,7 +3,8 @@ import type { IChartApi, ISeriesApi } from 'lightweight-charts';
 import { useDrawingStore, type Drawing, type DrawingTool, type FibTool, type PatternType } from '../../store/drawingStore';
 import { useMarketStore } from '../../store/marketStore';
 import { useCandleStyleStore } from '../../store/candleStyleStore';
-import { toChartTimeSeconds } from '../../utils/chartTime';
+import { toChartTimeSeconds, CHART_TZ_OFFSET_SECONDS } from '../../utils/chartTime';
+import { shiftDrawingTimes } from '../../utils/drawingTimeShift';
 import { computeSessionVWAPFromCandles } from '../../utils/klineAnalytics';
 import { decimalsForPrice } from '../../utils/priceFormat';
 import type { Candle } from '../../types/market';
@@ -4688,12 +4689,29 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
   const storageKey = `dsa_drawings_${activeSymbol}_${activeInterval}`;
   // Key whose saved drawings have been loaded into the store; save waits for it.
   const loadedKeyRef = useRef<string | null>(null);
+  // On disk drawings are UTC epoch seconds ({ v: 2, drawings }); in the store
+  // they're chart time (UTC + offset). Single reference — swaps to the
+  // timezone store value in a later stage.
+  const currentOffset = CHART_TZ_OFFSET_SECONDS;
 
   useEffect(() => {
     try {
       const raw = localStorage.getItem(storageKey);
-      // No saved data → clear, so the previous key's drawings don't carry over.
-      useDrawingStore.getState().loadDrawings(raw ? JSON.parse(raw) as Drawing[] : []);
+      const parsed: unknown = raw ? JSON.parse(raw) : null;
+      let utc: Drawing[] = [];
+      if (Array.isArray(parsed)) {
+        // Legacy (v1) bare array — always written in Colombo chart time,
+        // hence the hardcoded 19800 (not currentOffset). Migrate once.
+        utc = shiftDrawingTimes(parsed as Drawing[], -19800);
+        // Best-effort: a failed write must not fall into the catch below
+        // (that would load [] and the save effect would wipe the legacy data).
+        try { localStorage.setItem(storageKey, JSON.stringify({ v: 2, drawings: utc })); } catch { /* ignore */ }
+      } else if (parsed && typeof parsed === 'object' && (parsed as { v?: unknown }).v === 2
+                 && Array.isArray((parsed as { drawings?: unknown }).drawings)) {
+        utc = (parsed as { drawings: Drawing[] }).drawings;
+      }
+      // No saved data / unknown format → [], so the previous key's drawings don't carry over.
+      useDrawingStore.getState().loadDrawings(shiftDrawingTimes(utc, currentOffset));
     } catch {
       useDrawingStore.getState().loadDrawings([]); // corrupt data → clear, don't carry over
     }
@@ -4707,9 +4725,10 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
     // re-render triggered by loadDrawings saves the correct array.
     if (drawings !== useDrawingStore.getState().drawings) return;
     try {
-      localStorage.setItem(storageKey, JSON.stringify(drawings));
+      const utc = shiftDrawingTimes(drawings, -currentOffset);
+      localStorage.setItem(storageKey, JSON.stringify({ v: 2, drawings: utc }));
     } catch { /* ignore */ }
-  }, [drawings, storageKey]);
+  }, [drawings, storageKey, currentOffset]);
 
   // ── render loop ───────────────────────────────────────────────────────────
   const scheduleRender = useCallback(() => {
