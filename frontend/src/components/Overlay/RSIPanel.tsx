@@ -1,5 +1,6 @@
 /**
- * RSIPanel — Wilder's RSI (14) in its own chart below the main chart, the
+ * RSIPanel — Wilder's RSI (length from indicatorConfigStore, default 14) plus
+ * its moving average, in its own chart below the main chart, the
  * first of the single-slot sub-panel indicators (indicatorStore.activeSubPanel).
  *
  * Same chart-instance + one-way sync pattern as DeltaPanel, but no WebSocket:
@@ -15,16 +16,13 @@ import {
 } from 'lightweight-charts';
 import { useMarketStore } from '../../store/marketStore';
 import { useReplayStore } from '../../store/replayStore';
+import { useIndicatorConfigStore } from '../../store/indicatorConfigStore';
 import { useThemeStore, type Theme } from '../../store/themeStore';
 import { toChartTime } from '../../utils/chartTime';
 import { computeRSI, computeRSIMA, type RSIPoint } from '../../utils/klineAnalytics';
 import type { Candle } from '../../types/market';
 import { subChartThemeOptions } from './DeltaPanel';
 
-const RSI_PERIOD    = 14;
-const RSI_MA_PERIOD = 14;
-const RSI_COLOR     = '#7e57c2';
-const RSI_MA_COLOR  = '#e3b341';
 // Fills are faint enough to read on both themes, so they stay constant.
 const FILL_OB   = 'rgba(38,166,154,0.25)';   // RSI beyond 70 / 30
 const BAND_FILL = 'rgba(126,87,194,0.06)';   // 30-70 band
@@ -89,6 +87,7 @@ export function RSIPanel({ sharedChartRef }: RSIPanelProps) {
   const theme            = useThemeStore((s) => s.theme);
   const replayActive     = useReplayStore((s) => s.isActive);
   const replayCursorTime = useReplayStore((s) => s.cursorTime);
+  const cfg              = useIndicatorConfigStore((s) => s.configs.rsi);
 
   // Keep this panel's price axis exactly as wide as the main chart's, so the
   // two plot areas — and therefore their bars — line up vertically. The
@@ -153,9 +152,13 @@ export function RSIPanel({ sharedChartRef }: RSIPanelProps) {
       topFillColor1: CLEAR,      topFillColor2: CLEAR,
       bottomFillColor1: FILL_OB, bottomFillColor2: FILL_OB,
     });
+    // Read the config imperatively: edits restyle/recompute the existing
+    // series in the effects below rather than recreating the chart.
+    const [rsiLine, maLine] = useIndicatorConfigStore.getState().configs.rsi.lines;
     const ma = chart.addLineSeries({
-      color: RSI_MA_COLOR,
-      lineWidth: 1,
+      color: maLine.color,
+      lineWidth: maLine.width as LineWidth,
+      visible: maLine.visible,
       priceLineVisible: false,
       lastValueVisible: false,
       crosshairMarkerVisible: false,
@@ -163,9 +166,9 @@ export function RSIPanel({ sharedChartRef }: RSIPanelProps) {
     });
 
     const series = chart.addLineSeries({
-      color: RSI_COLOR,
-      // LineWidth is typed 1-4, but the renderer draws fractional widths fine.
-      lineWidth: 1.5 as LineWidth,
+      color: rsiLine.color,
+      lineWidth: rsiLine.width as LineWidth,
+      visible: rsiLine.visible,
       priceLineVisible: false,
       lastValueVisible: true,
       crosshairMarkerVisible: false,
@@ -174,9 +177,11 @@ export function RSIPanel({ sharedChartRef }: RSIPanelProps) {
     });
 
     // Price lines survive setData, so the reference levels are created once.
+    // They hang off the band (never hidden) rather than the RSI line, so
+    // hiding the RSI line in settings doesn't take the 70/50/30 levels with it.
     const colors = refLineColors(theme);
     const refLine = (price: number, color: string, lineStyle: LineStyle) =>
-      series.createPriceLine({
+      band.createPriceLine({
         price, color, lineWidth: 1, lineStyle, axisLabelVisible: false, title: '',
       });
     bandLinesRef.current = [
@@ -258,6 +263,7 @@ export function RSIPanel({ sharedChartRef }: RSIPanelProps) {
   }, [theme]);
 
   // ── Recompute on every candles change (incl. the forming bar's ticks) ─────
+  // and whenever the RSI / MA lengths are edited.
   useEffect(() => {
     const series = seriesRef.current;
     const ma     = maRef.current;
@@ -272,8 +278,8 @@ export function RSIPanel({ sharedChartRef }: RSIPanelProps) {
       ? candles.filter((c) => c.t <= replayCursorTime)
       : candles;
 
-    const points   = computeRSI(visible, RSI_PERIOD);
-    const maPoints = computeRSIMA(visible, RSI_PERIOD, RSI_MA_PERIOD);
+    const points   = computeRSI(visible, cfg.period);
+    const maPoints = computeRSIMA(visible, cfg.period, cfg.maPeriod);
     // Every series gets exactly visible.length entries (see padded).
     const rsiData = padded(visible, points);
 
@@ -292,19 +298,32 @@ export function RSIPanel({ sharedChartRef }: RSIPanelProps) {
     setCurrent(points.at(-1)?.value ?? null);
     setCurrentMA(maPoints.at(-1)?.value ?? null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [candles, replayActive, replayCursorTime, sharedChartRef]);
+  }, [candles, replayActive, replayCursorTime, sharedChartRef, cfg.period, cfg.maPeriod]);
+
+  // ── Re-style on color/width/visibility edits (no recompute) ───────────────
+  useEffect(() => {
+    const [rsiLine, maLine] = cfg.lines;
+    seriesRef.current?.applyOptions({ color: rsiLine.color, lineWidth: rsiLine.width as LineWidth, visible: rsiLine.visible });
+    maRef.current?.applyOptions({ color: maLine.color, lineWidth: maLine.width as LineWidth, visible: maLine.visible });
+  }, [cfg.lines]);
+
+  const [rsiLine, maLine] = cfg.lines;
 
   return (
     <div className="relative w-full h-full">
       {/* Stat overlay */}
       <div className="absolute top-1 left-3 z-10 flex items-center gap-1.5 pointer-events-none select-none text-xs font-mono">
-        <span className="text-[var(--text-muted)] font-sans">RSI {RSI_PERIOD}</span>
-        {current !== null && (
-          <span style={{ color: RSI_COLOR }}>{current.toFixed(2)}</span>
+        <span className="text-[var(--text-muted)] font-sans">RSI {cfg.period}</span>
+        {rsiLine.visible && current !== null && (
+          <span style={{ color: rsiLine.color }}>{current.toFixed(2)}</span>
         )}
-        <span className="text-[var(--text-muted)] font-sans">· MA {RSI_MA_PERIOD}</span>
-        {currentMA !== null && (
-          <span style={{ color: RSI_MA_COLOR }}>{currentMA.toFixed(2)}</span>
+        {maLine.visible && (
+          <>
+            <span className="text-[var(--text-muted)] font-sans">· MA {cfg.maPeriod}</span>
+            {currentMA !== null && (
+              <span style={{ color: maLine.color }}>{currentMA.toFixed(2)}</span>
+            )}
+          </>
         )}
       </div>
 

@@ -151,6 +151,52 @@ function BollingerStyle() {
   );
 }
 
+function RSIInputs() {
+  const period    = useIndicatorConfigStore((s) => s.configs.rsi.period);
+  const maPeriod  = useIndicatorConfigStore((s) => s.configs.rsi.maPeriod);
+  const setParams = useIndicatorConfigStore((s) => s.setParams);
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center justify-between">
+        <span className="text-sm text-[var(--text-secondary)]">RSI Length</span>
+        <PeriodInput value={period} onCommit={(v) => setParams('rsi', { period: v })} />
+      </div>
+      <div className="flex items-center justify-between">
+        <span className="text-sm text-[var(--text-secondary)]">MA Length</span>
+        <PeriodInput value={maPeriod} onCommit={(v) => setParams('rsi', { maPeriod: v })} />
+      </div>
+    </div>
+  );
+}
+
+// Row labels in configs.rsi.lines order: RSI, MA.
+const RSI_LINE_LABELS = ['RSI', 'MA'] as const;
+
+function RSIStyle() {
+  const lines   = useIndicatorConfigStore((s) => s.configs.rsi.lines);
+  const setLine = useIndicatorConfigStore((s) => s.setLine);
+  return (
+    <div className="flex flex-col gap-3">
+      {lines.map((line, i) => (
+        <div key={RSI_LINE_LABELS[i]} className="flex items-center justify-between">
+          <label className="flex items-center gap-2 text-sm text-[var(--text-secondary)]">
+            <input
+              type="checkbox"
+              checked={line.visible}
+              onChange={(e) => setLine('rsi', i, { visible: e.target.checked })}
+            />
+            {RSI_LINE_LABELS[i]}
+          </label>
+          <div className="flex items-center gap-2">
+            <MiniColorSwatch color={line.color} onChange={(c) => setLine('rsi', i, { color: c })} />
+            <MiniWidthPicker width={line.width} onChange={(w) => setLine('rsi', i, { width: w })} />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function IndicatorSettingsModal({ indicatorKey, onClose }: Props) {
   const [tab, setTab] = useState<Tab>('inputs');
   // Snapshot taken once, on mount — Cancel restores it so live-previewed
@@ -208,6 +254,8 @@ export function IndicatorSettingsModal({ indicatorKey, onClose }: Props) {
             tab === 'inputs' ? <EMAInputs /> : <EMAStyle />
           ) : indicatorKey === 'bollinger' ? (
             tab === 'inputs' ? <BollingerInputs /> : <BollingerStyle />
+          ) : indicatorKey === 'rsi' ? (
+            tab === 'inputs' ? <RSIInputs /> : <RSIStyle />
           ) : (
             <div className="text-sm text-[var(--text-muted)]">Settings for this indicator are coming soon.</div>
           )}

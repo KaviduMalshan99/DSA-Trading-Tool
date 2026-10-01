@@ -8,7 +8,7 @@ import { useIndicatorConfigStore, type IndicatorConfigKey } from '../../store/in
 
 // Indicators whose menu row offers settings + remove. Grows as each
 // indicator is wired to indicatorConfigStore.
-const CONFIGURABLE: ReadonlySet<IndicatorConfigKey> = new Set<IndicatorConfigKey>(['ema', 'bollinger']);
+const CONFIGURABLE: ReadonlySet<IndicatorConfigKey> = new Set<IndicatorConfigKey>(['ema', 'bollinger', 'rsi']);
 
 // 'overlay' items draw on the main chart and stack (multi-select); 'panel'
 // items share the single sub-panel below it, so picking one swaps the other out.
@@ -47,6 +47,7 @@ export function IndicatorsDropdown() {
   const toggleFavoriteIndicator = useIndicatorStore((s) => s.toggleFavoriteIndicator);
   const bbPeriod = useIndicatorConfigStore((s) => s.configs.bollinger.period);
   const bbMult   = useIndicatorConfigStore((s) => s.configs.bollinger.mult);
+  const rsiPeriod = useIndicatorConfigStore((s) => s.configs.rsi.period);
   const [open, setOpen] = useState(false);
   // Lives outside the menu so the modal survives the menu closing.
   const [settingsKey, setSettingsKey] = useState<IndicatorConfigKey | null>(null);
@@ -100,8 +101,10 @@ export function IndicatorsDropdown() {
               </div>
               {items.map((item) => {
                 const { key } = item;
-                // Bollinger's label tracks its configured params.
-                const label = key === 'bollinger' ? `Bollinger Bands (${bbPeriod},${bbMult})` : item.label;
+                // Configurable indicators' labels track their params.
+                const label = key === 'bollinger' ? `Bollinger Bands (${bbPeriod},${bbMult})`
+                  : key === 'rsi' ? `RSI (${rsiPeriod})`
+                  : item.label;
                 const active = item.kind === 'panel'
                   ? activeSubPanel === item.key
                   : activeIndicators.has(item.key);
