@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, memo } from 'react';
+import { StarIcon, StarFilledIcon, FavoriteStarButton } from '../UI/FavoriteStarButton';
 import {
   useDrawingStore,
   CURSOR_MODES,
@@ -915,22 +916,6 @@ function UnlockIcon() {
   );
 }
 
-function StarIcon({ size = 13 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round">
-      <path d="M12 2.5l2.9 6.2 6.7.7-5 4.6 1.4 6.6-6-3.4-6 3.4 1.4-6.6-5-4.6 6.7-.7L12 2.5Z" />
-    </svg>
-  );
-}
-
-function StarFilledIcon({ size = 13 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="#FFC107" stroke="#FFC107" strokeWidth="2" strokeLinejoin="round">
-      <path d="M12 2.5l2.9 6.2 6.7.7-5 4.6 1.4 6.6-6-3.4-6 3.4 1.4-6.6-5-4.6 6.7-.7L12 2.5Z" />
-    </svg>
-  );
-}
-
 function TrashIcon() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" fill="none">
@@ -1340,13 +1325,7 @@ function FavoritableMenuItem({
         <span className="flex-1">{label}</span>
         {active && <span className="text-xs">✓</span>}
       </button>
-      <button
-        title={favorite ? 'Remove from Favorites' : 'Add to Favorites'}
-        onClick={(e) => { e.stopPropagation(); onToggleFavorite(); }}
-        className="flex-shrink-0 w-6 h-7 flex items-center justify-center rounded text-[var(--text-muted)] hover:text-[#FFC107] group-hover/item:text-white"
-      >
-        {favorite ? <StarFilledIcon /> : <StarIcon />}
-      </button>
+      <FavoriteStarButton favorite={favorite} onToggle={onToggleFavorite} className="group-hover/item:text-white" />
     </div>
   );
 }

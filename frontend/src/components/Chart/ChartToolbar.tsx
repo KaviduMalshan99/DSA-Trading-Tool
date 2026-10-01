@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useChartStore, type ChartType, type OverlayType } from '../../store/chartStore';
+import { useMarketStore, ALL_INTERVALS } from '../../store/marketStore';
 import { TimeframeDropdown } from '../UI/TimeframeDropdown';
 import { IndicatorsDropdown } from '../UI/IndicatorsDropdown';
 import { ReplayControls } from './ReplayControls';
@@ -71,6 +72,36 @@ function ChartTypeToggle() {
   );
 }
 
+// Quick-access pills for the intervals starred in the Timeframe dropdown,
+// ordered by duration (ALL_INTERVALS) rather than the order they were starred.
+function FavoriteIntervalButtons() {
+  const favoriteIntervals = useMarketStore((s) => s.favoriteIntervals);
+  const activeInterval    = useMarketStore((s) => s.activeInterval);
+  const setActiveInterval = useMarketStore((s) => s.setActiveInterval);
+
+  if (favoriteIntervals.length === 0) return null;
+  const sorted = ALL_INTERVALS.filter((iv) => favoriteIntervals.includes(iv));
+
+  return (
+    <div className="flex items-center gap-0.5">
+      {sorted.map((iv) => (
+        <button
+          key={iv}
+          onClick={() => setActiveInterval(iv)}
+          aria-pressed={activeInterval === iv}
+          className={`px-2 py-0.5 rounded text-xs font-medium transition-colors ${
+            activeInterval === iv
+              ? 'bg-[var(--accent)] text-white'
+              : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'
+          }`}
+        >
+          {iv}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function ChartToolbar() {
   const visibleOverlays  = useChartStore((s) => s.visibleOverlays);
   const toggleOverlay    = useChartStore((s) => s.toggleOverlay);
@@ -107,6 +138,7 @@ export function ChartToolbar() {
   return (
     <div className="flex flex-wrap items-center gap-2 px-3 py-1.5 bg-[var(--bg-panel)] border-b border-[var(--border-color)]">
       <TimeframeDropdown />
+      <FavoriteIntervalButtons />
       <ChartTypeToggle />
       <IndicatorsDropdown />
 

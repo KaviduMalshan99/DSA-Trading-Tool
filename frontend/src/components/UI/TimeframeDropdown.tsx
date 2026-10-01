@@ -1,22 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
-import { useMarketStore } from '../../store/marketStore';
-import type { CandleInterval } from '../../types/market';
-
-interface Group {
-  label: string;
-  items: CandleInterval[];
-}
-
-const GROUPS: Group[] = [
-  { label: 'Minutes', items: ['1m', '3m', '5m', '15m', '30m'] },
-  { label: 'Hours',   items: ['1h', '2h', '4h', '6h', '8h', '12h'] },
-  { label: 'Days',    items: ['1d', '3d'] },
-  { label: 'Weeks',   items: ['1w'] },
-  { label: 'Months',  items: ['1M'] },
-];
+import { useMarketStore, INTERVAL_GROUPS } from '../../store/marketStore';
+import { FavoriteStarButton } from './FavoriteStarButton';
 
 export function TimeframeDropdown() {
-  const { activeInterval, setActiveInterval } = useMarketStore();
+  const { activeInterval, setActiveInterval, favoriteIntervals, toggleFavoriteInterval } = useMarketStore();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -51,7 +38,7 @@ export function TimeframeDropdown() {
 
       {open && (
         <div
-          className="absolute top-full left-0 mt-1 z-50 rounded-md border border-[var(--border-color)] bg-[var(--bg-panel-alt)] shadow-2xl py-1 min-w-[110px]"
+          className="absolute top-full left-0 mt-1 z-50 rounded-md border border-[var(--border-color)] bg-[var(--bg-panel-alt)] shadow-2xl py-1 min-w-[130px]"
           style={{ animation: 'tfDropdown 120ms ease-out' }}
         >
           <style>{`
@@ -61,7 +48,7 @@ export function TimeframeDropdown() {
             }
           `}</style>
 
-          {GROUPS.map((group) => (
+          {INTERVAL_GROUPS.map((group) => (
             <div key={group.label}>
               <div className="px-3 pt-2 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)] select-none">
                 {group.label}
@@ -69,17 +56,28 @@ export function TimeframeDropdown() {
               {group.items.map((iv) => {
                 const active = activeInterval === iv;
                 return (
-                  <button
+                  <div
                     key={iv}
-                    onClick={() => { setActiveInterval(iv); setOpen(false); }}
-                    className={`w-full text-left py-1 text-xs transition-colors border-l-2 ${
+                    className={`w-full flex items-center pr-1 transition-colors border-l-2 ${
                       active
-                        ? 'text-[var(--accent)] border-[var(--accent)] bg-[var(--accent)]/20 pl-2.5 pr-3'
-                        : 'text-[var(--text-secondary)] border-transparent hover:bg-[var(--accent)]/15 hover:text-white pl-2.5 pr-3'
+                        ? 'border-[var(--accent)] bg-[var(--accent)]/20'
+                        : 'border-transparent hover:bg-[var(--accent)]/15'
                     }`}
                   >
-                    {iv}
-                  </button>
+                    <button
+                      onClick={() => { setActiveInterval(iv); setOpen(false); }}
+                      className={`flex-1 text-left py-1 pl-2.5 pr-3 text-xs transition-colors ${
+                        active ? 'text-[var(--accent)]' : 'text-[var(--text-secondary)] hover:text-white'
+                      }`}
+                    >
+                      {iv}
+                    </button>
+                    <FavoriteStarButton
+                      favorite={favoriteIntervals.includes(iv)}
+                      onToggle={() => toggleFavoriteInterval(iv)}
+                      className="h-6"
+                    />
+                  </div>
                 );
               })}
             </div>
