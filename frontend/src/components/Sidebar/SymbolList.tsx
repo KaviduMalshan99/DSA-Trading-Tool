@@ -3,6 +3,7 @@ import { useMarketStore } from '../../store/marketStore';
 import { useWatchlistStore } from '../../store/watchlistStore';
 import { api } from '../../services/api';
 import type { MarketType } from '../../types/market';
+import { CoinIcon } from '../UI/CoinIcon';
 
 const MARKETS: MarketType[] = ['crypto', 'forex', 'stocks'];
 const SEARCH_DEBOUNCE_MS = 300;
@@ -108,7 +109,7 @@ export function SymbolList() {
                       : 'text-[var(--text-secondary)] hover:bg-[var(--bg-panel)] border-transparent'
                   }`}
                 >
-                  <span>{sym}</span>
+                  <span className="flex items-center gap-2"><CoinIcon symbol={sym} size={18} /><span>{sym}</span></span>
                   {isSearching && (
                     <button
                       onClick={(e) => { e.stopPropagation(); if (!inWatchlist) addSymbol(sym); }}

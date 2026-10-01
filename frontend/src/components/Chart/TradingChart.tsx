@@ -9,6 +9,7 @@ import { useChartSync } from '../../hooks/useChartSync';
 import { setSeriesData, updateSeriesBar } from '../../utils/chartSeriesFeed';
 import { decimalsForPrice, formatPrice } from '../../utils/priceFormat';
 import type { Candle } from '../../types/market';
+import { CoinIcon } from '../UI/CoinIcon';
 
 function chartThemeOptions(theme: Theme) {
   const grid = theme === 'dark' ? '#161b22' : '#e0e3eb';
@@ -405,8 +406,11 @@ export function TradingChart({ sharedChartRef, sharedSeriesRef, sharedLineSeries
   return (
     <div className="relative w-full h-full z-10">
       <div className="absolute top-2 left-3 z-10 flex items-center gap-3 pointer-events-none select-none">
-        <span className="text-[var(--chart-text)] text-sm font-semibold tracking-wider">
-          {activeSymbol}
+        <span className="flex items-center gap-1.5">
+          <CoinIcon symbol={activeSymbol} size={18} />
+          <span className="text-[var(--chart-text)] text-sm font-semibold tracking-wider">
+            {activeSymbol}
+          </span>
         </span>
         <span className="text-[var(--text-muted)] text-xs">{activeInterval}</span>
         {currentPrice !== null && (
