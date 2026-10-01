@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { useMarketStore } from '../../store/marketStore';
-import { useChartStore } from '../../store/chartStore';
 import { formatPrice } from '../../utils/priceFormat';
 
 interface Ticker24hr {
@@ -14,7 +13,6 @@ interface Ticker24hr {
 
 export function MarketInfo() {
   const { activeSymbol } = useMarketStore();
-  const crosshairPrice = useChartStore((s) => s.crosshairPrice);
   const [ticker, setTicker] = useState<Ticker24hr | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -47,7 +45,7 @@ export function MarketInfo() {
 
   const fmt = formatPrice;
 
-  const displayPrice = crosshairPrice ?? price;
+  const displayPrice = price;
 
   return (
     <div className="p-3 border-b border-[var(--border-color)] bg-[var(--bg-app)]">
