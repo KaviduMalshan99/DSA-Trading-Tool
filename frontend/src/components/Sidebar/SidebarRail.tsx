@@ -1,3 +1,5 @@
+import { SHOW_DOM_PANEL, SHOW_TAPE_PANEL } from '../../config/topBarVisibility';
+
 interface Props {
   open: boolean;
   onToggle: () => void;
@@ -55,24 +57,28 @@ export function SidebarRail({ open, onToggle, domOpen, onToggleDom, tapeOpen, on
       >
         <WatchlistIcon />
       </button>
-      <button
-        onClick={onToggleDom}
-        title="DOM (Depth of Market)"
-        className={`w-9 h-9 flex items-center justify-center rounded transition-colors ${
-          domOpen ? 'bg-blue-600 text-white' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'
-        }`}
-      >
-        <DomIcon />
-      </button>
-      <button
-        onClick={onToggleTape}
-        title="Tape (Time & Sales)"
-        className={`w-9 h-9 flex items-center justify-center rounded transition-colors ${
-          tapeOpen ? 'bg-blue-600 text-white' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'
-        }`}
-      >
-        <TapeIcon />
-      </button>
+      {SHOW_DOM_PANEL && (
+        <button
+          onClick={onToggleDom}
+          title="DOM (Depth of Market)"
+          className={`w-9 h-9 flex items-center justify-center rounded transition-colors ${
+            domOpen ? 'bg-blue-600 text-white' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'
+          }`}
+        >
+          <DomIcon />
+        </button>
+      )}
+      {SHOW_TAPE_PANEL && (
+        <button
+          onClick={onToggleTape}
+          title="Tape (Time & Sales)"
+          className={`w-9 h-9 flex items-center justify-center rounded transition-colors ${
+            tapeOpen ? 'bg-blue-600 text-white' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'
+          }`}
+        >
+          <TapeIcon />
+        </button>
+      )}
     </div>
   );
 }

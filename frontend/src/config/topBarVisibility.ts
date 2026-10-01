@@ -23,3 +23,9 @@ export const isOverlayVisible = (k: OverlayType) => VISIBLE_OVERLAYS.includes(k)
  * overlays read — turn this on before releasing any of those.
  */
 export const SHOW_DELTA_PANEL = false;
+
+/** Whether the DOM (Depth of Market) rail button + side panel are available. */
+export const SHOW_DOM_PANEL = false;
+
+/** Whether the Tape (Time & Sales) rail button + side panel are available. */
+export const SHOW_TAPE_PANEL = false;

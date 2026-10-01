@@ -12,6 +12,7 @@ import { TapePanel } from './components/Overlay/TapePanel';
 import { AlertsEngine } from './components/UI/AlertsEngine';
 import { ToastStack } from './components/UI/ToastStack';
 import { useChartStore } from './store/chartStore';
+import { SHOW_DOM_PANEL, SHOW_TAPE_PANEL } from './config/topBarVisibility';
 
 export default function App() {
   const whaleActive = useChartStore((s) => s.visibleOverlays.has('whaleMarkers'));
@@ -45,12 +46,12 @@ export default function App() {
             {whaleActive && <WhaleTicker />}
           </aside>
         )}
-        {domOpen && (
+        {SHOW_DOM_PANEL && domOpen && (
           <aside className="w-56 flex flex-col flex-shrink-0 border-l border-[var(--border-color)]">
             <DOMPanel />
           </aside>
         )}
-        {tapeOpen && (
+        {SHOW_TAPE_PANEL && tapeOpen && (
           <aside className="w-56 flex flex-col flex-shrink-0 border-l border-[var(--border-color)]">
             <TapePanel />
           </aside>
