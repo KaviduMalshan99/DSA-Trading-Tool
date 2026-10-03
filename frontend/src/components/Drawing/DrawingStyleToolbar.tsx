@@ -20,6 +20,48 @@ function isPositionDrawing(d: Drawing): d is PositionDrawing {
   return d.type === 'longPosition' || d.type === 'shortPosition';
 }
 
+type DrawingType = Drawing['type'];
+type DrawingOfType<T extends DrawingType> = Extract<Drawing, { type: T }>;
+
+// Type-guard membership test over a readonly type list — narrows `d` to the
+// union members whose `type` is in `types` (and excludes them on false), so
+// long `a === 'x' || a === 'y' || ...` chains stay type-safe as they grow.
+function isDrawingOfType<T extends DrawingType>(d: Drawing, types: readonly T[]): d is DrawingOfType<T> {
+  return (types as readonly DrawingType[]).includes(d.type);
+}
+
+// Toolbar anchor-shape groups (positioning only — controls are picked below).
+const TWO_POINT_TYPES = [
+  'trendline', 'arrow', 'priceNote',
+  'ray', 'extendedLine', 'infoLine', 'trendAngle',
+  'fibTimeZone', 'fibSpeedFan', 'fibCircles', 'fibSpiral', 'fibSpeedArcs',
+  'gannFan', 'gannBox', 'gannSquare',
+  'cyclicLines', 'timeCycles', 'sineLine', 'barsPattern',
+] as const;
+const THREE_POINT_TYPES = [
+  'trendFibExtension', 'sector', 'positionForecast',
+  'fibWedge', 'pitchfan', 'arc', 'curve', 'doubleCurve',
+] as const;
+const POINTS_ARRAY_TYPES = [
+  'path', 'brush',
+  'polyline', 'highlighter', 'abcd', 'xabcd', 'cypher', 'threeDrives', 'headShoulders',
+] as const;
+const SINGLE_ANCHOR_TYPES = ['text', 'crossline'] as const;
+
+// Every drawing type the style toolbar is shown for. Anything not listed here
+// (and not a fib/shape/stamp/table/position with its own branch) falls through
+// to the plain LineStyle controls, so additions must extend LineStyle.
+const STYLE_TOOLBAR_TYPES = [
+  ...TWO_POINT_TYPES, ...THREE_POINT_TYPES, ...POINTS_ARRAY_TYPES, ...SINGLE_ANCHOR_TYPES,
+  'hline', 'hray', 'vline',
+  'fibonacci', 'fibExtension', 'fibChannel',
+  'rectangle', 'rotatedRectangle', 'circle',
+  'arrowMark', 'table',
+  'priceRange', 'dateRange', 'datePriceRange',
+  'longPosition', 'shortPosition',
+  'disjointChannel',
+] as const;
+
 interface Props {
   sharedChartRef:  React.RefObject<IChartApi | null>;
   sharedSeriesRef: React.RefObject<ISeriesApi<'Candlestick'> | null>;
@@ -40,7 +82,7 @@ export const DrawingStyleToolbar = memo(function DrawingStyleToolbar({ sharedCha
     const series = sharedSeriesRef.current;
     if (!chart || !series || !selected) { setPos(null); return; }
 
-    if (selected.type === 'trendline' || selected.type === 'arrow' || selected.type === 'priceNote') {
+    if (isDrawingOfType(selected, TWO_POINT_TYPES)) {
       const x1 = timeToX(chart, selected.time1);
       const y1 = priceToY(series, selected.price1);
       const x2 = timeToX(chart, selected.time2);
@@ -87,7 +129,7 @@ export const DrawingStyleToolbar = memo(function DrawingStyleToolbar({ sharedCha
       return;
     }
 
-    if (selected.type === 'trendFibExtension') {
+    if (isDrawingOfType(selected, THREE_POINT_TYPES)) {
       const x1 = timeToX(chart, selected.time1), y1 = priceToY(series, selected.price1);
       const x2 = timeToX(chart, selected.time2), y2 = priceToY(series, selected.price2);
       const x3 = timeToX(chart, selected.time3), y3 = priceToY(series, selected.price3);
@@ -96,21 +138,18 @@ export const DrawingStyleToolbar = memo(function DrawingStyleToolbar({ sharedCha
       return;
     }
 
-    if (selected.type === 'sector') {
-      const x1 = timeToX(chart, selected.time1), y1 = priceToY(series, selected.price1);
-      const x2 = timeToX(chart, selected.time2), y2 = priceToY(series, selected.price2);
-      const x3 = timeToX(chart, selected.time3), y3 = priceToY(series, selected.price3);
-      if (x1 == null || y1 == null || x2 == null || y2 == null || x3 == null || y3 == null) { setPos(null); return; }
-      setPos({ x: (x1 + x2 + x3) / 3, y: Math.min(y1, y2, y3) - 46 });
-      return;
-    }
-
-    if (selected.type === 'positionForecast') {
-      const x1 = timeToX(chart, selected.time1), y1 = priceToY(series, selected.price1);
-      const x2 = timeToX(chart, selected.time2), y2 = priceToY(series, selected.price2);
-      const x3 = timeToX(chart, selected.time3), y3 = priceToY(series, selected.price3);
-      if (x1 == null || y1 == null || x2 == null || y2 == null || x3 == null || y3 == null) { setPos(null); return; }
-      setPos({ x: (x1 + x2 + x3) / 3, y: Math.min(y1, y2, y3) - 46 });
+    if (selected.type === 'disjointChannel') {
+      const xs = [
+        timeToX(chart, selected.timeA1), timeToX(chart, selected.timeA2),
+        timeToX(chart, selected.timeB1), timeToX(chart, selected.timeB2),
+      ];
+      const ys = [
+        priceToY(series, selected.priceA1), priceToY(series, selected.priceA2),
+        priceToY(series, selected.priceB1), priceToY(series, selected.priceB2),
+      ];
+      if (xs.some((v) => v == null) || ys.some((v) => v == null)) { setPos(null); return; }
+      const xn = xs as number[], yn = ys as number[];
+      setPos({ x: xn.reduce((s, v) => s + v, 0) / 4, y: Math.min(...yn) - 46 });
       return;
     }
 
@@ -172,7 +211,7 @@ export const DrawingStyleToolbar = memo(function DrawingStyleToolbar({ sharedCha
       return;
     }
 
-    if (selected.type === 'path' || selected.type === 'brush') {
+    if (isDrawingOfType(selected, POINTS_ARRAY_TYPES)) {
       const pts = selected.points
         .map((p) => ({ x: timeToX(chart, p.time), y: priceToY(series, p.price) }))
         .filter((p): p is { x: number; y: number } => p.x != null && p.y != null);
@@ -192,7 +231,7 @@ export const DrawingStyleToolbar = memo(function DrawingStyleToolbar({ sharedCha
       return;
     }
 
-    if (selected.type === 'text') {
+    if (isDrawingOfType(selected, SINGLE_ANCHOR_TYPES)) {
       const x = timeToX(chart, selected.time);
       const y = priceToY(series, selected.price);
       if (x == null || y == null) { setPos(null); return; }
@@ -233,14 +272,7 @@ export const DrawingStyleToolbar = memo(function DrawingStyleToolbar({ sharedCha
   }, [openMenu]);
 
   if (!pos || !selected || drawingsHidden || drawingsLocked) return null;
-  if (selected.type !== 'trendline' && selected.type !== 'hline' && selected.type !== 'hray' &&
-      selected.type !== 'vline' && selected.type !== 'fibonacci' && selected.type !== 'fibExtension' &&
-      selected.type !== 'trendFibExtension' && selected.type !== 'fibChannel' && selected.type !== 'rectangle' &&
-      selected.type !== 'rotatedRectangle' && selected.type !== 'circle' && selected.type !== 'path' &&
-      selected.type !== 'brush' && selected.type !== 'arrow' && selected.type !== 'arrowMark' &&
-      selected.type !== 'text' && selected.type !== 'priceNote' && selected.type !== 'priceRange' &&
-      selected.type !== 'dateRange' && selected.type !== 'datePriceRange' && selected.type !== 'sector' &&
-      selected.type !== 'positionForecast' && selected.type !== 'table' && !isPositionDrawing(selected)) return null;
+  if (!isDrawingOfType(selected, STYLE_TOOLBAR_TYPES)) return null;
 
   const toolbarStyle: React.CSSProperties = {
     left: Math.max(4, pos.x),
@@ -447,7 +479,9 @@ export const DrawingStyleToolbar = memo(function DrawingStyleToolbar({ sharedCha
     );
   }
 
-  // trendline / hline / hray / vline / path / brush / arrow / priceRange / dateRange / datePriceRange — plain line style
+  // Everything left is a plain LineStyle drawing (lines, ranges, paths/brushes,
+  // fib/gann/cycle line tools, patterns, crossline, disjointChannel). The field
+  // reads below only type-check because every remaining member extends LineStyle.
   const defaultColor = '#2196F3';
   const color   = selected.color   ?? defaultColor;
   const width   = selected.width   ?? 1.5;
@@ -464,7 +498,7 @@ export const DrawingStyleToolbar = memo(function DrawingStyleToolbar({ sharedCha
       {!(selected.type === 'arrow' && selected.variant === 'marker') && (
         <MiniWidthPicker width={width} onChange={(w) => updateDrawing(selected.id, { width: w })} />
       )}
-      {selected.type !== 'brush' && !(selected.type === 'arrow' && selected.variant === 'marker') && (
+      {selected.type !== 'brush' && selected.type !== 'highlighter' && !(selected.type === 'arrow' && selected.variant === 'marker') && (
         <MiniDashPicker dash={dash} onChange={(d) => updateDrawing(selected.id, { dash: d })} />
       )}
 
