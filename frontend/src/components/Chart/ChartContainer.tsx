@@ -185,9 +185,9 @@ export function ChartContainer({ sharedChartRef, sharedSeriesRef, chartAreaRef }
         {visibleOverlays.has('checklist') && <TradeChecklist />}
         {visibleOverlays.has('scanner') && <ClusterScanner />}
 
-        {/* Right-click menu (Remove tools/indicators, Reset chart, Settings) —
+        {/* Right-click menu (Copy/Paste, Remove tools/indicators, Reset chart, Settings) —
             listens for contextmenu on this div, renders portalled to body. */}
-        <ChartContextMenu sharedChartRef={sharedChartRef} chartAreaRef={chartAreaRef} />
+        <ChartContextMenu sharedChartRef={sharedChartRef} sharedSeriesRef={sharedSeriesRef} chartAreaRef={chartAreaRef} />
       </div>
 
       {/* Indicator sub-panel (RSI / Stoch RSI / MACD) with its resize divider —

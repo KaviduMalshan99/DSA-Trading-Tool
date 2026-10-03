@@ -1,10 +1,10 @@
 import { useEffect, useRef, useCallback, useState, memo } from 'react';
 import type { IChartApi, ISeriesApi } from 'lightweight-charts';
-import { useDrawingStore, type Drawing, type DrawingTool, type FibTool, type PatternType } from '../../store/drawingStore';
+import { useDrawingStore, newDrawingId, type Drawing, type DrawingTool, type FibTool, type PatternType } from '../../store/drawingStore';
 import { useMarketStore } from '../../store/marketStore';
 import { useCandleStyleStore } from '../../store/candleStyleStore';
 import { toChartTimeSeconds, getChartTzOffsetSeconds } from '../../utils/chartTime';
-import { shiftDrawingTimes } from '../../utils/drawingTimeShift';
+import { firstPriceAnchor, shiftDrawingTimes } from '../../utils/drawingTimeShift';
 import { computeSessionVWAPFromCandles } from '../../utils/klineAnalytics';
 import { decimalsForPrice } from '../../utils/priceFormat';
 import type { Candle } from '../../types/market';
@@ -372,7 +372,7 @@ type LWLogical = import('lightweight-charts').Logical;
 let latestCandlesForExtrapolation: Candle[] = [];
 
 // Bar spacing in seconds, inferred from the last two loaded candles.
-function estimateBarIntervalSec(candles: Candle[]): number | null {
+export function estimateBarIntervalSec(candles: Candle[]): number | null {
   if (candles.length < 2) return null;
   const last = candles[candles.length - 1];
   const prev = candles[candles.length - 2];
@@ -449,6 +449,26 @@ function hexToRgba(hex: string, opacityPct: number): string {
 function yToPrice(series: ISeriesApi<'Candlestick'>, y: number): number | null {
   const p = series.coordinateToPrice(y);
   return p == null ? null : (p as unknown as number);
+}
+
+// Copy/paste offset per paste step: 5 bars right and ~20px up, sized in pixels
+// at the current scale (priceToY/yToPrice follow log mode) so it's always visible.
+const PASTE_OFFSET_BARS = 5;
+const PASTE_OFFSET_PX = 20;
+
+/** Paste the drawing clipboard with a visible offset — shared by Ctrl/Cmd+V and the context menu. */
+export function pasteDrawings(series: ISeriesApi<'Candlestick'> | null): void {
+  const store = useDrawingStore.getState();
+  if (!store.clipboard.length || store.drawingsLocked) return;
+  const dt = (estimateBarIntervalSec(useMarketStore.getState().candles) ?? 60) * PASTE_OFFSET_BARS;
+  let dPrice = 0;
+  const anchor = firstPriceAnchor(store.clipboard[0]);
+  if (series && anchor != null) {
+    const y = priceToY(series, anchor);
+    const shifted = y == null ? null : yToPrice(series, y - PASTE_OFFSET_PX);
+    if (shifted != null) dPrice = shifted - anchor;
+  }
+  store.pasteClipboard(dt, dPrice);
 }
 
 function xToTime(chart: IChartApi, x: number): number | null {
@@ -4573,7 +4593,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
   const {
     activeTool, drawings, selectedIds, magnetEnabled, lastCursorMode,
     keepToolActive, drawingsLocked, drawingsHidden,
-    addDrawing, updateDrawing, deleteDrawing, deleteDrawings, selectDrawing, toggleSelection, setTool, undo, redo,
+    addDrawing, updateDrawing, deleteDrawing, deleteDrawings, copySelected, selectDrawing, toggleSelection, setTool, undo, redo,
   } = useDrawingStore();
   const mousePosRef = useRef<{ x: number; y: number; inside: boolean }>({ x: 0, y: 0, inside: false });
   const hoverPriceRef = useRef<number | null>(null);
@@ -5257,7 +5277,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
         })
         .filter((p): p is { price: number; time: number } => p != null);
       if (pts.length >= 2) {
-        const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        const id = newDrawingId();
         // Highlighter's only difference from Brush: thicker + translucent
         // creation defaults (still just ordinary LineStyle fields the user
         // can override afterward via the style toolbar like any other tool).
@@ -5390,7 +5410,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
 
     if (price1 == null || time1 == null) return;
 
-    const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const id = newDrawingId();
     if (tool === 'trendline') {
       if (price2 == null || time2 == null) return;
       addDrawing({ id, type: 'trendline', price1, time1, price2, time2 });
@@ -6701,6 +6721,16 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
         const sel = selectedIdsRef.current;
         if (sel.length && !drawingsLockedRef.current) deleteDrawings(sel);
+      } else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && (e.key === 'c' || e.key === 'C')) {
+        // Only claim the shortcut with drawings selected, so page-text copy still works.
+        if (!selectedIdsRef.current.length) return;
+        e.preventDefault();
+        copySelected();
+      } else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && (e.key === 'v' || e.key === 'V')) {
+        if (!useDrawingStore.getState().clipboard.length || drawingsLockedRef.current) return;
+        if (drawingRef.current.active || freeformRef.current.active) return;
+        e.preventDefault();
+        pasteDrawings(sharedSeriesRef.current);
       } else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && (e.key === 'z' || e.key === 'Z')) {
         // Mid-placement (multi-click shape or brush stroke in progress): treat
         // Ctrl+Z as a clean cancel of that in-progress shape, same as Escape,
@@ -6729,7 +6759,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [deleteDrawings, scheduleRender, undo, redo, selectDrawing]);
+  }, [deleteDrawings, scheduleRender, undo, redo, selectDrawing, copySelected, sharedSeriesRef]);
 
   // Trendline/hline/rectangle/fibonacci/eraser capture all events (chart
   // pan/zoom blocked — intentional while placing points or erasing).

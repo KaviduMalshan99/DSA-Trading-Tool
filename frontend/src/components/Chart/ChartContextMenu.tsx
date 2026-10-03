@@ -1,14 +1,16 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { type IChartApi } from 'lightweight-charts';
+import { type IChartApi, type ISeriesApi } from 'lightweight-charts';
 import { useChartStore } from '../../store/chartStore';
 import { useDrawingStore } from '../../store/drawingStore';
 import { useIndicatorStore } from '../../store/indicatorStore';
 import { useMarketStore } from '../../store/marketStore';
+import { pasteDrawings } from '../Drawing/DrawingCanvas';
 import { nudgeRedraw } from './PriceScaleButtons';
 
 interface ChartContextMenuProps {
   sharedChartRef: React.RefObject<IChartApi | null>;
+  sharedSeriesRef: React.RefObject<ISeriesApi<'Candlestick'> | null>;
   chartAreaRef: React.RefObject<HTMLDivElement>;
 }
 
@@ -25,7 +27,7 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
  * (over candles, drawings or empty space); the drawing text editor keeps the
  * browser's native menu so copy/paste still works there.
  */
-export function ChartContextMenu({ sharedChartRef, chartAreaRef }: ChartContextMenuProps) {
+export function ChartContextMenu({ sharedChartRef, sharedSeriesRef, chartAreaRef }: ChartContextMenuProps) {
   const [anchor, setAnchor] = useState<{ x: number; y: number } | null>(null);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -33,6 +35,9 @@ export function ChartContextMenu({ sharedChartRef, chartAreaRef }: ChartContextM
   const drawingCount = useDrawingStore((s) => s.drawings.length);
   const drawingsLocked = useDrawingStore((s) => s.drawingsLocked);
   const clearAll = useDrawingStore((s) => s.clearAll);
+  const selectedCount = useDrawingStore((s) => s.selectedIds.length);
+  const clipboardCount = useDrawingStore((s) => s.clipboard.length);
+  const copySelected = useDrawingStore((s) => s.copySelected);
   const indicatorCount = useIndicatorStore((s) => s.activeIndicators.size + (s.activeSubPanel ? 1 : 0));
   const clearAllIndicators = useIndicatorStore((s) => s.clearAllIndicators);
   const setSettingsOpen = useChartStore((s) => s.setSettingsOpen);
@@ -115,6 +120,13 @@ export function ChartContextMenu({ sharedChartRef, chartAreaRef }: ChartContextM
   };
 
   const items: { key: string; label: string; disabled: boolean; run: () => void }[] = [
+    { key: 'copy', label: 'Copy', disabled: selectedCount === 0, run: copySelected },
+    {
+      key: 'paste',
+      label: 'Paste',
+      disabled: clipboardCount === 0 || drawingsLocked,
+      run: () => pasteDrawings(sharedSeriesRef.current),
+    },
     {
       key: 'tools',
       label: `Remove ${plural(drawingCount, 'tool')}`,
@@ -152,7 +164,7 @@ export function ChartContextMenu({ sharedChartRef, chartAreaRef }: ChartContextM
     >
       {items.map(({ key, label, disabled, run }, i) => (
         <div key={key}>
-          {key === 'settings' && i > 0 && <div className="my-1 border-t border-[var(--border-color)]" />}
+          {(key === 'tools' || key === 'settings') && i > 0 && <div className="my-1 border-t border-[var(--border-color)]" />}
           <button
             type="button"
             disabled={disabled}

@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { shiftDrawingPrices, shiftDrawingTimes } from '../utils/drawingTimeShift';
 
 // The five cursor options exposed in the TradingView-style toolbar.
 export type CursorMode = 'cross' | 'dot' | 'arrow' | 'demonstration' | 'eraser';
@@ -1007,12 +1008,18 @@ interface DrawingState {
   // `drawings` here before restoring; any new mutation clears it.
   redoStack: Drawing[][];
   selectedIds: string[];
+  // Deep copies taken by Copy (Ctrl/Cmd+C); session-only, never persisted.
+  clipboard: Drawing[];
 
   setTool: (tool: DrawingTool) => void;
   addDrawing: (drawing: Drawing) => void;
   updateDrawing: (id: string, patch: Partial<Drawing>) => void;
   deleteDrawing: (id: string) => void;
   deleteDrawings: (ids: string[]) => void;
+  copySelected: () => void;
+  // Pastes the clipboard offset by `n × (dt, dPrice)`, where n counts pastes
+  // since the last copy — repeated pastes step further instead of stacking.
+  pasteClipboard: (dt: number, dPrice: number) => void;
   // Replaces the selection (null clears it).
   selectDrawing: (id: string | null) => void;
   toggleSelection: (id: string) => void;
@@ -1081,6 +1088,13 @@ function pushHistory(history: Drawing[][], snapshot: Drawing[]): Drawing[][] {
 const COALESCE_WINDOW_MS = 400;
 let lastMutation: { id: string; at: number } | null = null;
 
+// Pastes since the last Copy — scales the paste offset.
+let pasteCount = 0;
+
+export function newDrawingId(): string {
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
 function pushHistoryFor(history: Drawing[][], snapshot: Drawing[], id: string): Drawing[][] {
   const now = Date.now();
   const coalesce = lastMutation != null && lastMutation.id === id && now - lastMutation.at < COALESCE_WINDOW_MS;
@@ -1112,6 +1126,7 @@ export const useDrawingStore = create<DrawingState>((set) => ({
   history: [],
   redoStack: [],
   selectedIds: [],
+  clipboard: [],
 
   setTool: (tool) =>
     set((s) => {
@@ -1174,6 +1189,27 @@ export const useDrawingStore = create<DrawingState>((set) => ({
         redoStack: [],
         drawings: s.drawings.filter((d) => !kill.has(d.id)),
         selectedIds: s.selectedIds.filter((x) => !kill.has(x)),
+      };
+    }),
+  copySelected: () =>
+    set((s) => {
+      if (!s.selectedIds.length) return {};
+      pasteCount = 0;
+      return { clipboard: s.drawings.filter((d) => s.selectedIds.includes(d.id)).map((d) => structuredClone(d)) };
+    }),
+  // One history snapshot for all clones (one undo), and the clones become the selection.
+  pasteClipboard: (dt, dPrice) =>
+    set((s) => {
+      if (!s.clipboard.length) return {};
+      lastMutation = null;
+      pasteCount += 1;
+      const shifted = shiftDrawingPrices(shiftDrawingTimes(s.clipboard, dt * pasteCount), dPrice * pasteCount);
+      const clones = shifted.map((d) => ({ ...structuredClone(d), id: newDrawingId() }) as Drawing);
+      return {
+        history: pushHistory(s.history, s.drawings),
+        redoStack: [],
+        drawings: [...s.drawings, ...clones],
+        selectedIds: clones.map((d) => d.id),
       };
     }),
   selectDrawing: (id) => set({ selectedIds: id ? [id] : [] }),

@@ -28,3 +28,46 @@ export function shiftDrawingTimes(drawings: Drawing[], deltaSeconds: number): Dr
     return out as unknown as Drawing;
   });
 }
+
+// Price anchors by the same convention: price, price1/2/3, priceA1/…, plus the
+// position tools' entry/target/stop prices.
+const PRICE_KEY = /^(price(\d+|[A-Z]\w*)?|entryPrice|targetPrice|stopPrice)$/;
+
+/**
+ * Price counterpart of shiftDrawingTimes: every price anchor (top-level price*
+ * keys, entry/target/stop prices and points[i].price) shifted by `delta`.
+ */
+export function shiftDrawingPrices(drawings: Drawing[], delta: number): Drawing[] {
+  return drawings.map((d) => {
+    const src = d as unknown as Record<string, unknown>;
+    const out: Record<string, unknown> = { ...src };
+    for (const key of Object.keys(src)) {
+      const v = src[key];
+      if (PRICE_KEY.test(key) && typeof v === 'number') {
+        out[key] = v + delta;
+      } else if (key === 'points' && Array.isArray(v)) {
+        out[key] = v.map((p) =>
+          p && typeof p === 'object' && typeof (p as { price?: unknown }).price === 'number'
+            ? { ...p, price: (p as { price: number }).price + delta }
+            : p,
+        );
+      }
+    }
+    return out as unknown as Drawing;
+  });
+}
+
+/** The first price anchor found on a drawing (used to size pixel offsets), or null. */
+export function firstPriceAnchor(d: Drawing): number | null {
+  const src = d as unknown as Record<string, unknown>;
+  for (const key of Object.keys(src)) {
+    const v = src[key];
+    if (PRICE_KEY.test(key) && typeof v === 'number') return v;
+  }
+  const pts = src.points;
+  if (Array.isArray(pts)) {
+    const p = pts.find((q) => q && typeof (q as { price?: unknown }).price === 'number') as { price: number } | undefined;
+    if (p) return p.price;
+  }
+  return null;
+}
