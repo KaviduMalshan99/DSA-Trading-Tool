@@ -38,6 +38,9 @@ interface ChartState {
   // Main chart's right price scale: logarithmic vs linear. Persisted. (Auto-scale
   // is transient view state and lives on the chart itself, not here.)
   logScale: boolean;
+  // Chart Settings modal open state — in the store so both the toolbar gear and
+  // the chart's right-click menu can open it.
+  settingsOpen: boolean;
 
   toggleOverlay: (overlay: OverlayType) => void;
   setVisibleRange: (from: number, to: number) => void;
@@ -46,6 +49,7 @@ interface ChartState {
   setStackSize: (size: number) => void;
   setChartType: (type: ChartType) => void;
   setLogScale: (v: boolean) => void;
+  setSettingsOpen: (v: boolean) => void;
 }
 
 export const useChartStore = create<ChartState>((set) => ({
@@ -60,6 +64,7 @@ export const useChartStore = create<ChartState>((set) => ({
   stackSize: 3,
   chartType: 'candle',
   logScale: loadInitialLogScale(),
+  settingsOpen: false,
 
   toggleOverlay: (overlay) =>
     set((state) => {
@@ -82,4 +87,5 @@ export const useChartStore = create<ChartState>((set) => ({
     set({ logScale });
     try { localStorage.setItem(LOG_SCALE_KEY, String(logScale)); } catch { /* ignore */ }
   },
+  setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
 }));

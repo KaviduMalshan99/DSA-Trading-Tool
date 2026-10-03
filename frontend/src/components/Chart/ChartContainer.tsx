@@ -28,6 +28,7 @@ import { ClusterScanner } from '../Overlay/ClusterScanner';
 import { DrawingToolbar } from '../Drawing/DrawingToolbar';
 import { DrawingCanvas } from '../Drawing/DrawingCanvas';
 import { PriceScaleButtons } from './PriceScaleButtons';
+import { ChartContextMenu } from './ChartContextMenu';
 import { DrawingStyleToolbar } from '../Drawing/DrawingStyleToolbar';
 import { FavoritesToolbar } from '../Drawing/FavoritesToolbar';
 import { SHOW_DELTA_PANEL } from '../../config/topBarVisibility';
@@ -183,6 +184,10 @@ export function ChartContainer({ sharedChartRef, sharedSeriesRef, chartAreaRef }
         {visibleOverlays.has('execution') && <ExecutionDashboard />}
         {visibleOverlays.has('checklist') && <TradeChecklist />}
         {visibleOverlays.has('scanner') && <ClusterScanner />}
+
+        {/* Right-click menu (Remove tools/indicators, Reset chart, Settings) —
+            listens for contextmenu on this div, renders portalled to body. */}
+        <ChartContextMenu sharedChartRef={sharedChartRef} chartAreaRef={chartAreaRef} />
       </div>
 
       {/* Indicator sub-panel (RSI / Stoch RSI / MACD) with its resize divider —

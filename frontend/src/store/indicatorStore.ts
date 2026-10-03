@@ -77,6 +77,8 @@ interface IndicatorState {
   /** Selecting a panel indicator swaps out any other; selecting the active one hides the panel. */
   toggleSubPanel: (indicator: SubPanelIndicator) => void;
   toggleFavoriteIndicator: (key: IndicatorKey) => void;
+  /** Turns off every main-chart indicator and the sub-panel (favorites/ratio untouched). */
+  clearAllIndicators: () => void;
   /** Live update (called every frame while dragging the divider) — does not persist. */
   setSubPanelRatio: (ratio: number) => void;
   /** Writes the current ratio to localStorage — called once when the drag ends. */
@@ -113,6 +115,8 @@ export const useIndicatorStore = create<IndicatorState>((set, get) => ({
     set({ favoriteIndicators: next });
     try { localStorage.setItem(FAV_INDICATORS_KEY, JSON.stringify(next)); } catch { /* ignore */ }
   },
+
+  clearAllIndicators: () => set({ activeIndicators: new Set<IndicatorType>(), activeSubPanel: null }),
 
   setSubPanelRatio: (ratio) => set({ subPanelRatio: clampSubPanelRatio(ratio) }),
 

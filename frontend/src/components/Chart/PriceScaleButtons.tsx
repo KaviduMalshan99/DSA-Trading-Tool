@@ -11,7 +11,7 @@ const ACCENT = '#2196F3';
 const FALLBACK_SIZE = { width: 72, height: 26 };
 
 /** No-op logical-range change so canvas overlays/drawings re-map prices. */
-function nudgeRedraw(chart: IChartApi) {
+export function nudgeRedraw(chart: IChartApi) {
   const ts = chart.timeScale();
   const r = ts.getVisibleLogicalRange();
   if (r) {

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { IChartApi } from 'lightweight-charts';
 import { useMarketStore } from '../../store/marketStore';
 import { useDrawingStore } from '../../store/drawingStore';
+import { useChartStore } from '../../store/chartStore';
 import { captureChartSnapshot, canvasToBlob, downloadCanvas } from '../../utils/chartSnapshot';
 import { ChartSettingsModal } from './ChartSettingsModal';
 import { PositionCalculator } from './PositionCalculator';
@@ -197,7 +198,8 @@ function FullscreenButton() {
 }
 
 export function Toolbar({ chartRef, chartAreaRef }: ToolbarProps) {
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const settingsOpen = useChartStore((s) => s.settingsOpen);
+  const setSettingsOpen = useChartStore((s) => s.setSettingsOpen);
   const [calcOpen, setCalcOpen] = useState(false);
   const [alertsOpen, setAlertsOpen] = useState(false);
   const canUndo = useDrawingStore((s) => s.history.length > 0 && !s.drawingsLocked);

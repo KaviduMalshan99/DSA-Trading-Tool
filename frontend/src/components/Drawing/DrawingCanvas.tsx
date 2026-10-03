@@ -5274,6 +5274,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
   }, [sharedChartRef, sharedSeriesRef, addDrawing, selectDrawing, scheduleRender, setTool]);
 
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (e.button !== 0) return; // right/middle click never draws, drags or deselects
     const tool = activeToolRef.current;
     const chart  = sharedChartRef.current;
     const series = sharedSeriesRef.current;
@@ -6137,6 +6138,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
     };
 
     const onWinDownCapture = (e: MouseEvent) => {
+      if (e.button !== 0) return; // right/middle click never draws, drags or deselects
       // Ctrl/Cmd+click toggles selection (onWinDown) — never starts a drag.
       if (e.ctrlKey || e.metaKey) return;
       if (isOverlayTarget(e)) return;
@@ -6565,6 +6567,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
     };
 
     const onWinDown = (e: MouseEvent) => {
+      if (e.button !== 0) return; // right/middle click never draws, drags or deselects
       if (dragRef.current?.active) return; // handled by onWinDownCapture
       if (isOverlayTarget(e)) return;
       if (!isOverChart(e)) return; // e.g. a dropdown/menu drawn over the chart
