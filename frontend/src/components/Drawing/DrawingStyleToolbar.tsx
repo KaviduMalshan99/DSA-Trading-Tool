@@ -39,7 +39,7 @@ const TWO_POINT_TYPES = [
   'cyclicLines', 'timeCycles', 'sineLine', 'barsPattern',
 ] as const;
 const THREE_POINT_TYPES = [
-  'trendFibExtension', 'sector', 'positionForecast',
+  'trendFibExtension', 'sector', 'positionForecast', 'triangle',
   'fibWedge', 'pitchfan', 'arc', 'curve', 'doubleCurve',
 ] as const;
 const POINTS_ARRAY_TYPES = [
@@ -48,6 +48,16 @@ const POINTS_ARRAY_TYPES = [
 ] as const;
 const SINGLE_ANCHOR_TYPES = ['text', 'crossline'] as const;
 
+// Non-LineStyle single-anchor stamps with their own control branches below.
+// Defaults mirror the render branches in DrawingCanvas.tsx.
+const STAMP_TYPES = ['pin', 'flagMark'] as const; // color + size
+const COLOR_ONLY_TYPES = ['priceLabel', 'signpost', 'ghostFeed', 'note', 'callout', 'comment'] as const;
+const STAMP_DEFAULT_COLOR: Record<(typeof STAMP_TYPES)[number] | (typeof COLOR_ONLY_TYPES)[number], string> = {
+  pin: '#F23645', flagMark: '#2196F3',
+  priceLabel: '#2196F3', signpost: '#2196F3', ghostFeed: '#9E9E9E',
+  note: '#F4B400', callout: '#2196F3', comment: '#2196F3',
+};
+
 // Every drawing type the style toolbar is shown for. Anything not listed here
 // (and not a fib/shape/stamp/table/position with its own branch) falls through
 // to the plain LineStyle controls, so additions must extend LineStyle.
@@ -55,8 +65,9 @@ const STYLE_TOOLBAR_TYPES = [
   ...TWO_POINT_TYPES, ...THREE_POINT_TYPES, ...POINTS_ARRAY_TYPES, ...SINGLE_ANCHOR_TYPES,
   'hline', 'hray', 'vline',
   'fibonacci', 'fibExtension', 'fibChannel',
-  'rectangle', 'rotatedRectangle', 'circle',
+  'rectangle', 'rotatedRectangle', 'circle', 'ellipse',
   'arrowMark', 'table',
+  ...STAMP_TYPES, ...COLOR_ONLY_TYPES, 'anchoredVwap',
   'priceRange', 'dateRange', 'datePriceRange',
   'longPosition', 'shortPosition',
   'disjointChannel',
@@ -164,7 +175,7 @@ export const DrawingStyleToolbar = memo(function DrawingStyleToolbar({ sharedCha
       return;
     }
 
-    if (selected.type === 'rectangle' || selected.type === 'circle') {
+    if (selected.type === 'rectangle' || selected.type === 'circle' || selected.type === 'ellipse') {
       const x1 = timeToX(chart, selected.time1), y1 = priceToY(series, selected.price1);
       const x2 = timeToX(chart, selected.time2), y2 = priceToY(series, selected.price2);
       if (x1 == null || y1 == null || x2 == null || y2 == null) { setPos(null); return; }
@@ -222,7 +233,7 @@ export const DrawingStyleToolbar = memo(function DrawingStyleToolbar({ sharedCha
       return;
     }
 
-    if (selected.type === 'arrowMark') {
+    if (selected.type === 'arrowMark' || isDrawingOfType(selected, STAMP_TYPES)) {
       const x = timeToX(chart, selected.time);
       const y = priceToY(series, selected.price);
       if (x == null || y == null) { setPos(null); return; }
@@ -231,7 +242,8 @@ export const DrawingStyleToolbar = memo(function DrawingStyleToolbar({ sharedCha
       return;
     }
 
-    if (isDrawingOfType(selected, SINGLE_ANCHOR_TYPES)) {
+    if (isDrawingOfType(selected, SINGLE_ANCHOR_TYPES) || isDrawingOfType(selected, COLOR_ONLY_TYPES) ||
+        selected.type === 'anchoredVwap') {
       const x = timeToX(chart, selected.time);
       const y = priceToY(series, selected.price);
       if (x == null || y == null) { setPos(null); return; }
@@ -313,7 +325,8 @@ export const DrawingStyleToolbar = memo(function DrawingStyleToolbar({ sharedCha
   }
 
   if (selected.type === 'rectangle' || selected.type === 'rotatedRectangle' || selected.type === 'circle' ||
-      selected.type === 'sector' || selected.type === 'positionForecast') {
+      selected.type === 'sector' || selected.type === 'positionForecast' ||
+      selected.type === 'ellipse' || selected.type === 'triangle') {
     const shape = selected;
     const color = shape.color ?? '#2196F3';
     const width = shape.width ?? 1;
@@ -381,6 +394,76 @@ export const DrawingStyleToolbar = memo(function DrawingStyleToolbar({ sharedCha
         <button
           title="Delete"
           onClick={() => deleteDrawing(mark.id)}
+          className="w-7 h-7 flex items-center justify-center rounded text-[var(--text-muted)] hover:text-[#f85149] hover:bg-[var(--bg-hover-alt)]"
+        >
+          <TrashIcon />
+        </button>
+      </div>
+    );
+  }
+
+  if (isDrawingOfType(selected, STAMP_TYPES)) {
+    const mark = selected;
+    const color = mark.color ?? STAMP_DEFAULT_COLOR[mark.type];
+    const size  = mark.size  ?? 20;
+
+    return (
+      <div ref={toolbarRef} data-drawing-overlay="style-toolbar" className="absolute flex items-center gap-0.5 py-1 px-1 select-none" style={toolbarStyle}>
+        <MiniColorSwatch color={color} onChange={(c) => updateDrawing(mark.id, { color: c })} />
+        <MiniSizePicker size={size} onChange={(s) => updateDrawing(mark.id, { size: s })} />
+
+        <div className="w-px h-5 bg-[var(--border-color-softer)] mx-0.5" />
+
+        <button
+          title="Delete"
+          onClick={() => deleteDrawing(mark.id)}
+          className="w-7 h-7 flex items-center justify-center rounded text-[var(--text-muted)] hover:text-[#f85149] hover:bg-[var(--bg-hover-alt)]"
+        >
+          <TrashIcon />
+        </button>
+      </div>
+    );
+  }
+
+  // Label/text-box stamps with only a color field (no size/fontSize).
+  if (isDrawingOfType(selected, COLOR_ONLY_TYPES)) {
+    const stamp = selected;
+    const color = stamp.color ?? STAMP_DEFAULT_COLOR[stamp.type];
+
+    return (
+      <div ref={toolbarRef} data-drawing-overlay="style-toolbar" className="absolute flex items-center gap-0.5 py-1 px-1 select-none" style={toolbarStyle}>
+        <MiniColorSwatch color={color} onChange={(c) => updateDrawing(stamp.id, { color: c })} />
+
+        <div className="w-px h-5 bg-[var(--border-color-softer)] mx-0.5" />
+
+        <button
+          title="Delete"
+          onClick={() => deleteDrawing(stamp.id)}
+          className="w-7 h-7 flex items-center justify-center rounded text-[var(--text-muted)] hover:text-[#f85149] hover:bg-[var(--bg-hover-alt)]"
+        >
+          <TrashIcon />
+        </button>
+      </div>
+    );
+  }
+
+  // Anchored VWAP has color + width only (no dash/opacity), so it can't use
+  // the LineStyle fallback.
+  if (selected.type === 'anchoredVwap') {
+    const vwap = selected;
+    const color = vwap.color ?? '#f0b90b';
+    const width = vwap.width ?? 2;
+
+    return (
+      <div ref={toolbarRef} data-drawing-overlay="style-toolbar" className="absolute flex items-center gap-0.5 py-1 px-1 select-none" style={toolbarStyle}>
+        <MiniColorSwatch color={color} onChange={(c) => updateDrawing(vwap.id, { color: c })} />
+        <MiniWidthPicker width={width} onChange={(w) => updateDrawing(vwap.id, { width: w })} />
+
+        <div className="w-px h-5 bg-[var(--border-color-softer)] mx-0.5" />
+
+        <button
+          title="Delete"
+          onClick={() => deleteDrawing(vwap.id)}
           className="w-7 h-7 flex items-center justify-center rounded text-[var(--text-muted)] hover:text-[#f85149] hover:bg-[var(--bg-hover-alt)]"
         >
           <TrashIcon />
