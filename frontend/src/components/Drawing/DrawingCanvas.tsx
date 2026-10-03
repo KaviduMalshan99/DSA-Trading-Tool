@@ -497,14 +497,14 @@ function fmtTime(timeSec: number): string {
 // ── linear regression (least squares over bar index, not raw timestamp, so
 // weekend/session gaps don't skew the slope) + a ±2σ deviation channel ───────
 
-interface RegressionResult {
+export interface RegressionResult {
   startTime: number; endTime: number;
   midStart: number; midEnd: number;
   upperStart: number; upperEnd: number;
   lowerStart: number; lowerEnd: number;
 }
 
-function computeRegression(candles: Candle[], time1: number, time2: number): RegressionResult | null {
+export function computeRegression(candles: Candle[], time1: number, time2: number): RegressionResult | null {
   const lo = Math.min(time1, time2), hi = Math.max(time1, time2);
   const subset = candles
     .map((c) => ({ t: toChartTimeSeconds(c.t), c: c.c }))
@@ -797,9 +797,6 @@ function renderDrawing(
   ctx.save();
 
   // eraser hover overrides every drawing's color to signal "click to delete"
-  const pick = (normal: string, whenSelected: string) =>
-    eraserHover ? '#f85149' : selected ? whenSelected : normal;
-
   if (d.type === 'trendline') {
     const x1 = timeToX(chart, d.time1);
     const y1 = priceToY(series, d.price1);
@@ -1622,9 +1619,14 @@ function renderDrawing(
     if (!lines) { ctx.restore(); return; }
     const { x1, y1, x2, y2, y1b, y2b } = lines;
 
-    ctx.strokeStyle = pick('#2196F3', '#64B5F6');
-    ctx.lineWidth = selected ? 2 : 1.5;
-    ctx.setLineDash([]);
+    const baseColor = d.color ?? '#2196F3';
+    const lineStroke = eraserHover ? '#f85149'
+      : selected && d.color == null ? '#64B5F6'
+      : hexToRgba(baseColor, d.opacity ?? 100);
+
+    ctx.strokeStyle = lineStroke;
+    ctx.lineWidth = (d.width ?? 1.5) + (selected ? 0.5 : 0);
+    ctx.setLineDash(d.dash === 'dashed' ? [8, 4] : d.dash === 'dotted' ? [2, 3] : []);
     ctx.beginPath();
     ctx.moveTo(x1, y1);
     ctx.lineTo(x2, y2);
@@ -1633,18 +1635,22 @@ function renderDrawing(
     ctx.moveTo(x1, y1b);
     ctx.lineTo(x2, y2b);
     ctx.stroke();
+    ctx.setLineDash([]);
 
-    ctx.fillStyle = eraserHover ? 'rgba(248,81,73,0.08)' : 'rgba(33,150,243,0.08)';
-    ctx.beginPath();
-    ctx.moveTo(x1, y1);
-    ctx.lineTo(x2, y2);
-    ctx.lineTo(x2, y2b);
-    ctx.lineTo(x1, y1b);
-    ctx.closePath();
-    ctx.fill();
+    if (d.filled !== false) {
+      ctx.fillStyle = eraserHover ? 'rgba(248,81,73,0.08)'
+        : hexToRgba(d.fillColor ?? baseColor, d.fillOpacity ?? 8);
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.lineTo(x2, y2b);
+      ctx.lineTo(x1, y1b);
+      ctx.closePath();
+      ctx.fill();
+    }
 
     // median line, like TradingView's parallel channel
-    ctx.strokeStyle = pick('#2196F3', '#64B5F6');
+    ctx.strokeStyle = lineStroke;
     ctx.lineWidth = 1;
     ctx.setLineDash([3, 3]);
     ctx.beginPath();
@@ -1654,7 +1660,7 @@ function renderDrawing(
     ctx.setLineDash([]);
 
     if (selected) {
-      const handleColor = eraserHover ? '#f85149' : '#2196F3';
+      const handleColor = eraserHover ? '#f85149' : baseColor;
       ctx.fillStyle = handleColor;
       for (const [hx, hy] of [[x1, y1], [x2, y2]] as const) {
         ctx.beginPath();
@@ -1671,9 +1677,14 @@ function renderDrawing(
     if (!lines) { ctx.restore(); return; }
     const { x1, y1, x2, y2, y1b, y2b } = lines;
 
-    ctx.strokeStyle = pick('#2196F3', '#64B5F6');
-    ctx.lineWidth = selected ? 2 : 1.5;
-    ctx.setLineDash([]);
+    const baseColor = d.color ?? '#2196F3';
+    const lineStroke = eraserHover ? '#f85149'
+      : selected && d.color == null ? '#64B5F6'
+      : hexToRgba(baseColor, d.opacity ?? 100);
+
+    ctx.strokeStyle = lineStroke;
+    ctx.lineWidth = (d.width ?? 1.5) + (selected ? 0.5 : 0);
+    ctx.setLineDash(d.dash === 'dashed' ? [8, 4] : d.dash === 'dotted' ? [2, 3] : []);
     ctx.beginPath();
     ctx.moveTo(x1, y1);
     ctx.lineTo(x2, y2);
@@ -1682,18 +1693,22 @@ function renderDrawing(
     ctx.moveTo(x1, y1b);
     ctx.lineTo(x2, y2b);
     ctx.stroke();
+    ctx.setLineDash([]);
 
-    ctx.fillStyle = eraserHover ? 'rgba(248,81,73,0.08)' : 'rgba(33,150,243,0.08)';
-    ctx.beginPath();
-    ctx.moveTo(x1, y1);
-    ctx.lineTo(x2, y2);
-    ctx.lineTo(x2, y2b);
-    ctx.lineTo(x1, y1b);
-    ctx.closePath();
-    ctx.fill();
+    if (d.filled !== false) {
+      ctx.fillStyle = eraserHover ? 'rgba(248,81,73,0.08)'
+        : hexToRgba(d.fillColor ?? baseColor, d.fillOpacity ?? 8);
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.lineTo(x2, y2b);
+      ctx.lineTo(x1, y1b);
+      ctx.closePath();
+      ctx.fill();
+    }
 
     // median line, like Parallel Channel
-    ctx.strokeStyle = pick('#2196F3', '#64B5F6');
+    ctx.strokeStyle = lineStroke;
     ctx.lineWidth = 1;
     ctx.setLineDash([3, 3]);
     ctx.beginPath();
@@ -1703,7 +1718,7 @@ function renderDrawing(
     ctx.setLineDash([]);
 
     if (selected) {
-      const handleColor = eraserHover ? '#f85149' : '#2196F3';
+      const handleColor = eraserHover ? '#f85149' : baseColor;
       ctx.fillStyle = handleColor;
       // p1 (top price), p2 (right time edge)
       for (const [hx, hy] of [[x1, y1], [x2, y2]] as const) {
@@ -1772,12 +1787,16 @@ function renderDrawing(
         yUpS == null || yUpE == null || yLoS == null || yLoE == null) { ctx.restore(); return; }
 
     // TradingView-style regression channel: blue upper deviation band, red
-    // lower deviation band, neutral median line.
-    const upColor  = eraserHover ? '#f85149' : '#2196F3';
-    const loColor  = eraserHover ? '#f85149' : '#F23645';
-    const midColor = eraserHover ? '#f85149' : '#d1d4dc';
+    // lower deviation band, neutral median line. A custom color replaces all
+    // three (lines + both band fills).
+    const custom = d.color != null;
+    const upBase = custom ? d.color! : '#2196F3';
+    const loBase = custom ? d.color! : '#F23645';
+    const upColor  = eraserHover ? '#f85149' : upBase;
+    const loColor  = eraserHover ? '#f85149' : loBase;
+    const midColor = eraserHover ? '#f85149' : custom ? d.color! : '#d1d4dc';
 
-    ctx.fillStyle = eraserHover ? 'rgba(248,81,73,0.06)' : 'rgba(33,150,243,0.08)';
+    ctx.fillStyle = eraserHover ? 'rgba(248,81,73,0.06)' : hexToRgba(upBase, 8);
     ctx.beginPath();
     ctx.moveTo(xS, yUpS);
     ctx.lineTo(xE, yUpE);
@@ -1786,7 +1805,7 @@ function renderDrawing(
     ctx.closePath();
     ctx.fill();
 
-    ctx.fillStyle = eraserHover ? 'rgba(248,81,73,0.06)' : 'rgba(242,54,69,0.08)';
+    ctx.fillStyle = eraserHover ? 'rgba(248,81,73,0.06)' : hexToRgba(loBase, 8);
     ctx.beginPath();
     ctx.moveTo(xS, yMidS);
     ctx.lineTo(xE, yMidE);
@@ -1797,7 +1816,7 @@ function renderDrawing(
 
     ctx.setLineDash([]);
     ctx.strokeStyle = midColor;
-    ctx.lineWidth = selected ? 2 : 1.5;
+    ctx.lineWidth = (d.width ?? 1.5) + (selected ? 0.5 : 0);
     ctx.beginPath();
     ctx.moveTo(xS, yMidS);
     ctx.lineTo(xE, yMidE);

@@ -3,7 +3,8 @@ import type { IChartApi, ISeriesApi } from 'lightweight-charts';
 import {
   useDrawingStore, resizeTableCells, TABLE_MAX_DIM, type Drawing, type PositionDrawing,
 } from '../../store/drawingStore';
-import { priceToY, timeToX, computeParallelOffset } from './DrawingCanvas';
+import { useMarketStore } from '../../store/marketStore';
+import { priceToY, timeToX, computeParallelOffset, computeRegression } from './DrawingCanvas';
 import { FibSettingsModal } from './FibSettingsModal';
 import {
   MiniWidthPicker, MiniDashPicker, ColorOpacityButton, MiniColorSwatch, MiniSizePicker,
@@ -58,6 +59,10 @@ const STAMP_DEFAULT_COLOR: Record<(typeof STAMP_TYPES)[number] | (typeof COLOR_O
   note: '#F4B400', callout: '#2196F3', comment: '#2196F3',
 };
 
+// Parallel Channel / Flat Top-Bottom share the shape controls but their
+// renderer defaults differ from the rectangle's (width 1.5, fill 8%).
+const CHANNEL_TYPES = ['channel', 'flatChannel'] as const;
+
 // Every drawing type the style toolbar is shown for. Anything not listed here
 // (and not a fib/shape/stamp/table/position with its own branch) falls through
 // to the plain LineStyle controls, so additions must extend LineStyle.
@@ -70,7 +75,7 @@ const STYLE_TOOLBAR_TYPES = [
   ...STAMP_TYPES, ...COLOR_ONLY_TYPES, 'anchoredVwap',
   'priceRange', 'dateRange', 'datePriceRange',
   'longPosition', 'shortPosition',
-  'disjointChannel',
+  'disjointChannel', ...CHANNEL_TYPES, 'regression',
 ] as const;
 
 interface Props {
@@ -87,6 +92,7 @@ export const DrawingStyleToolbar = memo(function DrawingStyleToolbar({ sharedCha
   const toolbarRef = useRef<HTMLDivElement>(null);
 
   const selected = drawings.find((d) => d.id === selectedId);
+  const candles = useMarketStore((s) => s.candles);
 
   const recompute = useCallback(() => {
     const chart  = sharedChartRef.current;
@@ -164,7 +170,7 @@ export const DrawingStyleToolbar = memo(function DrawingStyleToolbar({ sharedCha
       return;
     }
 
-    if (selected.type === 'fibChannel') {
+    if (selected.type === 'fibChannel' || selected.type === 'channel') {
       const lines = computeParallelOffset(
         selected.price1, selected.time1, selected.price2, selected.time2,
         selected.price3, selected.time3, chart, series,
@@ -172,6 +178,34 @@ export const DrawingStyleToolbar = memo(function DrawingStyleToolbar({ sharedCha
       if (!lines) { setPos(null); return; }
       const minY = Math.min(lines.y1, lines.y2, lines.y1b, lines.y2b);
       setPos({ x: (lines.x1 + lines.x2) / 2, y: minY - 46 });
+      return;
+    }
+
+    if (selected.type === 'flatChannel') {
+      // price2 is unused geometry (only time2 matters), so anchor on the two
+      // horizontal lines at price1/price3 instead of computeParallelOffset.
+      const x1 = timeToX(chart, selected.time1), x2 = timeToX(chart, selected.time2);
+      const y1 = priceToY(series, selected.price1), y3 = priceToY(series, selected.price3);
+      if (x1 == null || x2 == null || y1 == null || y3 == null) { setPos(null); return; }
+      setPos({ x: (x1 + x2) / 2, y: Math.min(y1, y3) - 46 });
+      return;
+    }
+
+    if (selected.type === 'regression') {
+      const reg = computeRegression(candles, selected.time1, selected.time2);
+      const xS = reg ? timeToX(chart, reg.startTime) : null;
+      const xE = reg ? timeToX(chart, reg.endTime) : null;
+      const yUS = reg ? priceToY(series, reg.upperStart) : null;
+      const yUE = reg ? priceToY(series, reg.upperEnd) : null;
+      if (xS == null || xE == null) {
+        // regression unavailable (no candles in range) — fall back to the
+        // anchor times so the toolbar stays reachable for delete
+        const x1 = timeToX(chart, selected.time1), x2 = timeToX(chart, selected.time2);
+        if (x1 == null || x2 == null) { setPos(null); return; }
+        setPos({ x: (x1 + x2) / 2, y: 12 });
+        return;
+      }
+      setPos({ x: (xS + xE) / 2, y: yUS == null || yUE == null ? 12 : Math.min(yUS, yUE) - 46 });
       return;
     }
 
@@ -252,7 +286,7 @@ export const DrawingStyleToolbar = memo(function DrawingStyleToolbar({ sharedCha
     }
 
     setPos(null);
-  }, [selected, sharedChartRef, sharedSeriesRef]);
+  }, [selected, candles, sharedChartRef, sharedSeriesRef]);
 
   useEffect(() => {
     recompute();
@@ -326,20 +360,22 @@ export const DrawingStyleToolbar = memo(function DrawingStyleToolbar({ sharedCha
 
   if (selected.type === 'rectangle' || selected.type === 'rotatedRectangle' || selected.type === 'circle' ||
       selected.type === 'sector' || selected.type === 'positionForecast' ||
-      selected.type === 'ellipse' || selected.type === 'triangle') {
+      selected.type === 'ellipse' || selected.type === 'triangle' ||
+      isDrawingOfType(selected, CHANNEL_TYPES)) {
     const shape = selected;
+    const isChannel = isDrawingOfType(shape, CHANNEL_TYPES);
     const color = shape.color ?? '#2196F3';
-    const width = shape.width ?? 1;
+    const width = shape.width ?? (isChannel ? 1.5 : 1);
     const dash = shape.dash ?? 'solid';
     const opacity = shape.opacity ?? 100;
     const filled = shape.filled !== false;
     const fillColor = shape.fillColor ?? color;
-    const fillOpacity = shape.fillOpacity ?? 20;
+    const fillOpacity = shape.fillOpacity ?? (isChannel ? 8 : 20);
 
     return (
       <div ref={toolbarRef} data-drawing-overlay="style-toolbar" className="absolute flex items-center gap-0.5 py-1 px-1 select-none" style={toolbarStyle}>
         <ColorOpacityButton
-          title="Border color"
+          title={isChannel ? 'Line color' : 'Border color'}
           color={color} opacity={opacity}
           onColorChange={(c) => updateDrawing(shape.id, { color: c })}
           onOpacityChange={(o) => updateDrawing(shape.id, { opacity: o })}
@@ -464,6 +500,31 @@ export const DrawingStyleToolbar = memo(function DrawingStyleToolbar({ sharedCha
         <button
           title="Delete"
           onClick={() => deleteDrawing(vwap.id)}
+          className="w-7 h-7 flex items-center justify-center rounded text-[var(--text-muted)] hover:text-[#f85149] hover:bg-[var(--bg-hover-alt)]"
+        >
+          <TrashIcon />
+        </button>
+      </div>
+    );
+  }
+
+  // Regression Trend: one color drives all three lines + both band fills;
+  // width applies to the median only. No dash/opacity, so no LineStyle fallback.
+  if (selected.type === 'regression') {
+    const reg = selected;
+    const color = reg.color ?? '#2196F3';
+    const width = reg.width ?? 1.5;
+
+    return (
+      <div ref={toolbarRef} data-drawing-overlay="style-toolbar" className="absolute flex items-center gap-0.5 py-1 px-1 select-none" style={toolbarStyle}>
+        <MiniColorSwatch color={color} onChange={(c) => updateDrawing(reg.id, { color: c })} />
+        <MiniWidthPicker width={width} onChange={(w) => updateDrawing(reg.id, { width: w })} />
+
+        <div className="w-px h-5 bg-[var(--border-color-softer)] mx-0.5" />
+
+        <button
+          title="Delete"
+          onClick={() => deleteDrawing(reg.id)}
           className="w-7 h-7 flex items-center justify-center rounded text-[var(--text-muted)] hover:text-[#f85149] hover:bg-[var(--bg-hover-alt)]"
         >
           <TrashIcon />

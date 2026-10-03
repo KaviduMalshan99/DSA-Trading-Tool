@@ -789,7 +789,9 @@ export interface GannSquareDrawing extends LineStyle {
   price2: number; time2: number;
 }
 
-export interface ChannelDrawing {
+// Line color/width/dash/opacity style both channel lines + the median; the
+// fill defaults to the line color at 8% (see DrawingCanvas).
+export interface ChannelDrawing extends LineStyle, FillStyle {
   id: string;
   type: 'channel';
   // baseline (like a trend line)
@@ -802,6 +804,10 @@ export interface ChannelDrawing {
 export interface RegressionDrawing {
   id: string;
   type: 'regression';
+  // one color drives all three lines + both band fills; unset keeps the
+  // default blue-upper / red-lower / grey-median scheme. width = median only.
+  color?: string;
+  width?: number;
   // time range the linear regression + deviation channel is computed over
   time1: number;
   time2: number;
@@ -813,7 +819,7 @@ export interface RegressionDrawing {
 // [time1, time2], Line B is flat at price3 spanning the same time window.
 // price2 is captured (same click sequence as Parallel Channel) but unused for
 // geometry — only its time2 matters, as the right edge of the band.
-export interface FlatChannelDrawing {
+export interface FlatChannelDrawing extends LineStyle, FillStyle {
   id: string;
   type: 'flatChannel';
   price1: number; time1: number;
@@ -824,8 +830,8 @@ export interface FlatChannelDrawing {
 // Disjoint Channel: two independent line segments (not forced parallel like
 // Parallel Channel) — line A (a1->a2) and line B (b1->b2), placed with 4
 // clicks. Extends LineStyle so both segments share one configurable color/
-// width/dash/opacity, unlike Parallel Channel/Flat Top-Bottom which render
-// with a fixed color.
+// width/dash/opacity (Parallel Channel/Flat Top-Bottom expose the same
+// LineStyle fields plus FillStyle).
 export interface DisjointChannelDrawing extends LineStyle {
   id: string;
   type: 'disjointChannel';
