@@ -1351,7 +1351,7 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
   const {
     activeTool, lastCursorMode, lastTrendTool, lastShapeTool, lastAnnotationTool, lastPositionRangeTool,
     lastFibGannTool, lastPatternCyclesTool,
-    drawings, setTool, selectedId, deleteDrawing, clearAll,
+    drawings, setTool, selectedIds, deleteDrawings, clearAll,
     keepToolActive, drawingsLocked, drawingsHidden, toggleKeepToolActive, toggleDrawingsLocked, toggleDrawingsHidden,
     favoriteTools, favoritesBarOpen, toggleFavorite, toggleFavoritesBar,
   } = useDrawingStore();
@@ -1975,11 +1975,11 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
       <div className="relative group" ref={deleteGroupRef}>
         <button
           title={drawingsLocked ? 'Unlock drawings to delete' : 'Delete selected'}
-          disabled={!selectedId || drawingsLocked}
-          onClick={() => { if (selectedId) deleteDrawing(selectedId); setDeleteMenuOpen(false); }}
+          disabled={!selectedIds.length || drawingsLocked}
+          onClick={() => { deleteDrawings(selectedIds); setDeleteMenuOpen(false); }}
           className={`
             relative w-9 h-9 flex items-center justify-center rounded transition-colors [&_svg]:w-5 [&_svg]:h-5
-            ${selectedId && !drawingsLocked
+            ${selectedIds.length && !drawingsLocked
               ? 'text-[#f85149] hover:bg-[var(--bg-hover)]'
               : 'text-[var(--border-color)] cursor-not-allowed'}
           `}
@@ -2006,11 +2006,11 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
             style={{ ...FLYOUT_STYLE_BASE, width: 180, maxHeight: deleteFlyoutMaxHeight }}
           >
             <button
-              onClick={() => { if (selectedId) deleteDrawing(selectedId); setDeleteMenuOpen(false); }}
-              disabled={!selectedId || drawingsLocked}
+              onClick={() => { deleteDrawings(selectedIds); setDeleteMenuOpen(false); }}
+              disabled={!selectedIds.length || drawingsLocked}
               className={`
                 w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors
-                ${selectedId && !drawingsLocked ? 'text-[var(--text-secondary)] hover:bg-[var(--accent)] hover:text-white' : 'text-[var(--border-color)] cursor-not-allowed'}
+                ${selectedIds.length && !drawingsLocked ? 'text-[var(--text-secondary)] hover:bg-[var(--accent)] hover:text-white' : 'text-[var(--border-color)] cursor-not-allowed'}
               `}
             >
               Remove Selected

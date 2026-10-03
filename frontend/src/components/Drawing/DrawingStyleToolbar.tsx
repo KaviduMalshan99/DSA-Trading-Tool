@@ -26,7 +26,9 @@ interface Props {
 }
 
 export const DrawingStyleToolbar = memo(function DrawingStyleToolbar({ sharedChartRef, sharedSeriesRef }: Props) {
-  const { drawings, selectedId, updateDrawing, deleteDrawing, drawingsHidden, drawingsLocked } = useDrawingStore();
+  const { drawings, selectedIds, updateDrawing, deleteDrawing, drawingsHidden, drawingsLocked } = useDrawingStore();
+  // Toolbar only targets a single selection; hidden for 0 or 2+.
+  const selectedId = selectedIds.length === 1 ? selectedIds[0] : null;
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
   const [openMenu, setOpenMenu] = useState<MenuKind>(null);
   const toolbarRef = useRef<HTMLDivElement>(null);

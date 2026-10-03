@@ -4571,9 +4571,9 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
   }>({ active: false, tool: null, points: [] });
 
   const {
-    activeTool, drawings, selectedId, magnetEnabled, lastCursorMode,
+    activeTool, drawings, selectedIds, magnetEnabled, lastCursorMode,
     keepToolActive, drawingsLocked, drawingsHidden,
-    addDrawing, updateDrawing, deleteDrawing, selectDrawing, setTool, undo, redo,
+    addDrawing, updateDrawing, deleteDrawing, deleteDrawings, selectDrawing, toggleSelection, setTool, undo, redo,
   } = useDrawingStore();
   const mousePosRef = useRef<{ x: number; y: number; inside: boolean }>({ x: 0, y: 0, inside: false });
   const hoverPriceRef = useRef<number | null>(null);
@@ -4666,7 +4666,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
 
   const activeToolRef     = useRef<DrawingTool>(activeTool);
   const drawingsRef       = useRef<Drawing[]>(drawings);
-  const selectedIdRef     = useRef<string | null>(selectedId);
+  const selectedIdsRef    = useRef<string[]>(selectedIds);
   const candlesRef        = useRef<Candle[]>(candles);
   const magnetEnabledRef  = useRef(magnetEnabled);
   const keepToolActiveRef   = useRef(keepToolActive);
@@ -4680,7 +4680,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
   const magnetPointRef  = useRef<MagnetSnap | null>(null);
   activeToolRef.current     = activeTool;
   drawingsRef.current       = drawings;
-  selectedIdRef.current     = selectedId;
+  selectedIdsRef.current    = selectedIds;
   candlesRef.current        = candles;
   latestCandlesForExtrapolation = candles;
   magnetEnabledRef.current  = magnetEnabled;
@@ -4816,7 +4816,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
         }
         renderDrawing(
           ctx, W, H, dd, chart, series, candlesRef.current,
-          d.id === selectedIdRef.current,
+          selectedIdsRef.current.includes(d.id),
           eraserActive && d.id === hoverEraseIdRef.current,
         );
       }
@@ -5199,7 +5199,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { scheduleRender(); }, [drawings, selectedId, candles, drawingsHidden, drawingsLocked, scheduleRender]);
+  useEffect(() => { scheduleRender(); }, [drawings, selectedIds, candles, drawingsHidden, drawingsLocked, scheduleRender]);
 
   // ── resize canvas ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -6137,6 +6137,8 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
     };
 
     const onWinDownCapture = (e: MouseEvent) => {
+      // Ctrl/Cmd+click toggles selection (onWinDown) — never starts a drag.
+      if (e.ctrlKey || e.metaKey) return;
       if (isOverlayTarget(e)) return;
       if (!isOverChart(e)) return; // e.g. a dropdown/menu drawn over the chart
       const canvas = canvasRef.current;
@@ -6586,7 +6588,12 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           break;
         }
       }
-      selectDrawing(hit);
+      // Ctrl/Cmd+click toggles; on empty space it keeps the selection.
+      if (e.ctrlKey || e.metaKey) {
+        if (hit) toggleSelection(hit);
+      } else {
+        selectDrawing(hit);
+      }
     };
 
     // Double-click an existing Text/Price Note (while a cursor-group tool is
@@ -6663,7 +6670,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
       window.removeEventListener('mouseup', onWinUp);
       window.removeEventListener('dblclick', onWinDblClick);
     };
-  }, [scheduleRender, selectDrawing, updateDrawing, applyCursor, applyCursorValue, finalizeFreeform, setEditing]);
+  }, [scheduleRender, selectDrawing, toggleSelection, updateDrawing, applyCursor, applyCursorValue, finalizeFreeform, setEditing]);
 
   // ── keyboard: Delete / Escape ─────────────────────────────────────────────
   useEffect(() => {
@@ -6686,11 +6693,11 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
         // active, the toolbar's position math (keyed off the drawing's old
         // time/price) degenerated to a clamped top-left coordinate instead of
         // going off-screen, so it looked stuck in the drawing rail.
-        if (selectedIdRef.current) selectDrawing(null);
+        if (selectedIdsRef.current.length) selectDrawing(null);
         scheduleRender();
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
-        const sel = selectedIdRef.current;
-        if (sel && !drawingsLockedRef.current) deleteDrawing(sel);
+        const sel = selectedIdsRef.current;
+        if (sel.length && !drawingsLockedRef.current) deleteDrawings(sel);
       } else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && (e.key === 'z' || e.key === 'Z')) {
         // Mid-placement (multi-click shape or brush stroke in progress): treat
         // Ctrl+Z as a clean cancel of that in-progress shape, same as Escape,
@@ -6719,7 +6726,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [deleteDrawing, scheduleRender, undo, redo, selectDrawing]);
+  }, [deleteDrawings, scheduleRender, undo, redo, selectDrawing]);
 
   // Trendline/hline/rectangle/fibonacci/eraser capture all events (chart
   // pan/zoom blocked — intentional while placing points or erasing).
