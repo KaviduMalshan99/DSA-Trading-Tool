@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { createChart, type IChartApi, type ISeriesApi } from 'lightweight-charts';
+import { createChart, PriceScaleMode, type IChartApi, type ISeriesApi } from 'lightweight-charts';
 import { useMarketStore } from '../../store/marketStore';
 import { useChartStore } from '../../store/chartStore';
 import { useReplayStore } from '../../store/replayStore';
@@ -97,6 +97,7 @@ export function TradingChart({ sharedChartRef, sharedSeriesRef, sharedLineSeries
   const { onRangeChange, onCrosshairMove } = useChartSync();
   const visibleOverlays = useChartStore((s) => s.visibleOverlays);
   const chartType = useChartStore((s) => s.chartType);
+  const logScale = useChartStore((s) => s.logScale);
   const candleStyle = useCandleStyleStore();
   const theme = useThemeStore((s) => s.theme);
   const replayActive = useReplayStore((s) => s.isActive);
@@ -139,7 +140,12 @@ export function TradingChart({ sharedChartRef, sharedSeriesRef, sharedLineSeries
       },
       // Same minimumWidth as the sub-panels under this chart (RSIPanel), so
       // their plot areas are equally wide and the bars line up vertically.
-      rightPriceScale: { ...themeOpts.rightPriceScale, minimumWidth: 72 },
+      // mode read from the store so log scale survives the timezone remount.
+      rightPriceScale: {
+        ...themeOpts.rightPriceScale,
+        minimumWidth: 72,
+        mode: useChartStore.getState().logScale ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal,
+      },
       timeScale: {
         ...themeOpts.timeScale,
         timeVisible: true,
@@ -244,6 +250,23 @@ export function TradingChart({ sharedChartRef, sharedSeriesRef, sharedLineSeries
       timeScale: themeOpts.timeScale,
     });
   }, [theme]);
+
+  // Log/linear toggle (PriceScaleButtons). Followed by a no-op logical-range
+  // nudge so canvas overlays/drawings — which redraw on range change — re-map
+  // prices through the new scale.
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    chart.priceScale('right').applyOptions({
+      mode: logScale ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal,
+    });
+    const ts = chart.timeScale();
+    const r = ts.getVisibleLogicalRange();
+    if (r) {
+      ts.setVisibleLogicalRange({ from: r.from + 1e-6, to: r.to });
+      ts.setVisibleLogicalRange(r);
+    }
+  }, [logScale]);
 
   // Apply user-configured candle colors; dim body/borders (not wicks) when the
   // footprint overlay is active so its per-price-level text reads clearly; in

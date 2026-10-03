@@ -27,6 +27,7 @@ import { TradeChecklist } from '../Overlay/TradeChecklist';
 import { ClusterScanner } from '../Overlay/ClusterScanner';
 import { DrawingToolbar } from '../Drawing/DrawingToolbar';
 import { DrawingCanvas } from '../Drawing/DrawingCanvas';
+import { PriceScaleButtons } from './PriceScaleButtons';
 import { DrawingStyleToolbar } from '../Drawing/DrawingStyleToolbar';
 import { FavoritesToolbar } from '../Drawing/FavoritesToolbar';
 import { SHOW_DELTA_PANEL } from '../../config/topBarVisibility';
@@ -159,6 +160,11 @@ export function ChartContainer({ sharedChartRef, sharedSeriesRef, chartAreaRef }
           sharedChartRef={sharedChartRef}
           sharedSeriesRef={sharedSeriesRef}
         />
+
+        {/* "A" (auto-scale) / "L" (log) buttons in the price-axis × time-axis
+            corner — after DrawingCanvas and z-60 so they stay clickable while
+            a drawing tool is active. */}
+        <PriceScaleButtons sharedChartRef={sharedChartRef} />
 
         {/* Floating style toolbar for the selected drawing (TradingView-style) */}
         <DrawingStyleToolbar

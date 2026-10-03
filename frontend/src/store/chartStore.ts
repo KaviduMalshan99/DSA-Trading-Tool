@@ -8,6 +8,15 @@ export type OverlayType =
 
 export type ChartType = 'candle' | 'line';
 
+const LOG_SCALE_KEY = 'dsa-log-scale';
+
+function loadInitialLogScale(): boolean {
+  try {
+    return localStorage.getItem(LOG_SCALE_KEY) === 'true';
+  } catch { /* ignore blocked storage */ }
+  return false;
+}
+
 interface ChartState {
   visibleOverlays: Set<OverlayType>;
   visibleRange: { from: number; to: number } | null;
@@ -26,6 +35,9 @@ interface ChartState {
   // prices through it); 'line' makes it transparent and shows a close-price
   // line series on top instead.
   chartType: ChartType;
+  // Main chart's right price scale: logarithmic vs linear. Persisted. (Auto-scale
+  // is transient view state and lives on the chart itself, not here.)
+  logScale: boolean;
 
   toggleOverlay: (overlay: OverlayType) => void;
   setVisibleRange: (from: number, to: number) => void;
@@ -33,6 +45,7 @@ interface ChartState {
   setImbalanceRatio: (ratio: number) => void;
   setStackSize: (size: number) => void;
   setChartType: (type: ChartType) => void;
+  setLogScale: (v: boolean) => void;
 }
 
 export const useChartStore = create<ChartState>((set) => ({
@@ -46,6 +59,7 @@ export const useChartStore = create<ChartState>((set) => ({
   imbalanceRatio: 3.0,
   stackSize: 3,
   chartType: 'candle',
+  logScale: loadInitialLogScale(),
 
   toggleOverlay: (overlay) =>
     set((state) => {
@@ -64,4 +78,8 @@ export const useChartStore = create<ChartState>((set) => ({
   setImbalanceRatio: (ratio) => set({ imbalanceRatio: ratio }),
   setStackSize: (size) => set({ stackSize: size }),
   setChartType: (chartType) => set({ chartType }),
+  setLogScale: (logScale) => {
+    set({ logScale });
+    try { localStorage.setItem(LOG_SCALE_KEY, String(logScale)); } catch { /* ignore */ }
+  },
 }));
