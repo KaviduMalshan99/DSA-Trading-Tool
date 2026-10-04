@@ -15,5 +15,6 @@ class User(Base):
     email = Column(String(255), unique=True, nullable=False, index=True)  # always stored lowercased
     password_hash = Column(String(255), nullable=True)  # null for OAuth-only users (Google, Stage 3)
     auth_provider = Column(String(20), nullable=False, default="email")  # 'email' | 'google'
+    google_sub = Column(String(255), nullable=True, unique=True, index=True)  # Google account id (ID token `sub`)
     is_active = Column(Boolean, nullable=False, default=True)
     created_at = Column(BigInteger, nullable=False, default=_now_ms)  # epoch ms

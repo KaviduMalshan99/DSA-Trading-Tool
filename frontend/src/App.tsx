@@ -16,6 +16,20 @@ import { useChartStore } from './store/chartStore';
 import { useAuthStore } from './store/authStore';
 import { SHOW_DOM_PANEL, SHOW_TAPE_PANEL } from './config/topBarVisibility';
 
+const AUTH_ERROR_MESSAGES: Record<string, string> = {
+  cancelled: 'Google sign-in was cancelled.',
+  unverified_email: "Your Google email address isn't verified.",
+  account_disabled: 'This account is disabled.',
+  account_conflict: 'This email is already linked to a different Google account.',
+  google_unavailable: "Google sign-in isn't available right now.",
+};
+
+function authErrorMessage(code: string): string {
+  return Object.hasOwn(AUTH_ERROR_MESSAGES, code)
+    ? AUTH_ERROR_MESSAGES[code]
+    : 'Google sign-in failed. Please try again.';
+}
+
 export default function App() {
   const whaleActive = useChartStore((s) => s.visibleOverlays.has('whaleMarkers'));
   const [watchlistOpen, setWatchlistOpen] = useState(false);
@@ -28,7 +42,18 @@ export default function App() {
   const chartAreaRef    = useRef<HTMLDivElement>(null);
 
   // Resolve the cookie session once; the store guards against StrictMode's double effect.
-  useEffect(() => { void useAuthStore.getState().init(); }, []);
+  useEffect(() => {
+    void useAuthStore.getState().init();
+    // The Google OAuth callback redirects here with ?auth_error=<code> on failure.
+    // Stripping the param makes this StrictMode-safe: the second run finds nothing.
+    const url = new URL(window.location.href);
+    const code = url.searchParams.get('auth_error');
+    if (code !== null) {
+      useAuthStore.getState().openAuthModal('login', authErrorMessage(code));
+      url.searchParams.delete('auth_error');
+      window.history.replaceState(window.history.state, '', url.pathname + url.search + url.hash);
+    }
+  }, []);
 
   return (
     <div className="flex flex-col h-screen bg-[var(--bg-app)] text-[var(--text-primary)] overflow-hidden">

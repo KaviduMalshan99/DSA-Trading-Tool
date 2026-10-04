@@ -12,13 +12,16 @@ interface AuthState {
   status: AuthStatus;
   authModalOpen: boolean;
   authModalMode: AuthModalMode;
+  /** Banner shown above the modal's form, e.g. a failed Google sign-in. */
+  authModalError: string | null;
 
   init: () => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
   signup: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
-  openAuthModal: (mode: AuthModalMode) => void;
+  openAuthModal: (mode: AuthModalMode, error?: string) => void;
   closeAuthModal: () => void;
+  clearAuthModalError: () => void;
 }
 
 // Module-level so StrictMode's double effect (and any re-mount) can't fire /auth/me twice.
@@ -29,6 +32,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   status: 'checking',
   authModalOpen: false,
   authModalMode: 'login',
+  authModalError: null,
 
   init: async () => {
     if (initStarted) return;
@@ -64,6 +68,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     }
   },
 
-  openAuthModal: (mode) => set({ authModalOpen: true, authModalMode: mode }),
-  closeAuthModal: () => set({ authModalOpen: false }),
+  openAuthModal: (mode, error) => set({ authModalOpen: true, authModalMode: mode, authModalError: error ?? null }),
+  closeAuthModal: () => set({ authModalOpen: false, authModalError: null }),
+  clearAuthModalError: () => set({ authModalError: null }),
 }));

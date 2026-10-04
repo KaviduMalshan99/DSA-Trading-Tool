@@ -42,6 +42,14 @@ class Settings(BaseSettings):
     cookie_samesite: Literal["lax", "strict", "none"] = "lax"
     cookie_domain: str | None = None
 
+    # Google OAuth — optional; Google login is disabled unless all three google_* are set.
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    # Full callback URL. Never derived from the request: prod sits behind Cloudflare + a proxy.
+    google_redirect_uri: str = ""
+    # Where the browser lands after the OAuth callback (no trailing slash).
+    frontend_url: str = "http://localhost:5173"
+
     # CORS
     cors_origins: list[str] = [
         "http://localhost:5173",
@@ -58,6 +66,10 @@ class Settings(BaseSettings):
         if self.cookie_samesite == "none" and not self.cookie_secure:
             raise ValueError("COOKIE_SAMESITE=none requires COOKIE_SECURE=true")
         return self
+
+    @property
+    def google_enabled(self) -> bool:
+        return bool(self.google_client_id and self.google_client_secret and self.google_redirect_uri)
 
 
 @lru_cache

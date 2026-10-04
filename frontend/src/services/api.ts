@@ -5,6 +5,11 @@ import type {
 
 const BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000/api/v1';
 
+/** Full-page navigation target that starts the Google OAuth flow (not a fetch). */
+export function googleStartUrl(): string {
+  return `${BASE_URL}/auth/google/start`;
+}
+
 export class ApiError extends Error {
   readonly status: number;
   readonly detail: string;

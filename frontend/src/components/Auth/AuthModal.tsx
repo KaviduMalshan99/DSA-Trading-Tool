@@ -1,6 +1,6 @@
-import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useId, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { useAuthStore } from '../../store/authStore';
-import { ApiError } from '../../services/api';
+import { ApiError, googleStartUrl } from '../../services/api';
 
 // Mirrors backend RegisterIn: EmailStr + password length 8–72.
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -25,6 +25,8 @@ function errorMessage(err: unknown): string {
 const inputClass = 'w-full px-2 py-1.5 rounded text-sm text-[var(--text-primary)] outline-none focus:border-[var(--accent)]';
 const inputStyle = { background: 'var(--bg-app)', border: '1px solid var(--border-color)' };
 
+const errorBannerStyle = { background: 'rgba(248,81,73,0.1)', border: '1px solid rgba(248,81,73,0.4)' };
+
 function FieldError({ id, message }: { id: string; message?: string }) {
   if (!message) return null;
   return <div id={id} className="mt-1 text-[11px] text-[#f85149]">{message}</div>;
@@ -42,6 +44,8 @@ function AuthDialog() {
   const closeAuthModal = useAuthStore((s) => s.closeAuthModal);
   const login = useAuthStore((s) => s.login);
   const signup = useAuthStore((s) => s.signup);
+  const modalError = useAuthStore((s) => s.authModalError);
+  const clearModalError = useAuthStore((s) => s.clearAuthModalError);
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -49,6 +53,7 @@ function AuthDialog() {
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [redirecting, setRedirecting] = useState(false);
 
   const emailRef = useRef<HTMLInputElement>(null);
   const uid = useId();
@@ -57,11 +62,32 @@ function AuthDialog() {
 
   useEffect(() => { emailRef.current?.focus(); }, [mode]);
 
+  // Coming back via the browser's Back button can restore this page from bfcache
+  // with the Google button still disabled — re-enable it.
+  useEffect(() => {
+    const onPageShow = (e: PageTransitionEvent) => { if (e.persisted) setRedirecting(false); };
+    window.addEventListener('pageshow', onPageShow);
+    return () => window.removeEventListener('pageshow', onPageShow);
+  }, []);
+
   const switchMode = () => {
     setFieldErrors({});
     setFormError(null);
     setConfirm('');
+    // Opening without an error clears any banner.
     openAuthModal(isSignup ? 'login' : 'signup');
+  };
+
+  const startGoogle = () => {
+    if (redirecting) return;
+    setRedirecting(true);
+    window.location.assign(googleStartUrl());
+  };
+
+  // Typing dismisses the store-level banner (e.g. a failed Google sign-in).
+  const onEdit = (setter: (v: string) => void) => (e: ChangeEvent<HTMLInputElement>) => {
+    setter(e.target.value);
+    if (modalError) clearModalError();
   };
 
   const validate = (): FieldErrors => {
@@ -130,6 +156,28 @@ function AuthDialog() {
         </div>
 
         <form onSubmit={handleSubmit} noValidate className="p-4 flex flex-col gap-3 select-text">
+          {modalError && (
+            <div role="alert" className="px-2 py-1.5 rounded text-xs text-[#f85149]" style={errorBannerStyle}>
+              {modalError}
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={startGoogle}
+            disabled={redirecting || submitting}
+            className="w-full px-4 py-1.5 rounded text-sm text-[var(--text-primary)] bg-[var(--bg-app)] hover:bg-[var(--border-color-softer)] disabled:opacity-60 disabled:cursor-default disabled:hover:bg-[var(--bg-app)]"
+            style={{ border: '1px solid var(--border-color)' }}
+          >
+            {redirecting ? 'Redirecting...' : 'Continue with Google'}
+          </button>
+
+          <div className="flex items-center gap-2 text-[11px] text-[var(--text-muted)]" aria-hidden="true">
+            <div className="flex-1" style={{ borderTop: '1px solid var(--border-color-softer)' }} />
+            or
+            <div className="flex-1" style={{ borderTop: '1px solid var(--border-color-softer)' }} />
+          </div>
+
           <div>
             <label htmlFor={`${uid}-email`} className="block mb-1 text-xs text-[var(--text-muted)]">Email</label>
             <input
@@ -138,7 +186,7 @@ function AuthDialog() {
               type="email"
               autoComplete="email"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={onEdit(setEmail)}
               aria-invalid={!!fieldErrors.email}
               aria-describedby={fieldErrors.email ? `${uid}-email-err` : undefined}
               className={inputClass}
@@ -154,7 +202,7 @@ function AuthDialog() {
               type="password"
               autoComplete={isSignup ? 'new-password' : 'current-password'}
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={onEdit(setPassword)}
               aria-invalid={!!fieldErrors.password}
               aria-describedby={fieldErrors.password ? `${uid}-password-err` : undefined}
               className={inputClass}
@@ -171,7 +219,7 @@ function AuthDialog() {
                 type="password"
                 autoComplete="new-password"
                 value={confirm}
-                onChange={(e) => setConfirm(e.target.value)}
+                onChange={onEdit(setConfirm)}
                 aria-invalid={!!fieldErrors.confirm}
                 aria-describedby={fieldErrors.confirm ? `${uid}-confirm-err` : undefined}
                 className={inputClass}
@@ -182,7 +230,7 @@ function AuthDialog() {
           )}
 
           {formError && (
-            <div role="alert" className="px-2 py-1.5 rounded text-xs text-[#f85149]" style={{ background: 'rgba(248,81,73,0.1)', border: '1px solid rgba(248,81,73,0.4)' }}>
+            <div role="alert" className="px-2 py-1.5 rounded text-xs text-[#f85149]" style={errorBannerStyle}>
               {formError}
             </div>
           )}
