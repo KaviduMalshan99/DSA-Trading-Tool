@@ -4,8 +4,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.database import init_db
+from app.core.config import settings
 from app.core.redis import close_redis
 from app.models import candle as _candle_model  # noqa: F401 — registers CandleRecord with Base
+from app.models import user as _user_model  # noqa: F401 — registers User with Base
+from app.api.auth import router as auth_router
 from app.api.candles import router as candles_router
 from app.api.symbols import router as symbols_router
 from app.api.indicators import router as indicators_router
@@ -53,12 +56,13 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000"],
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+app.include_router(auth_router, prefix="/api/v1")
 app.include_router(candles_router, prefix="/api/v1")
 app.include_router(symbols_router, prefix="/api/v1")
 app.include_router(indicators_router, prefix="/api/v1")

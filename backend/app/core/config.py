@@ -28,6 +28,18 @@ class Settings(BaseSettings):
     # WebSocket
     ws_heartbeat_interval: int = 30
 
+    # Auth — jwt_secret has no default on purpose: the app must refuse to start without one.
+    jwt_secret: str
+    jwt_algorithm: str = "HS256"
+    access_token_expire_minutes: int = 10080  # 7 days
+
+    # CORS
+    cors_origins: list[str] = [
+        "http://localhost:5173",
+        "http://localhost:3000",
+        "https://checkyourchart.net",
+    ]
+
     class Config:
         env_file = ".env"
 
