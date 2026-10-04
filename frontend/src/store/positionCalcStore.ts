@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { saveLocal } from '../services/persist';
 
 // Only balance/risk% persist across sessions (they rarely change trade-to-trade).
 // Entry/stop/target/direction are always per-trade and reset each time the
@@ -34,6 +35,6 @@ export const usePositionCalcStore = create<PositionCalcState>((set, get) => ({
   setPersisted: (patch) => {
     set(patch);
     const { accountBalance, riskPercent } = get();
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ accountBalance, riskPercent })); } catch { /* ignore */ }
+    saveLocal(STORAGE_KEY, JSON.stringify({ accountBalance, riskPercent }));
   },
 }));

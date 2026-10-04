@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { saveLocal } from '../services/persist';
 
 /**
  * Student-facing chart indicators (Indicators dropdown). Deliberately separate
@@ -113,7 +114,7 @@ export const useIndicatorStore = create<IndicatorState>((set, get) => ({
       ? favs.filter((k) => k !== key)
       : [...favs, key];
     set({ favoriteIndicators: next });
-    try { localStorage.setItem(FAV_INDICATORS_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+    saveLocal(FAV_INDICATORS_KEY, JSON.stringify(next));
   },
 
   clearAllIndicators: () => set({ activeIndicators: new Set<IndicatorType>(), activeSubPanel: null }),

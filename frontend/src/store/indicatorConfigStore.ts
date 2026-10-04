@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { IndicatorKey } from './indicatorStore';
+import { saveLocal } from '../services/persist';
 
 /**
  * Per-indicator user settings (inputs + per-line style), persisted to
@@ -123,9 +124,7 @@ function loadInitial(): IndicatorConfigs {
 }
 
 function persist(configs: IndicatorConfigs) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ v: STORAGE_VERSION, configs }));
-  } catch { /* ignore */ }
+  saveLocal(STORAGE_KEY, JSON.stringify({ v: STORAGE_VERSION, configs }));
 }
 
 interface IndicatorConfigState {

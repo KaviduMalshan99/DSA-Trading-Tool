@@ -7,6 +7,7 @@ import { toChartTimeSeconds, getChartTzOffsetSeconds } from '../../utils/chartTi
 import { firstPriceAnchor, shiftDrawingTimes } from '../../utils/drawingTimeShift';
 import { computeSessionVWAPFromCandles } from '../../utils/klineAnalytics';
 import { decimalsForPrice } from '../../utils/priceFormat';
+import { saveLocal } from '../../services/persist';
 import type { Candle } from '../../types/market';
 
 // Tools that should own mouse events on the overlay canvas (blocking chart
@@ -4770,7 +4771,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
     if (drawings !== useDrawingStore.getState().drawings) return;
     try {
       const utc = shiftDrawingTimes(drawings, -currentOffset);
-      localStorage.setItem(storageKey, JSON.stringify({ v: 2, drawings: utc }));
+      saveLocal(storageKey, JSON.stringify({ v: 2, drawings: utc }));
     } catch { /* ignore */ }
   }, [drawings, storageKey, currentOffset]);
 

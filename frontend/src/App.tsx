@@ -14,6 +14,7 @@ import { ToastStack } from './components/UI/ToastStack';
 import { AuthModal } from './components/Auth/AuthModal';
 import { useChartStore } from './store/chartStore';
 import { useAuthStore } from './store/authStore';
+import { start as startSync } from './services/sync';
 import { SHOW_DOM_PANEL, SHOW_TAPE_PANEL } from './config/topBarVisibility';
 
 const AUTH_ERROR_MESSAGES: Record<string, string> = {
@@ -42,7 +43,10 @@ export default function App() {
   const chartAreaRef    = useRef<HTMLDivElement>(null);
 
   // Resolve the cookie session once; the store guards against StrictMode's double effect.
+  // The sync engine (same guard) subscribes before init() can resolve, so it sees the
+  // session's 'authenticated' transition.
   useEffect(() => {
+    startSync();
     void useAuthStore.getState().init();
     // The Google OAuth callback redirects here with ?auth_error=<code> on failure.
     // Stripping the param makes this StrictMode-safe: the second run finds nothing.

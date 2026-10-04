@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { saveLocal } from '../services/persist';
 
 export type Theme = 'dark' | 'light';
 
@@ -31,6 +32,6 @@ export const useThemeStore = create<ThemeState>((set) => ({
   setTheme: (theme) => {
     set({ theme });
     applyDocumentTheme(theme);
-    try { localStorage.setItem(STORAGE_KEY, theme); } catch { /* ignore */ }
+    saveLocal(STORAGE_KEY, theme);
   },
 }));

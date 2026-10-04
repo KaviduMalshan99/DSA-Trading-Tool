@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { saveLocal } from '../services/persist';
 import type { Candle, MarketType, CandleInterval } from '../types/market';
 
 export interface IntervalGroup {
@@ -93,6 +94,6 @@ export const useMarketStore = create<MarketState>((set, get) => ({
       ? favs.filter((iv) => iv !== interval)
       : [...favs, interval];
     set({ favoriteIntervals: next });
-    try { localStorage.setItem(FAV_INTERVALS_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+    saveLocal(FAV_INTERVALS_KEY, JSON.stringify(next));
   },
 }));

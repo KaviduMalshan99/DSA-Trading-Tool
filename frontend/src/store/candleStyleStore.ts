@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { saveLocal } from '../services/persist';
 
 export interface CandleStyle {
   upColor: string;
@@ -47,11 +48,11 @@ export const useCandleStyleStore = create<CandleStyleState>((set, get) => ({
     set(patch);
     // JSON.stringify silently drops function-valued properties (setStyle/resetStyle),
     // so this persists only the plain CandleStyle fields.
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(get())); } catch { /* ignore */ }
+    saveLocal(STORAGE_KEY, JSON.stringify(get()));
   },
 
   resetStyle: () => {
     set(DEFAULT_STYLE);
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(get())); } catch { /* ignore */ }
+    saveLocal(STORAGE_KEY, JSON.stringify(get()));
   },
 }));

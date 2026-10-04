@@ -33,6 +33,31 @@ export interface AuthUser {
 interface RequestOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   body?: unknown;
+  /** Let the request outlive the page (pagehide). Browsers cap keepalive bodies at 64 KB. */
+  keepalive?: boolean;
+}
+
+/** Matches backend SyncItemOut. */
+interface SyncItem {
+  key: string;
+  value: string;
+  version: number;
+  updated_at: number;
+}
+
+/** Matches backend BatchItemIn. base_version null = insert (conflict if the key exists). */
+interface SyncBatchItem {
+  key: string;
+  value: string;
+  base_version: number | null;
+}
+
+/** Matches backend BatchResultOut. On conflict, version/updated_at are the server's current ones (null if missing). */
+interface SyncBatchResult {
+  key: string;
+  status: 'ok' | 'conflict';
+  version: number | null;
+  updated_at: number | null;
 }
 
 // FastAPI errors are { detail: string } or, for 422s, { detail: [{ msg, ... }] }.
@@ -48,13 +73,14 @@ function extractDetail(data: unknown): string | null {
 }
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { method = 'GET', body } = options;
+  const { method = 'GET', body, keepalive } = options;
   const res = await fetch(`${BASE_URL}${path}`, {
     method,
     // Always send/receive the httpOnly session cookie (cross-origin in dev).
     credentials: 'include',
     headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
     body: body !== undefined ? JSON.stringify(body) : undefined,
+    keepalive,
   });
 
   if (!res.ok) {
@@ -118,4 +144,13 @@ export const api = {
 
   authMe: () =>
     request<AuthUser>('/auth/me'),
+
+  // ── Account sync (Stage 4; requires the session cookie) ──
+  syncGet: () =>
+    request<{ items: SyncItem[] }>('/sync'),
+
+  syncBatch: (items: SyncBatchItem[], opts: { keepalive?: boolean } = {}) =>
+    request<{ results: SyncBatchResult[] }>('/sync/batch', {
+      method: 'POST', body: { items }, keepalive: opts.keepalive,
+    }),
 };

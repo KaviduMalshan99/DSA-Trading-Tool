@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { saveLocal } from '../services/persist';
 
 const DEFAULT_WATCHLIST = [
   'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT',
@@ -53,7 +54,7 @@ export const useWatchlistStore = create<WatchlistState>((set, get) => ({
     if (get().symbols.includes(symbol)) return;
     const next = [...get().symbols, symbol];
     set({ symbols: next });
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+    saveLocal(STORAGE_KEY, JSON.stringify(next));
   },
 
   removeSymbol: (symbol) => {
@@ -61,8 +62,8 @@ export const useWatchlistStore = create<WatchlistState>((set, get) => ({
     const nextTags = { ...get().tagColors };
     delete nextTags[symbol];
     set({ symbols: next, tagColors: nextTags });
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(next)); } catch { /* ignore */ }
-    try { localStorage.setItem(TAGS_STORAGE_KEY, JSON.stringify(nextTags)); } catch { /* ignore */ }
+    saveLocal(STORAGE_KEY, JSON.stringify(next));
+    saveLocal(TAGS_STORAGE_KEY, JSON.stringify(nextTags));
   },
 
   setTagColor: (symbol, color) => {
@@ -70,6 +71,6 @@ export const useWatchlistStore = create<WatchlistState>((set, get) => ({
     if (color === null) delete nextTags[symbol];
     else nextTags[symbol] = color;
     set({ tagColors: nextTags });
-    try { localStorage.setItem(TAGS_STORAGE_KEY, JSON.stringify(nextTags)); } catch { /* ignore */ }
+    saveLocal(TAGS_STORAGE_KEY, JSON.stringify(nextTags));
   },
 }));

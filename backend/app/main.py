@@ -9,10 +9,12 @@ from app.core.config import settings
 from app.core.redis import close_redis
 from app.models import candle as _candle_model  # noqa: F401 — registers CandleRecord with Base
 from app.models import user as _user_model  # noqa: F401 — registers User with Base
+from app.models import user_data as _user_data_model  # noqa: F401 — registers UserData with Base
 from app.api.auth import router as auth_router
 from app.api.candles import router as candles_router
 from app.api.symbols import router as symbols_router
 from app.api.indicators import router as indicators_router
+from app.api.sync import router as sync_router
 from app.websocket.candle_stream import router as candle_stream_router
 from app.websocket.delta_stream import router as delta_stream_router
 from app.websocket.footprint_stream import router as footprint_stream_router
@@ -82,6 +84,7 @@ app.include_router(auth_router, prefix="/api/v1")
 app.include_router(candles_router, prefix="/api/v1")
 app.include_router(symbols_router, prefix="/api/v1")
 app.include_router(indicators_router, prefix="/api/v1")
+app.include_router(sync_router, prefix="/api/v1")
 app.include_router(candle_stream_router)    # specific routes before the catch-all
 app.include_router(delta_stream_router)
 app.include_router(footprint_stream_router)

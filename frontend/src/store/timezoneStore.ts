@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { saveLocal } from '../services/persist';
 
 const STORAGE_KEY = 'dsa-timezone';
 const DEFAULT_TZ = 'Asia/Colombo';
@@ -69,6 +70,6 @@ export const useTimezoneStore = create<TimezoneState>((set) => ({
   setTimezone: (tz) => {
     if (!isValidTimezone(tz)) return;
     set({ timezone: tz });
-    try { localStorage.setItem(STORAGE_KEY, tz); } catch { /* ignore */ }
+    saveLocal(STORAGE_KEY, tz);
   },
 }));

@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { saveLocal } from '../services/persist';
 
 export type AlertType = 'price' | 'whale' | 'absorption' | 'delta' | 'level';
 export type AlertSideFilter = 'any' | 'buy' | 'sell';
@@ -76,7 +77,7 @@ function loadInitial(): Persisted {
 }
 
 function persist(state: Persisted) {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch { /* ignore */ }
+  saveLocal(STORAGE_KEY, JSON.stringify(state));
 }
 
 interface AlertsState extends Persisted {

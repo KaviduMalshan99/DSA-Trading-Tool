@@ -27,6 +27,21 @@ interface AuthState {
 // Module-level so StrictMode's double effect (and any re-mount) can't fire /auth/me twice.
 let initStarted = false;
 
+/** What logout needs from the account-sync engine (services/sync.ts). */
+interface SessionHooks {
+  flushNow: (timeoutMs: number) => Promise<void>;
+  clearLocalSyncedData: () => void;
+}
+
+// The sync engine imports this store (it subscribes to auth status), so this
+// store can't import it back without a cycle; the engine registers itself here
+// from its start() instead.
+let sessionHooks: SessionHooks | null = null;
+
+export function registerSessionHooks(hooks: SessionHooks): void {
+  sessionHooks = hooks;
+}
+
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   status: 'checking',
@@ -59,6 +74,10 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   logout: async () => {
+    // Upload pending edits while the session cookie is still valid.
+    try {
+      await sessionHooks?.flushNow(3000);
+    } catch { /* best effort */ }
     try {
       await api.authLogout();
     } catch (err) {
@@ -66,6 +85,10 @@ export const useAuthStore = create<AuthState>((set) => ({
     } finally {
       set({ user: null, status: 'anonymous' });
     }
+    // The account's synced data must not stay behind for the next (anonymous) user.
+    // Reload so every store re-reads the now-empty localStorage.
+    sessionHooks?.clearLocalSyncedData();
+    window.location.reload();
   },
 
   openAuthModal: (mode, error) => set({ authModalOpen: true, authModalMode: mode, authModalError: error ?? null }),
