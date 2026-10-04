@@ -1,7 +1,8 @@
 import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.core.database import init_db
 from app.core.config import settings
@@ -53,6 +54,21 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+_UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
+
+# CSRF defence for cookie auth: reject state-changing API calls from foreign origins.
+# A missing Origin is allowed (curl, server-to-server webhooks). Registered before
+# CORSMiddleware so CORS stays outermost and the 403 still carries CORS headers.
+@app.middleware("http")
+async def check_origin(request: Request, call_next):
+    if request.method in _UNSAFE_METHODS and request.url.path.startswith("/api/"):
+        origin = request.headers.get("origin")
+        if origin is not None and origin not in settings.cors_origins:
+            return JSONResponse(status_code=403, content={"detail": "Origin not allowed"})
+    return await call_next(request)
+
 
 app.add_middleware(
     CORSMiddleware,

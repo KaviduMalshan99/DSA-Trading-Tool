@@ -1,17 +1,24 @@
 """
-Email/password auth (Stage 1).
+Email/password auth. The JWT is delivered as an httpOnly session cookie (Stage 2a).
 
 If the database is unavailable these endpoints return 500 — acceptable for now;
 the rest of the app keeps running without a DB.
 """
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.security import create_access_token, get_current_user, hash_password, verify_password
+from app.core.security import (
+    clear_auth_cookie,
+    create_access_token,
+    get_current_user,
+    hash_password,
+    set_auth_cookie,
+    verify_password,
+)
 from app.models.user import User
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -38,20 +45,20 @@ class UserOut(BaseModel):
     is_active: bool
 
 
-class TokenOut(BaseModel):
-    access_token: str
-    token_type: str = "bearer"
+class AuthOut(BaseModel):
     user: UserOut
 
 
-def _token_response(user: User) -> TokenOut:
-    return TokenOut(access_token=create_access_token(user.id), user=UserOut.model_validate(user))
+def _auth_response(response: Response, user: User) -> AuthOut:
+    # The token travels only in the httpOnly cookie — never in the body.
+    set_auth_cookie(response, create_access_token(user.id))
+    return AuthOut(user=UserOut.model_validate(user))
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
-@router.post("/signup", response_model=TokenOut, status_code=status.HTTP_201_CREATED)
-async def signup(body: RegisterIn, db: AsyncSession = Depends(get_db)):
+@router.post("/signup", response_model=AuthOut, status_code=status.HTTP_201_CREATED)
+async def signup(body: RegisterIn, response: Response, db: AsyncSession = Depends(get_db)):
     email = body.email.lower()
     conflict = HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
 
@@ -67,11 +74,11 @@ async def signup(body: RegisterIn, db: AsyncSession = Depends(get_db)):
         await db.rollback()
         raise conflict
     await db.refresh(user)
-    return _token_response(user)
+    return _auth_response(response, user)
 
 
-@router.post("/login", response_model=TokenOut)
-async def login(body: LoginIn, db: AsyncSession = Depends(get_db)):
+@router.post("/login", response_model=AuthOut)
+async def login(body: LoginIn, response: Response, db: AsyncSession = Depends(get_db)):
     email = body.email.lower()
     user = await db.scalar(select(User).where(User.email == email))
 
@@ -80,7 +87,15 @@ async def login(body: LoginIn, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is disabled")
-    return _token_response(user)
+    return _auth_response(response, user)
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+async def logout() -> Response:
+    # No auth required and idempotent — clearing an absent cookie is harmless.
+    response = Response(status_code=status.HTTP_204_NO_CONTENT)
+    clear_auth_cookie(response)
+    return response
 
 
 @router.get("/me", response_model=UserOut)

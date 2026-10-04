@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 import bcrypt
 import jwt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -54,6 +54,26 @@ def decode_token(token: str) -> int:
         raise TokenError("Invalid token") from exc
 
 
+def _cookie_kwargs() -> dict:
+    # Shared by set/clear — browsers ignore a delete whose attributes don't match the original cookie.
+    return {
+        "key": settings.cookie_name,
+        "path": "/",
+        "domain": settings.cookie_domain,
+        "secure": settings.cookie_secure,
+        "httponly": True,
+        "samesite": settings.cookie_samesite,
+    }
+
+
+def set_auth_cookie(response: Response, token: str) -> None:
+    response.set_cookie(value=token, max_age=settings.access_token_expire_minutes * 60, **_cookie_kwargs())
+
+
+def clear_auth_cookie(response: Response) -> None:
+    response.delete_cookie(**_cookie_kwargs())
+
+
 # auto_error=False so a missing header yields our own 401 (HTTPBearer defaults to 403).
 _bearer = HTTPBearer(auto_error=False)
 
@@ -67,13 +87,18 @@ def _unauthorized(detail: str) -> HTTPException:
 
 
 async def get_current_user(
+    request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
     db: AsyncSession = Depends(get_db),
 ) -> User:
-    if credentials is None:
+    # Session cookie first; Bearer header kept as a fallback for scripts/tools.
+    token = request.cookies.get(settings.cookie_name)
+    if not token and credentials is not None:
+        token = credentials.credentials
+    if not token:
         raise _unauthorized("Not authenticated")
     try:
-        user_id = decode_token(credentials.credentials)
+        user_id = decode_token(token)
     except TokenError as exc:
         raise _unauthorized(str(exc))
 
