@@ -3,6 +3,7 @@ import type { IChartApi } from 'lightweight-charts';
 import { useMarketStore } from '../../store/marketStore';
 import { useDrawingStore } from '../../store/drawingStore';
 import { useChartStore } from '../../store/chartStore';
+import { useAuthStore } from '../../store/authStore';
 import { captureChartSnapshot, canvasToBlob, downloadCanvas } from '../../utils/chartSnapshot';
 import { ChartSettingsModal } from './ChartSettingsModal';
 import { PositionCalculator } from './PositionCalculator';
@@ -197,6 +198,39 @@ function FullscreenButton() {
   );
 }
 
+function AuthControls() {
+  const status = useAuthStore((s) => s.status);
+  const email = useAuthStore((s) => s.user?.email ?? '');
+  const openAuthModal = useAuthStore((s) => s.openAuthModal);
+  const logout = useAuthStore((s) => s.logout);
+
+  // Same footprint as the "Log in" button so resolving /auth/me doesn't shift the toolbar.
+  if (status === 'checking') return <div className="w-14 h-7" aria-hidden />;
+
+  if (status === 'anonymous') {
+    return (
+      <button
+        onClick={() => openAuthModal('login')}
+        className="w-14 h-7 rounded text-xs text-white bg-[var(--accent)] hover:bg-[var(--accent-hover)]"
+      >
+        Log in
+      </button>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className="max-w-[160px] truncate text-[var(--text-secondary)]" title={email}>{email}</span>
+      <button
+        onClick={() => { void logout(); }}
+        className="h-7 px-2 rounded text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
+      >
+        Log out
+      </button>
+    </div>
+  );
+}
+
 export function Toolbar({ chartRef, chartAreaRef }: ToolbarProps) {
   const settingsOpen = useChartStore((s) => s.settingsOpen);
   const setSettingsOpen = useChartStore((s) => s.setSettingsOpen);
@@ -253,6 +287,9 @@ export function Toolbar({ chartRef, chartAreaRef }: ToolbarProps) {
           <GearIcon />
         </button>
         <span>Real-Time Analytics Platform</span>
+        <div className="ml-2 pl-3 flex items-center border-l border-[var(--border-color)]">
+          <AuthControls />
+        </div>
       </div>
       {settingsOpen && <ChartSettingsModal onClose={() => setSettingsOpen(false)} />}
       {calcOpen && <PositionCalculator onClose={() => setCalcOpen(false)} />}

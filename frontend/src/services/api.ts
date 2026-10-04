@@ -5,9 +5,59 @@ import type {
 
 const BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000/api/v1';
 
-async function request<T>(path: string): Promise<T> {
-  const res = await fetch(`${BASE_URL}${path}`);
-  if (!res.ok) throw new Error(`API error ${res.status}: ${path}`);
+export class ApiError extends Error {
+  readonly status: number;
+  readonly detail: string;
+
+  constructor(status: number, detail: string) {
+    super(detail);
+    this.name = 'ApiError';
+    this.status = status;
+    this.detail = detail;
+  }
+}
+
+/** Matches backend UserOut. */
+export interface AuthUser {
+  id: number;
+  email: string;
+  auth_provider: string;
+  is_active: boolean;
+}
+
+interface RequestOptions {
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+  body?: unknown;
+}
+
+// FastAPI errors are { detail: string } or, for 422s, { detail: [{ msg, ... }] }.
+function extractDetail(data: unknown): string | null {
+  if (!data || typeof data !== 'object' || !('detail' in data)) return null;
+  const detail = (data as { detail: unknown }).detail;
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail)) {
+    const msg = (detail[0] as { msg?: unknown } | undefined)?.msg;
+    if (typeof msg === 'string') return msg;
+  }
+  return null;
+}
+
+async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const { method = 'GET', body } = options;
+  const res = await fetch(`${BASE_URL}${path}`, {
+    method,
+    // Always send/receive the httpOnly session cookie (cross-origin in dev).
+    credentials: 'include',
+    headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+
+  if (!res.ok) {
+    let detail: string | null = null;
+    try { detail = extractDetail(await res.json()); } catch { /* non-JSON error body */ }
+    throw new ApiError(res.status, detail ?? `Request failed (${res.status})`);
+  }
+  if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
 }
 
@@ -50,4 +100,17 @@ export const api = {
       `/indicators/absorption/${symbol}/${interval}${query ? `?${query}` : ''}`
     );
   },
+
+  // ── Auth (session lives in an httpOnly cookie; nothing is stored client-side) ──
+  authSignup: (email: string, password: string) =>
+    request<{ user: AuthUser }>('/auth/signup', { method: 'POST', body: { email, password } }),
+
+  authLogin: (email: string, password: string) =>
+    request<{ user: AuthUser }>('/auth/login', { method: 'POST', body: { email, password } }),
+
+  authLogout: () =>
+    request<void>('/auth/logout', { method: 'POST' }),
+
+  authMe: () =>
+    request<AuthUser>('/auth/me'),
 };

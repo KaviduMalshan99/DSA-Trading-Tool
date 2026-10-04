@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { IChartApi, ISeriesApi } from 'lightweight-charts';
 import { Toolbar } from './components/UI/Toolbar';
 import { StatusBar } from './components/UI/StatusBar';
@@ -11,7 +11,9 @@ import { DOMPanel } from './components/Overlay/DOMPanel';
 import { TapePanel } from './components/Overlay/TapePanel';
 import { AlertsEngine } from './components/UI/AlertsEngine';
 import { ToastStack } from './components/UI/ToastStack';
+import { AuthModal } from './components/Auth/AuthModal';
 import { useChartStore } from './store/chartStore';
+import { useAuthStore } from './store/authStore';
 import { SHOW_DOM_PANEL, SHOW_TAPE_PANEL } from './config/topBarVisibility';
 
 export default function App() {
@@ -24,6 +26,9 @@ export default function App() {
   const sharedChartRef  = useRef<IChartApi | null>(null);
   const sharedSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const chartAreaRef    = useRef<HTMLDivElement>(null);
+
+  // Resolve the cookie session once; the store guards against StrictMode's double effect.
+  useEffect(() => { void useAuthStore.getState().init(); }, []);
 
   return (
     <div className="flex flex-col h-screen bg-[var(--bg-app)] text-[var(--text-primary)] overflow-hidden">
@@ -70,6 +75,7 @@ export default function App() {
           panels/modals are open, so this isn't gated behind any toggle. */}
       <AlertsEngine />
       <ToastStack />
+      <AuthModal />
     </div>
   );
 }

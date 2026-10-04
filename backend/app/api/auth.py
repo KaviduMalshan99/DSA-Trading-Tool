@@ -4,7 +4,12 @@ Email/password auth. The JWT is delivered as an httpOnly session cookie (Stage 2
 If the database is unavailable these endpoints return 500 — acceptable for now;
 the rest of the app keeps running without a DB.
 """
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from typing import Callable
+
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
+from fastapi.routing import APIRoute
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -21,7 +26,32 @@ from app.core.security import (
 )
 from app.models.user import User
 
-router = APIRouter(prefix="/auth", tags=["auth"])
+_NO_STORE = {"Cache-Control": "no-store"}
+
+
+class _NoStoreRoute(APIRoute):
+    """Mark every /auth/* response no-store (prod sits behind Cloudflare), including
+    errors raised from the route or its dependencies (e.g. 401 from get_current_user)
+    and 422 validation errors."""
+
+    def get_route_handler(self) -> Callable:
+        handler = super().get_route_handler()
+
+        async def no_store_handler(request: Request) -> Response:
+            try:
+                response = await handler(request)
+            except HTTPException as exc:
+                exc.headers = {**(exc.headers or {}), **_NO_STORE}
+                raise
+            except RequestValidationError as exc:
+                response = await request_validation_exception_handler(request, exc)
+            response.headers.update(_NO_STORE)
+            return response
+
+        return no_store_handler
+
+
+router = APIRouter(prefix="/auth", tags=["auth"], route_class=_NoStoreRoute)
 
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
