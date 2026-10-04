@@ -1,12 +1,20 @@
 import { useEffect } from 'react';
-import { useToastStore } from '../../store/toastStore';
+import { useToastStore, type ToastKind } from '../../store/toastStore';
 
 const AUTO_DISMISS_MS = 6_000;
 
 const UP_COLOR = '#26a641';
 const DOWN_COLOR = '#f85149';
 
-function ToastRow({ id, message, side }: { id: string; message: string; side: 'buy' | 'sell' }) {
+const KIND_COLOR: Record<ToastKind, string> = {
+  buy: UP_COLOR,
+  sell: DOWN_COLOR,
+  success: UP_COLOR,
+  error: DOWN_COLOR,
+  info: 'var(--accent)',
+};
+
+function ToastRow({ id, message, side }: { id: string; message: string; side: ToastKind }) {
   const removeToast = useToastStore((s) => s.removeToast);
 
   useEffect(() => {
@@ -14,10 +22,11 @@ function ToastRow({ id, message, side }: { id: string; message: string; side: 'b
     return () => clearTimeout(timer);
   }, [id, removeToast]);
 
-  const color = side === 'buy' ? UP_COLOR : DOWN_COLOR;
+  const color = KIND_COLOR[side];
 
   return (
     <div
+      role={side === 'error' ? 'alert' : 'status'}
       className="flex items-center gap-2.5 px-3 py-2 text-xs font-mono pointer-events-auto"
       style={{
         background: 'var(--bg-panel)',
@@ -33,6 +42,7 @@ function ToastRow({ id, message, side }: { id: string; message: string; side: 'b
       <span className="flex-1 text-[var(--text-primary)]">{message}</span>
       <button
         onClick={() => removeToast(id)}
+        aria-label="Dismiss"
         className="text-[var(--text-muted)] hover:text-[var(--text-primary)] text-sm leading-none flex-shrink-0"
       >
         ×
@@ -42,7 +52,7 @@ function ToastRow({ id, message, side }: { id: string; message: string; side: 'b
 }
 
 /**
- * App-level toast stack for fired alerts. Fixed to the viewport (not the
+ * App-level toast stack for fired alerts and app feedback. Fixed to the viewport (not the
  * chart area) at top-center, deliberately distinct from the four docked
  * chart-area panels (Context top-right, Execution top-left, Checklist
  * bottom-right, Scanner bottom-left) which all live inside the chart area

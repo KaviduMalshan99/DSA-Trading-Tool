@@ -28,13 +28,43 @@ export interface AuthUser {
   email: string;
   auth_provider: string;
   is_active: boolean;
+  first_name: string | null;
+  last_name: string | null;
+  /** E.164, e.g. +94771234567. */
+  phone: string | null;
+  /** ISO 3166-1 alpha-2. */
+  country: string | null;
+  /** Google profile photo (never user-editable). */
+  avatar_url: string | null;
+  /** Epoch ms. */
+  created_at: number;
+  has_password: boolean;
+  google_linked: boolean;
 }
+
+/** Matches backend ProfileUpdateIn: only present fields change; null clears. */
+export type ProfilePatch = Partial<Pick<AuthUser, 'first_name' | 'last_name' | 'phone' | 'country'>>;
 
 interface RequestOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   body?: unknown;
   /** Let the request outlive the page (pagehide). Browsers cap keepalive bodies at 64 KB. */
   keepalive?: boolean;
+  /**
+   * The request only makes sense with a live session, so a 401 means the session
+   * ended (expired, or revoked from another device) and is reported to the
+   * session-expired handler. Never set on login/signup/me, where 401 is an answer.
+   */
+  authRequired?: boolean;
+}
+
+// authStore imports this module, so it can't be imported back here without a
+// cycle; it registers its handler at module load instead (same pattern as
+// authStore.registerSessionHooks).
+let sessionExpiredHandler: (() => void) | null = null;
+
+export function registerSessionExpiredHandler(handler: () => void): void {
+  sessionExpiredHandler = handler;
 }
 
 /** Matches backend SyncItemOut. */
@@ -73,7 +103,7 @@ function extractDetail(data: unknown): string | null {
 }
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { method = 'GET', body, keepalive } = options;
+  const { method = 'GET', body, keepalive, authRequired } = options;
   const res = await fetch(`${BASE_URL}${path}`, {
     method,
     // Always send/receive the httpOnly session cookie (cross-origin in dev).
@@ -86,6 +116,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   if (!res.ok) {
     let detail: string | null = null;
     try { detail = extractDetail(await res.json()); } catch { /* non-JSON error body */ }
+    if (res.status === 401 && authRequired) sessionExpiredHandler?.();
     throw new ApiError(res.status, detail ?? `Request failed (${res.status})`);
   }
   if (res.status === 204) return undefined as T;
@@ -145,12 +176,23 @@ export const api = {
   authMe: () =>
     request<AuthUser>('/auth/me'),
 
+  authUpdateProfile: (patch: ProfilePatch) =>
+    request<AuthUser>('/auth/me', { method: 'PATCH', body: patch, authRequired: true }),
+
+  /** On success the server re-issues this device's cookie and signs out every other session. */
+  authChangePassword: (body: { current_password?: string; new_password: string }) =>
+    request<AuthUser>('/auth/password', { method: 'POST', body, authRequired: true }),
+
+  authLogoutAll: () =>
+    request<void>('/auth/logout-all', { method: 'POST', authRequired: true }),
+
   // ── Account sync (Stage 4; requires the session cookie) ──
   syncGet: () =>
-    request<{ items: SyncItem[] }>('/sync'),
+    request<{ items: SyncItem[] }>('/sync', { authRequired: true }),
 
   syncBatch: (items: SyncBatchItem[], opts: { keepalive?: boolean } = {}) =>
     request<{ results: SyncBatchResult[] }>('/sync/batch', {
-      method: 'POST', body: { items }, keepalive: opts.keepalive,
+      // A keepalive upload runs while the page unloads: nothing to redirect then.
+      method: 'POST', body: { items }, keepalive: opts.keepalive, authRequired: !opts.keepalive,
     }),
 };

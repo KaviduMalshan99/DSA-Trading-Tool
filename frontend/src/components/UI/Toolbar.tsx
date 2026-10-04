@@ -8,6 +8,7 @@ import { captureChartSnapshot, canvasToBlob, downloadCanvas } from '../../utils/
 import { ChartSettingsModal } from './ChartSettingsModal';
 import { PositionCalculator } from './PositionCalculator';
 import { AlertsManager } from './AlertsManager';
+import { AccountMenu } from '../Auth/AccountMenu';
 
 interface ToolbarProps {
   chartRef:     React.RefObject<IChartApi | null>;
@@ -200,35 +201,28 @@ function FullscreenButton() {
 
 function AuthControls() {
   const status = useAuthStore((s) => s.status);
-  const email = useAuthStore((s) => s.user?.email ?? '');
+  const user = useAuthStore((s) => s.user);
   const openAuthModal = useAuthStore((s) => s.openAuthModal);
-  const logout = useAuthStore((s) => s.logout);
 
   // Same footprint as the "Log in" button so resolving /auth/me doesn't shift the toolbar.
-  if (status === 'checking') return <div className="w-14 h-7" aria-hidden />;
+  if (status === 'checking') return <div className="w-[68px] h-[30px]" aria-hidden />;
 
-  if (status === 'anonymous') {
+  if (status === 'anonymous' || !user) {
     return (
       <button
         onClick={() => openAuthModal('login')}
-        className="w-14 h-7 rounded text-xs text-white bg-[var(--accent)] hover:bg-[var(--accent-hover)]"
+        className="w-[68px] h-[30px] inline-flex items-center justify-center gap-1.5 rounded-md text-xs font-medium text-white bg-[var(--accent)] hover:bg-[var(--accent-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--bg-panel)]"
       >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+          <path d="m10 17 5-5-5-5M15 12H3" />
+        </svg>
         Log in
       </button>
     );
   }
 
-  return (
-    <div className="flex items-center gap-1.5">
-      <span className="max-w-[160px] truncate text-[var(--text-secondary)]" title={email}>{email}</span>
-      <button
-        onClick={() => { void logout(); }}
-        className="h-7 px-2 rounded text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
-      >
-        Log out
-      </button>
-    </div>
-  );
+  return <AccountMenu user={user} />;
 }
 
 export function Toolbar({ chartRef, chartAreaRef }: ToolbarProps) {

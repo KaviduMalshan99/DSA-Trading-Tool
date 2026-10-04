@@ -1,9 +1,12 @@
 import { create } from 'zustand';
 
+/** 'buy'/'sell' are fired alerts; 'success'/'error'/'info' are app feedback (account, etc.). */
+export type ToastKind = 'buy' | 'sell' | 'success' | 'error' | 'info';
+
 export interface Toast {
   id: string;
   message: string;
-  side: 'buy' | 'sell';
+  side: ToastKind;
   time: number;
 }
 
@@ -11,7 +14,7 @@ export interface Toast {
 // would be reporting something stale as if it just happened.
 interface ToastState {
   toasts: Toast[];
-  addToast: (message: string, side: 'buy' | 'sell') => void;
+  addToast: (message: string, side: ToastKind) => void;
   removeToast: (id: string) => void;
 }
 

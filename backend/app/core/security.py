@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 import bcrypt
@@ -25,9 +26,15 @@ def verify_password(pw: str, hashed: str) -> bool:
         return False
 
 
-def create_access_token(user_id: int) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(minutes=settings.access_token_expire_minutes)
-    payload = {"sub": str(user_id), "exp": expire}
+def create_access_token(user: User) -> str:
+    now = datetime.now(timezone.utc)
+    payload = {
+        "sub": str(user.id),
+        "exp": now + timedelta(minutes=settings.access_token_expire_minutes),
+        "iat": now,
+        # Session revocation: the token is only valid while this matches users.token_version.
+        "ver": user.token_version or 0,
+    }
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
 
@@ -35,8 +42,15 @@ class TokenError(Exception):
     pass
 
 
-def decode_token(token: str) -> int:
-    """Return the user id in the token's `sub`, or raise TokenError."""
+@dataclass(frozen=True)
+class TokenClaims:
+    user_id: int
+    ver: int
+    iat: int | None  # epoch seconds; None for tokens issued before `iat` was added
+
+
+def decode_token(token: str) -> TokenClaims:
+    """Return the token's user id, version and issue time, or raise TokenError."""
     try:
         payload = jwt.decode(
             token,
@@ -49,9 +63,21 @@ def decode_token(token: str) -> int:
     except jwt.InvalidTokenError as exc:
         raise TokenError("Invalid token") from exc
     try:
-        return int(payload["sub"])
+        user_id = int(payload["sub"])
     except (TypeError, ValueError) as exc:
         raise TokenError("Invalid token") from exc
+    # Tokens issued before token_version existed carry no `ver`: treat as 0 so
+    # sessions survive the deploy (every existing row starts at 0).
+    ver = payload.get("ver", 0)
+    if isinstance(ver, bool) or not isinstance(ver, int):
+        raise TokenError("Invalid token")
+    iat = payload.get("iat")  # PyJWT already rejects a non-numeric iat
+    return TokenClaims(user_id=user_id, ver=ver, iat=int(iat) if iat is not None else None)
+
+
+def bump_token_version(user: User) -> None:
+    """Revoke every outstanding session for this user. The caller commits."""
+    user.token_version = (user.token_version or 0) + 1
 
 
 def _cookie_kwargs() -> dict:
@@ -86,11 +112,17 @@ def _unauthorized(detail: str) -> HTTPException:
     )
 
 
-async def get_current_user(
+@dataclass(frozen=True)
+class CurrentSession:
+    user: User
+    iat: int | None  # when this session's token was issued (epoch seconds)
+
+
+async def get_current_session(
     request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
     db: AsyncSession = Depends(get_db),
-) -> User:
+) -> CurrentSession:
     # Session cookie first; Bearer header kept as a fallback for scripts/tools.
     token = request.cookies.get(settings.cookie_name)
     if not token and credentials is not None:
@@ -98,11 +130,18 @@ async def get_current_user(
     if not token:
         raise _unauthorized("Not authenticated")
     try:
-        user_id = decode_token(token)
+        claims = decode_token(token)
     except TokenError as exc:
         raise _unauthorized(str(exc))
 
-    user = await db.get(User, user_id)
+    user = await db.get(User, claims.user_id)
     if user is None or not user.is_active:
         raise _unauthorized("Invalid token")
-    return user
+    if claims.ver != (user.token_version or 0):
+        # Revoked by a password change or "log out of all devices".
+        raise _unauthorized("Invalid token")
+    return CurrentSession(user=user, iat=claims.iat)
+
+
+async def get_current_user(session: CurrentSession = Depends(get_current_session)) -> User:
+    return session.user

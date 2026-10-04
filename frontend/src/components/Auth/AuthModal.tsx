@@ -1,6 +1,11 @@
 import { useEffect, useId, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { useAuthStore } from '../../store/authStore';
 import { ApiError, googleStartUrl } from '../../services/api';
+import { Modal, ModalCloseButton } from '../UI/Modal';
+import {
+  Banner, FIELD_STYLES, GoogleButton, MailIcon, PasswordField, Spinner, StrengthMeter, TextField,
+  primaryButtonClass,
+} from './fields';
 
 // Mirrors backend RegisterIn: EmailStr + password length 8–72.
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -22,14 +27,55 @@ function errorMessage(err: unknown): string {
   return 'Could not reach the server. Please try again.';
 }
 
-const inputClass = 'w-full px-2 py-1.5 rounded text-sm text-[var(--text-primary)] outline-none focus:border-[var(--accent)]';
-const inputStyle = { background: 'var(--bg-app)', border: '1px solid var(--border-color)' };
+/** The app's mark: three rising candlesticks on an accent tile. */
+export function LogoMark({ size = 28 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 28 28" aria-hidden="true">
+      <rect width="28" height="28" rx="7" fill="var(--accent)" />
+      <g stroke="#fff" strokeWidth="1.4" strokeLinecap="round">
+        <path d="M8 11v11" opacity="0.6" />
+        <path d="M14 8v12" opacity="0.8" />
+        <path d="M20 5v11" />
+      </g>
+      <g fill="#fff">
+        <rect x="6.25" y="14" width="3.5" height="5" rx="0.9" opacity="0.6" />
+        <rect x="12.25" y="10.5" width="3.5" height="6" rx="0.9" opacity="0.8" />
+        <rect x="18.25" y="7" width="3.5" height="6.5" rx="0.9" />
+      </g>
+    </svg>
+  );
+}
 
-const errorBannerStyle = { background: 'rgba(248,81,73,0.1)', border: '1px solid rgba(248,81,73,0.4)' };
-
-function FieldError({ id, message }: { id: string; message?: string }) {
-  if (!message) return null;
-  return <div id={id} className="mt-1 text-[11px] text-[#f85149]">{message}</div>;
+/** Low-contrast candles + price line behind the header; purely decorative. */
+function HeaderPattern() {
+  const candles = [
+    [18, 46, 58, 52, 40], [36, 40, 56, 44, 50], [54, 30, 50, 34, 44], [72, 34, 52, 46, 40],
+    [90, 22, 44, 26, 38], [108, 18, 38, 30, 22], [126, 10, 32, 14, 26], [144, 14, 30, 26, 18],
+  ]; // [x, wickTop, wickBottom, open, close]
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 160 70"
+      preserveAspectRatio="xMaxYMid slice"
+      className="absolute inset-0 w-full h-full pointer-events-none"
+      style={{ opacity: 0.14 }}
+    >
+      <polyline
+        points="0,62 18,52 36,47 54,38 72,42 90,30 108,26 126,18 144,20 160,8"
+        fill="none" stroke="var(--accent)" strokeWidth="1.5" strokeLinejoin="round"
+      />
+      {candles.map(([x, top, bottom, open, close]) => {
+        const up = close < open;
+        const color = up ? '#26a641' : '#f85149';
+        return (
+          <g key={x} transform="translate(0, 4)">
+            <line x1={x} x2={x} y1={top} y2={bottom} stroke={color} strokeWidth="1" />
+            <rect x={x - 3} y={Math.min(open, close)} width="6" height={Math.max(Math.abs(open - close), 2)} fill={color} rx="1" />
+          </g>
+        );
+      })}
+    </svg>
+  );
 }
 
 /** Rendered once from App; mounts its form only while open so fields reset on every open. */
@@ -58,8 +104,8 @@ function AuthDialog() {
   const emailRef = useRef<HTMLInputElement>(null);
   const uid = useId();
   const isSignup = mode === 'signup';
-  const title = isSignup ? 'Create account' : 'Log in';
 
+  // Modal focuses the first input on open; this re-focuses it on a mode switch.
   useEffect(() => { emailRef.current?.focus(); }, [mode]);
 
   // Coming back via the browser's Back button can restore this page from bfcache
@@ -70,12 +116,13 @@ function AuthDialog() {
     return () => window.removeEventListener('pageshow', onPageShow);
   }, []);
 
-  const switchMode = () => {
+  const switchMode = (next: 'login' | 'signup') => {
+    if (next === mode || submitting) return;
     setFieldErrors({});
     setFormError(null);
     setConfirm('');
     // Opening without an error clears any banner.
-    openAuthModal(isSignup ? 'login' : 'signup');
+    openAuthModal(next);
   };
 
   const startGoogle = () => {
@@ -123,141 +170,128 @@ function AuthDialog() {
     }
   };
 
-  return (
+  const header = (titleId: string) => (
     <div
-      className="fixed inset-0 flex items-center justify-center select-none"
-      style={{ zIndex: 1000, background: 'rgba(0,0,0,0.5)' }}
-      onMouseDown={(e) => { if (e.target === e.currentTarget) closeAuthModal(); }}
+      className="relative px-6 pt-5 pb-5 overflow-hidden flex-shrink-0"
+      style={{
+        background: 'linear-gradient(180deg, rgba(33,150,243,0.10) 0%, rgba(33,150,243,0) 100%)',
+        borderBottom: '1px solid var(--border-color-softer)',
+      }}
     >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={`${uid}-title`}
-        tabIndex={-1}
-        // Keys stop here so window-level shortcuts (drawing Delete/Ctrl+Z, etc.)
-        // don't fire while the dialog has focus.
-        onKeyDown={(e) => {
-          e.stopPropagation();
-          if (e.key === 'Escape') closeAuthModal();
-        }}
-        className="flex flex-col outline-none"
-        style={{ width: 360, maxWidth: 'calc(100vw - 32px)', background: 'var(--bg-panel-alt)', borderRadius: 8, boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }}
-      >
-        <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid var(--border-color-softer)' }}>
-          <span id={`${uid}-title`} className="text-[var(--text-secondary)] font-semibold text-base">{title}</span>
-          <button
-            type="button"
-            onClick={closeAuthModal}
-            aria-label="Close"
-            className="text-[var(--text-muted)] hover:text-[var(--text-primary)] text-lg leading-none"
-          >
-            ×
-          </button>
+      <HeaderPattern />
+      <ModalCloseButton onClose={closeAuthModal} className="absolute top-3 right-3" />
+      <div className="relative flex items-center gap-2">
+        <LogoMark size={26} />
+        <span className="text-sm font-bold tracking-wide text-[var(--text-primary)]">Check Your Chart</span>
+      </div>
+      <h2 id={titleId} className="relative mt-4 text-xl font-semibold text-[var(--text-primary)]">
+        {isSignup ? 'Create your free account' : 'Welcome back'}
+      </h2>
+      <p className="relative mt-1 text-xs text-[var(--text-muted)]">
+        {isSignup
+          ? 'Keep your watchlist, drawings and alerts on every device.'
+          : 'Log in to pick up your charts where you left them.'}
+      </p>
+    </div>
+  );
+
+  return (
+    <Modal title={isSignup ? 'Create account' : 'Log in'} onClose={closeAuthModal} width={400} header={header}>
+      <style>{FIELD_STYLES}</style>
+      <form onSubmit={handleSubmit} noValidate className="px-6 pt-5 pb-6 flex flex-col gap-4">
+        <div
+          className="grid grid-cols-2 p-1 rounded-lg text-xs font-medium"
+          style={{ background: 'var(--bg-app)', border: '1px solid var(--border-color-softer)' }}
+          role="group"
+          aria-label="Account"
+        >
+          {(['login', 'signup'] as const).map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => switchMode(m)}
+              aria-pressed={mode === m}
+              disabled={submitting}
+              className={`h-8 rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] ${
+                mode === m
+                  ? 'text-[var(--text-primary)] bg-[var(--bg-panel-alt)] shadow-sm'
+                  : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
+              }`}
+              style={mode === m ? { boxShadow: '0 1px 3px rgba(0,0,0,0.25)' } : undefined}
+            >
+              {m === 'login' ? 'Log in' : 'Sign up'}
+            </button>
+          ))}
         </div>
 
-        <form onSubmit={handleSubmit} noValidate className="p-4 flex flex-col gap-3 select-text">
-          {modalError && (
-            <div role="alert" className="px-2 py-1.5 rounded text-xs text-[#f85149]" style={errorBannerStyle}>
-              {modalError}
-            </div>
-          )}
+        {modalError && <Banner>{modalError}</Banner>}
 
+        <GoogleButton onClick={startGoogle} disabled={redirecting || submitting} busy={redirecting} />
+
+        <div className="flex items-center gap-3 text-[11px] uppercase tracking-wider text-[var(--text-muted)]" aria-hidden="true">
+          <div className="flex-1" style={{ borderTop: '1px solid var(--border-color-softer)' }} />
+          or
+          <div className="flex-1" style={{ borderTop: '1px solid var(--border-color-softer)' }} />
+        </div>
+
+        <TextField
+          inputRef={emailRef}
+          id={`${uid}-email`}
+          label="Email"
+          icon={<MailIcon size={18} />}
+          type="email"
+          autoComplete="email"
+          placeholder="you@example.com"
+          value={email}
+          onChange={onEdit(setEmail)}
+          error={fieldErrors.email}
+        />
+
+        <div>
+          <PasswordField
+            id={`${uid}-password`}
+            label="Password"
+            autoComplete={isSignup ? 'new-password' : 'current-password'}
+            placeholder={isSignup ? 'At least 8 characters' : undefined}
+            value={password}
+            onChange={onEdit(setPassword)}
+            error={fieldErrors.password}
+          />
+          {isSignup && <StrengthMeter password={password} />}
+        </div>
+
+        {isSignup && (
+          <PasswordField
+            id={`${uid}-confirm`}
+            label="Confirm password"
+            autoComplete="new-password"
+            value={confirm}
+            onChange={onEdit(setConfirm)}
+            error={fieldErrors.confirm}
+          />
+        )}
+
+        {formError && <Banner>{formError}</Banner>}
+
+        <button type="submit" disabled={submitting} className={`${primaryButtonClass} w-full h-10`}>
+          {submitting && <Spinner />}
+          {submitting
+            ? (isSignup ? 'Creating account...' : 'Logging in...')
+            : (isSignup ? 'Create account' : 'Log in')}
+        </button>
+
+        <div className="text-xs text-center text-[var(--text-muted)]">
+          {isSignup ? 'Have an account? ' : 'No account? '}
           <button
             type="button"
-            onClick={startGoogle}
-            disabled={redirecting || submitting}
-            className="w-full px-4 py-1.5 rounded text-sm text-[var(--text-primary)] bg-[var(--bg-app)] hover:bg-[var(--border-color-softer)] disabled:opacity-60 disabled:cursor-default disabled:hover:bg-[var(--bg-app)]"
-            style={{ border: '1px solid var(--border-color)' }}
-          >
-            {redirecting ? 'Redirecting...' : 'Continue with Google'}
-          </button>
-
-          <div className="flex items-center gap-2 text-[11px] text-[var(--text-muted)]" aria-hidden="true">
-            <div className="flex-1" style={{ borderTop: '1px solid var(--border-color-softer)' }} />
-            or
-            <div className="flex-1" style={{ borderTop: '1px solid var(--border-color-softer)' }} />
-          </div>
-
-          <div>
-            <label htmlFor={`${uid}-email`} className="block mb-1 text-xs text-[var(--text-muted)]">Email</label>
-            <input
-              ref={emailRef}
-              id={`${uid}-email`}
-              type="email"
-              autoComplete="email"
-              value={email}
-              onChange={onEdit(setEmail)}
-              aria-invalid={!!fieldErrors.email}
-              aria-describedby={fieldErrors.email ? `${uid}-email-err` : undefined}
-              className={inputClass}
-              style={inputStyle}
-            />
-            <FieldError id={`${uid}-email-err`} message={fieldErrors.email} />
-          </div>
-
-          <div>
-            <label htmlFor={`${uid}-password`} className="block mb-1 text-xs text-[var(--text-muted)]">Password</label>
-            <input
-              id={`${uid}-password`}
-              type="password"
-              autoComplete={isSignup ? 'new-password' : 'current-password'}
-              value={password}
-              onChange={onEdit(setPassword)}
-              aria-invalid={!!fieldErrors.password}
-              aria-describedby={fieldErrors.password ? `${uid}-password-err` : undefined}
-              className={inputClass}
-              style={inputStyle}
-            />
-            <FieldError id={`${uid}-password-err`} message={fieldErrors.password} />
-          </div>
-
-          {isSignup && (
-            <div>
-              <label htmlFor={`${uid}-confirm`} className="block mb-1 text-xs text-[var(--text-muted)]">Confirm password</label>
-              <input
-                id={`${uid}-confirm`}
-                type="password"
-                autoComplete="new-password"
-                value={confirm}
-                onChange={onEdit(setConfirm)}
-                aria-invalid={!!fieldErrors.confirm}
-                aria-describedby={fieldErrors.confirm ? `${uid}-confirm-err` : undefined}
-                className={inputClass}
-                style={inputStyle}
-              />
-              <FieldError id={`${uid}-confirm-err`} message={fieldErrors.confirm} />
-            </div>
-          )}
-
-          {formError && (
-            <div role="alert" className="px-2 py-1.5 rounded text-xs text-[#f85149]" style={errorBannerStyle}>
-              {formError}
-            </div>
-          )}
-
-          <button
-            type="submit"
+            onClick={() => switchMode(isSignup ? 'login' : 'signup')}
             disabled={submitting}
-            className="mt-1 px-4 py-1.5 rounded text-sm text-white bg-[var(--accent)] hover:bg-[var(--accent-hover)] disabled:opacity-60 disabled:cursor-default disabled:hover:bg-[var(--accent)]"
+            className="text-[var(--accent)] hover:underline disabled:opacity-60"
           >
-            {submitting
-              ? (isSignup ? 'Creating account...' : 'Logging in...')
-              : (isSignup ? 'Create account' : 'Log in')}
+            {isSignup ? 'Log in' : 'Sign up'}
           </button>
-
-          <div className="text-xs text-center text-[var(--text-muted)]">
-            {isSignup ? 'Have an account? ' : 'No account? '}
-            <button
-              type="button"
-              onClick={switchMode}
-              disabled={submitting}
-              className="text-[var(--accent)] hover:underline disabled:opacity-60"
-            >
-              {isSignup ? 'Log in' : 'Sign up'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+        </div>
+      </form>
+    </Modal>
   );
 }

@@ -12,8 +12,9 @@ import { TapePanel } from './components/Overlay/TapePanel';
 import { AlertsEngine } from './components/UI/AlertsEngine';
 import { ToastStack } from './components/UI/ToastStack';
 import { AuthModal } from './components/Auth/AuthModal';
+import { ProfileModal } from './components/Auth/ProfileModal';
 import { useChartStore } from './store/chartStore';
-import { useAuthStore } from './store/authStore';
+import { useAuthStore, takeSessionExpiredNotice } from './store/authStore';
 import { start as startSync } from './services/sync';
 import { SHOW_DOM_PANEL, SHOW_TAPE_PANEL } from './config/topBarVisibility';
 
@@ -56,6 +57,11 @@ export default function App() {
       useAuthStore.getState().openAuthModal('login', authErrorMessage(code));
       url.searchParams.delete('auth_error');
       window.history.replaceState(window.history.state, '', url.pathname + url.search + url.hash);
+    }
+    // The previous page load found the session ended (expired or revoked) and
+    // reloaded; the flag is consumed, so StrictMode's second run finds nothing.
+    if (takeSessionExpiredNotice()) {
+      useAuthStore.getState().openAuthModal('login', 'Your session ended. Please log in again.');
     }
   }, []);
 
@@ -105,6 +111,7 @@ export default function App() {
       <AlertsEngine />
       <ToastStack />
       <AuthModal />
+      <ProfileModal />
     </div>
   );
 }

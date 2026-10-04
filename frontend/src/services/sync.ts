@@ -11,6 +11,10 @@
 // Import direction: this module imports authStore and persist; neither imports
 // it back. Stores reach markDirty via persist.registerDirtyListener, and
 // authStore.logout reaches flushNow/clearLocalSyncedData via registerSessionHooks.
+//
+// A 401 from syncGet/syncBatch means the session ended (expired, or revoked from
+// another device). api.request reports it to authStore.handleSessionExpired
+// (those calls are marked authRequired); here it only stops retrying.
 
 import { api, ApiError } from './api';
 import { useAuthStore, registerSessionHooks, type AuthStatus } from '../store/authStore';
@@ -175,6 +179,10 @@ function chunkItems(items: BatchItem[]): BatchItem[][] {
   return chunks;
 }
 
+function isSessionEnded(err: unknown): boolean {
+  return err instanceof ApiError && err.status === 401;
+}
+
 /** Network failures, 5xx, 408 and 429 are worth retrying; other 4xx would just fail again. */
 function isRetryable(err: unknown): boolean {
   if (!(err instanceof ApiError)) return true;
@@ -236,8 +244,9 @@ export async function loginSync(userId: number, isRetry = false): Promise<void> 
   try {
     server = (await api.syncGet()).items;
   } catch (err) {
-    console.warn('[sync] could not load account data; keeping local data', err);
     syncing = false;
+    if (isSessionEnded(err)) return; // handleSessionExpired takes over
+    console.warn('[sync] could not load account data; keeping local data', err);
     if (!isRetry && gen === sessionGen) {
       loginRetryTimer = setTimeout(() => {
         loginRetryTimer = null;
@@ -422,7 +431,7 @@ async function flushOnce(): Promise<void> {
         }
       }
     } catch (err) {
-      if (readyUserId !== userId) return;
+      if (readyUserId !== userId || isSessionEnded(err)) return;
       if (isRetryable(err)) {
         for (const chunk of chunks.slice(c)) for (const item of chunk) dirty.add(item.key);
         console.warn('[sync] upload failed; retrying', err);
