@@ -4,7 +4,7 @@ import {
   useDrawingStore, resizeTableCells, TABLE_MAX_DIM, type Drawing, type PositionDrawing,
 } from '../../store/drawingStore';
 import { useMarketStore } from '../../store/marketStore';
-import { priceToY, timeToX, computeParallelOffset, computeRegression } from './DrawingCanvas';
+import { priceToY, timeToX, computeParallelOffset, computeRegression, getRotatedRectCorners } from './DrawingCanvas';
 import { FibSettingsModal } from './FibSettingsModal';
 import {
   MiniWidthPicker, MiniDashPicker, ColorOpacityButton, MiniColorSwatch, MiniSizePicker,
@@ -246,13 +246,13 @@ export const DrawingStyleToolbar = memo(function DrawingStyleToolbar({ sharedCha
     }
 
     if (selected.type === 'rotatedRectangle') {
-      const lines = computeParallelOffset(
-        selected.price1, selected.time1, selected.price2, selected.time2,
-        selected.price3, selected.time3, chart, series,
-      );
-      if (!lines) { setPos(null); return; }
-      const minY = Math.min(lines.y1, lines.y2, lines.y1b, lines.y2b);
-      setPos({ x: (lines.x1 + lines.x2) / 2, y: minY - 46 });
+      // from the 4 corners — for legacy (parallelogram) drawings the corner
+      // x-mean is (x1 + x2) / 2 and the min y is unchanged, as before
+      const corners = getRotatedRectCorners(selected, chart, series);
+      if (!corners) { setPos(null); return; }
+      const minY = Math.min(...corners.map((c) => c.y));
+      const avgX = corners.reduce((s, c) => s + c.x, 0) / 4;
+      setPos({ x: avgX, y: minY - 46 });
       return;
     }
 

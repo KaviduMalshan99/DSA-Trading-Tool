@@ -215,6 +215,10 @@ export interface RotatedRectangleDrawing extends LineStyle, FillStyle {
   price2: number; time2: number;
   // third click — perpendicular offset that sets the rectangle's width
   price3: number; time3: number;
+  // 'perp': a true rectangle — width is P3's signed screen-perpendicular
+  // distance from P1P2. Absent (older drawings): the legacy parallelogram
+  // whose second side is offset vertically by P3's price offset.
+  geometry?: 'perp';
 }
 
 export interface CircleDrawing extends LineStyle, FillStyle {

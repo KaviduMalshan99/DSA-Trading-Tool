@@ -9,6 +9,10 @@ import { computeSessionVWAPFromCandles } from '../../utils/klineAnalytics';
 import { decimalsForPrice } from '../../utils/priceFormat';
 import { saveLocal } from '../../services/persist';
 import type { Candle } from '../../types/market';
+import {
+  perpCorners, dragPerpRect, channelDragPatch, circleCorners,
+  type Pt, type SixHandleMode,
+} from './shapeHandles';
 
 // Tools that should own mouse events on the overlay canvas (blocking chart
 // pan/zoom underneath). Cursor-group tools (cross/dot/arrow/demonstration/eraser)
@@ -1663,7 +1667,8 @@ function renderDrawing(
     if (selected) {
       const handleColor = eraserHover ? '#f85149' : baseColor;
       ctx.fillStyle = handleColor;
-      for (const [hx, hy] of [[x1, y1], [x2, y2]] as const) {
+      // baseline ends, second-line corners, baseline midpoint
+      for (const [hx, hy] of [[x1, y1], [x2, y2], [x1, y1b], [x2, y2b], [(x1 + x2) / 2, (y1 + y2) / 2]] as const) {
         ctx.beginPath();
         ctx.arc(hx, hy, 4, 0, Math.PI * 2);
         ctx.fill();
@@ -2058,9 +2063,11 @@ function renderDrawing(
     }
 
   } else if (d.type === 'rotatedRectangle') {
-    const lines = computeParallelOffset(d.price1, d.time1, d.price2, d.time2, d.price3, d.time3, chart, series);
-    if (!lines) { ctx.restore(); return; }
-    const { x1, y1, x2, y2, y1b, y2b } = lines;
+    // corners P1, P2, P2', P1' — for legacy (no geometry) drawings these are
+    // exactly the old (x1,y1),(x2,y2),(x2,y2b),(x1,y1b) parallelogram
+    const corners = getRotatedRectCorners(d, chart, series);
+    if (!corners) { ctx.restore(); return; }
+    const [c1, c2, c3, c4] = corners;
 
     const baseColor = d.color ?? '#2196F3';
     const dashPattern: number[] = d.dash === 'dashed' ? [8, 4] : d.dash === 'dotted' ? [2, 3] : [];
@@ -2068,7 +2075,7 @@ function renderDrawing(
     if (d.filled !== false) {
       ctx.fillStyle = eraserHover ? 'rgba(248,81,73,0.1)' : hexToRgba(d.fillColor ?? baseColor, d.fillOpacity ?? 20);
       ctx.beginPath();
-      ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.lineTo(x2, y2b); ctx.lineTo(x1, y1b);
+      ctx.moveTo(c1.x, c1.y); ctx.lineTo(c2.x, c2.y); ctx.lineTo(c3.x, c3.y); ctx.lineTo(c4.x, c4.y);
       ctx.closePath();
       ctx.fill();
     }
@@ -2077,20 +2084,21 @@ function renderDrawing(
     ctx.lineWidth = (d.width ?? 1) + (selected ? 0.5 : 0);
     ctx.setLineDash(dashPattern);
     ctx.beginPath();
-    ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.lineTo(x2, y2b); ctx.lineTo(x1, y1b);
+    ctx.moveTo(c1.x, c1.y); ctx.lineTo(c2.x, c2.y); ctx.lineTo(c3.x, c3.y); ctx.lineTo(c4.x, c4.y);
     ctx.closePath();
     ctx.stroke();
     ctx.setLineDash([]);
 
     if (selected) {
       ctx.fillStyle = eraserHover ? '#f85149' : baseColor;
-      for (const [hx, hy] of [[x1, y1], [x2, y2]] as const) {
+      const h = sixHandles(corners);
+      for (const p of [h.p1, h.p2, h.p1b, h.p2b, h.mb]) {
         ctx.beginPath();
-        ctx.arc(hx, hy, 4, 0, Math.PI * 2);
+        ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
         ctx.fill();
       }
-      const wx = (x1 + x2) / 2, wy = (y1b + y2b) / 2;
-      ctx.fillRect(wx - 4, wy - 4, 8, 8);
+      // width handle (opposite-side midpoint)
+      ctx.fillRect(h.p3.x - 4, h.p3.y - 4, 8, 8);
     }
 
   } else if (d.type === 'circle' || d.type === 'ellipse') {
@@ -2121,9 +2129,13 @@ function renderDrawing(
 
     if (selected) {
       ctx.fillStyle = eraserHover ? '#f85149' : baseColor;
-      for (const [hx, hy] of [[x1, y1], [x2, y2], [x1, y2], [x2, y1]] as const) {
+      // circle: center + 4 on-curve edge handles; ellipse: the box corners
+      const handlePts: Pt[] = d.type === 'circle'
+        ? (() => { const h = circleHandles(x1, y1, x2, y2); return [h.center, ...h.edges]; })()
+        : [{ x: x1, y: y1 }, { x: x2, y: y2 }, { x: x1, y: y2 }, { x: x2, y: y1 }];
+      for (const p of handlePts) {
         ctx.beginPath();
-        ctx.arc(hx, hy, 3.5, 0, Math.PI * 2);
+        ctx.arc(p.x, p.y, 3.5, 0, Math.PI * 2);
         ctx.fill();
       }
     }
@@ -3639,6 +3651,65 @@ function getChannelLines(
   return computeParallelOffset(d.price1, d.time1, d.price2, d.time2, d.price3, d.time3, chart, series);
 }
 
+// Rotated Rectangle's screen corners in drawing order: P1, P2, then the
+// opposite side's P2', P1'. geometry 'perp' (newer drawings) is a true
+// rectangle; without it (legacy) it's the parallelogram whose second side is
+// computeParallelOffset's price-offset line — same corners as before.
+export function getRotatedRectCorners(
+  d: Extract<Drawing, { type: 'rotatedRectangle' }>,
+  chart: IChartApi,
+  series: ISeriesApi<'Candlestick'>,
+): [Pt, Pt, Pt, Pt] | null {
+  if (d.geometry === 'perp') {
+    const x1 = timeToX(chart, d.time1), y1 = priceToY(series, d.price1);
+    const x2 = timeToX(chart, d.time2), y2 = priceToY(series, d.price2);
+    const x3 = timeToX(chart, d.time3), y3 = priceToY(series, d.price3);
+    if (x1 == null || y1 == null || x2 == null || y2 == null || x3 == null || y3 == null) return null;
+    return perpCorners({ x: x1, y: y1 }, { x: x2, y: y2 }, { x: x3, y: y3 });
+  }
+  const lines = computeParallelOffset(d.price1, d.time1, d.price2, d.time2, d.price3, d.time3, chart, series);
+  if (!lines) return null;
+  const { x1, y1, x2, y2, y1b, y2b } = lines;
+  return [{ x: x1, y: y1 }, { x: x2, y: y2 }, { x: x2, y: y2b }, { x: x1, y: y1b }];
+}
+
+// Channel / Rotated Rectangle handle positions from the 4 corners above:
+// p1/p2 = P1P2-side ends, p1b/p2b = opposite-side corners, p3 = opposite-side
+// midpoint (the width handle), mb = P1P2-side midpoint.
+function sixHandles(c: [Pt, Pt, Pt, Pt]): Record<'p1' | 'p2' | 'p1b' | 'p2b' | 'p3' | 'mb', Pt> {
+  return {
+    p1: c[0], p2: c[1], p2b: c[2], p1b: c[3],
+    p3: { x: (c[2].x + c[3].x) / 2, y: (c[2].y + c[3].y) / 2 },
+    mb: { x: (c[0].x + c[1].x) / 2, y: (c[0].y + c[1].y) / 2 },
+  };
+}
+
+// Which of the six handles (if any) is under (x, y). The original three
+// (p1, p2, width) keep today's precedence and always hit; the new ones (p1b,
+// p2b, mb) only hit while the drawing is selected.
+function hitSixHandle(c: [Pt, Pt, Pt, Pt], x: number, y: number, selected: boolean): SixHandleMode | null {
+  const h = sixHandles(c);
+  const near = (p: Pt) => Math.hypot(x - p.x, y - p.y) < 8;
+  if (near(h.p1)) return 'p1';
+  if (near(h.p2)) return 'p2';
+  if (near(h.p3)) return 'p3';
+  if (!selected) return null;
+  if (near(h.p1b)) return 'p1b';
+  if (near(h.p2b)) return 'p2b';
+  if (near(h.mb)) return 'mb';
+  return null;
+}
+
+// Circle handle positions: center + the 4 edge points of the inscribed ellipse.
+function circleHandles(x1: number, y1: number, x2: number, y2: number): { center: Pt; edges: Pt[] } {
+  const cx = (x1 + x2) / 2, cy = (y1 + y2) / 2;
+  const rx = Math.abs(x2 - x1) / 2, ry = Math.abs(y2 - y1) / 2;
+  return {
+    center: { x: cx, y: cy },
+    edges: [{ x: cx - rx, y: cy }, { x: cx + rx, y: cy }, { x: cx, y: cy - ry }, { x: cx, y: cy + ry }],
+  };
+}
+
 // Flat Top/Bottom: unlike Parallel Channel's offset baseline, both lines are
 // flat — Line A at price1, Line B at price3, both spanning [time1, time2].
 // Returns the same {x1,y1,x2,y2,y1b,y2b} shape as computeParallelOffset (with
@@ -4128,13 +4199,13 @@ function hitTest(
   }
 
   if (d.type === 'rotatedRectangle') {
-    const lines = computeParallelOffset(d.price1, d.time1, d.price2, d.time2, d.price3, d.time3, chart, series);
-    if (!lines) return false;
-    const { x1, y1, x2, y2, y1b, y2b } = lines;
-    return distToSegment(mx, my, x1, y1, x2, y2) < TOL ||
-      distToSegment(mx, my, x2, y2, x2, y2b) < TOL ||
-      distToSegment(mx, my, x2, y2b, x1, y1b) < TOL ||
-      distToSegment(mx, my, x1, y1b, x1, y1) < TOL;
+    // outline of the 4-corner polygon (legacy corners == the old parallelogram)
+    const c = getRotatedRectCorners(d, chart, series);
+    if (!c) return false;
+    return distToSegment(mx, my, c[0].x, c[0].y, c[1].x, c[1].y) < TOL ||
+      distToSegment(mx, my, c[1].x, c[1].y, c[2].x, c[2].y) < TOL ||
+      distToSegment(mx, my, c[2].x, c[2].y, c[3].x, c[3].y) < TOL ||
+      distToSegment(mx, my, c[3].x, c[3].y, c[0].x, c[0].y) < TOL;
   }
 
   if (d.type === 'circle' || d.type === 'ellipse') {
@@ -4673,13 +4744,26 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
       | 'arrowMark' | 'note' | 'position' | 'hline' | 'vline' | 'hray';
     id: string;
     mode: 'move' | 'p1' | 'p2' | 'p3' | 'c2' | 'c3' | 'vertex' | 'target' | 'stop' | 'width'
-      | 'a1' | 'a2' | 'b1' | 'b2';
+      | 'a1' | 'a2' | 'b1' | 'b2'
+      // channel/rotated rectangle: opposite-side corners + P1P2-side midpoint;
+      // circle: center handle + on-curve edge handle
+      | 'p1b' | 'p2b' | 'mb' | 'center' | 'edge';
     vertexIndex?: number;
     startX: number; startY: number;
     origX1: number; origY1: number;
     origX2: number; origY2: number;
     origX3: number; origY3: number;
     origPoints?: { x: number; y: number }[];
+    // 'channel' kind only: the dragged drawing's type, stored anchors and
+    // screen shape, so channel/rotated-rectangle handles can branch per type
+    // (fibChannel keeps the original drag math). `perp` holds a 'perp'
+    // rotated rectangle's stored P1/P2/P3 in screen px.
+    six?: {
+      type: 'channel' | 'rotatedRectangle' | 'fibChannel';
+      orig: { price1: number; time1: number; price2: number; time2: number; price3: number; time3: number };
+      lines?: { x1: number; y1: number; x2: number; y2: number; y1b: number; y2b: number };
+      perp?: { p1: Pt; p2: Pt; p3: Pt };
+    };
   } | null>(null);
   const dragPreviewRef = useRef<
     | { kind: 'trendline'; id: string; price1: number; time1: number; price2: number; time2: number }
@@ -4967,9 +5051,16 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           }
           else if (tool === 'rotatedRectangle' && price2 != null && time2 != null)
             preview = { id: '__preview', type: 'rotatedRectangle', price1, time1, price2, time2,
-              price3: price3 ?? price2, time3: time3 ?? time2 };
-          else if (tool === 'circle' && price2 != null && time2 != null)
-            preview = { id: '__preview', type: 'circle', price1, time1, price2, time2 };
+              price3: price3 ?? price2, time3: time3 ?? time2, geometry: 'perp' };
+          else if (tool === 'circle') {
+            // center-first: click 1 = center, cursor sets the radius
+            const r = Math.hypot(ds.x2 - ds.x1, ds.y2 - ds.y1);
+            const cc = circleCorners({ x: ds.x1, y: ds.y1 }, r);
+            const cp1 = yToPrice(series, cc.y1), ct1 = xToTime(chart, cc.x1);
+            const cp2 = yToPrice(series, cc.y2), ct2 = xToTime(chart, cc.x2);
+            if (cp1 != null && ct1 != null && cp2 != null && ct2 != null)
+              preview = { id: '__preview', type: 'circle', price1: cp1, time1: ct1, price2: cp2, time2: ct2 };
+          }
           else if (tool === 'ellipse' && price2 != null && time2 != null)
             preview = { id: '__preview', type: 'ellipse', price1, time1, price2, time2 };
           else if (tool === 'triangle' && price2 != null && time2 != null)
@@ -5006,6 +5097,13 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           if (preview) {
             ctx.globalAlpha = 0.7;
             renderDrawing(ctx, W, H, preview, chart, series, candlesRef.current, false);
+            if (tool === 'circle') {
+              // small center dot while sizing a center-first circle
+              ctx.fillStyle = '#2196F3';
+              ctx.beginPath();
+              ctx.arc(ds.x1, ds.y1, 3, 0, Math.PI * 2);
+              ctx.fill();
+            }
             ctx.globalAlpha = 1;
           }
 
@@ -5514,10 +5612,15 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
       addDrawing({ id, type: 'regression', time1, time2 });
     } else if (tool === 'rotatedRectangle') {
       if (price2 == null || time2 == null || price3 == null || time3 == null) return;
-      addDrawing({ id, type: 'rotatedRectangle', price1, time1, price2, time2, price3, time3 });
+      addDrawing({ id, type: 'rotatedRectangle', price1, time1, price2, time2, price3, time3, geometry: 'perp' });
     } else if (tool === 'circle') {
-      if (price2 == null || time2 == null) return;
-      addDrawing({ id, type: 'circle', price1, time1, price2, time2 });
+      // center-first: store the bounding-box corners C∓(r, r) of a true circle
+      const r = Math.hypot(ds.x2 - ds.x1, ds.y2 - ds.y1);
+      const cc = circleCorners({ x: ds.x1, y: ds.y1 }, r);
+      const cp1 = yToPrice(series, cc.y1), ct1 = xToTime(chart, cc.x1);
+      const cp2 = yToPrice(series, cc.y2), ct2 = xToTime(chart, cc.x2);
+      if (cp1 == null || ct1 == null || cp2 == null || ct2 == null) return;
+      addDrawing({ id, type: 'circle', price1: cp1, time1: ct1, price2: cp2, time2: ct2 });
     } else if (tool === 'ellipse') {
       if (price2 == null || time2 == null) return;
       addDrawing({ id, type: 'ellipse', price1, time1, price2, time2 });
@@ -5831,8 +5934,13 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           // rectangle/circle: 'p1'/'p2' drag the two *stored* corners, 'c2'/'c3'
           // drag the two *mixed* corners (one point's time, the other's price)
           let nx1 = drag.origX1, ny1 = drag.origY1, nx2 = drag.origX2, ny2 = drag.origY2;
-          if (drag.mode === 'move') {
+          if (drag.mode === 'move' || drag.mode === 'center') {
             nx1 += dx; ny1 += dy; nx2 += dx; ny2 += dy;
+          } else if (drag.mode === 'edge') {
+            // circle edge handle: radius = center→cursor, rewritten as C∓(r, r)
+            const c = { x: (drag.origX1 + drag.origX2) / 2, y: (drag.origY1 + drag.origY2) / 2 };
+            const cc = circleCorners(c, Math.hypot(x - c.x, y - c.y));
+            nx1 = cc.x1; ny1 = cc.y1; nx2 = cc.x2; ny2 = cc.y2;
           } else if (drag.mode === 'p1') {
             nx1 = x; ny1 = y;
           } else if (drag.mode === 'p2') {
@@ -6018,8 +6126,36 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           return;
         }
 
+        const six = drag.six;
+        if (six?.perp) {
+          // 'perp' rotated rectangle: all handles (and move) in screen px; P3
+          // is re-derived as P1 + h·n so the width survives rotation
+          const r = dragPerpRect(six.perp, drag.mode as SixHandleMode, { x: dx, y: dy });
+          const price1 = yToPrice(series, r.p1.y), time1 = xToTime(chart, r.p1.x);
+          const price2 = yToPrice(series, r.p2.y), time2 = xToTime(chart, r.p2.x);
+          const price3 = yToPrice(series, r.p3.y), time3 = xToTime(chart, r.p3.x);
+          if (price1 != null && time1 != null && price2 != null && time2 != null && price3 != null && time3 != null) {
+            dragPreviewRef.current = { kind: 'channel', id: drag.id, price1, time1, price2, time2, price3, time3 };
+            scheduleRender();
+          }
+          return;
+        }
+        if (six?.lines && six.type !== 'fibChannel' &&
+            (drag.mode === 'p1' || drag.mode === 'p2' || drag.mode === 'p1b' || drag.mode === 'p2b' || drag.mode === 'mb')) {
+          // Parallel Channel / legacy rotated rectangle: ends + second-line
+          // corners keep the stored price offset; 'mb' keeps the second line fixed
+          const patch = channelDragPatch(six.orig, six.lines, drag.mode, { x, y }, { x: dx, y: dy },
+            (py) => yToPrice(series, py), (px) => xToTime(chart, px));
+          if (patch) {
+            dragPreviewRef.current = { kind: 'channel', id: drag.id, ...patch };
+            scheduleRender();
+          }
+          return;
+        }
+
         // channel: 'p1'/'p2' reshape the baseline (length/angle), 'move' translates
         // everything, 'p3' (width handle) only changes the channel's height/offset
+        // (fibChannel uses this for every mode; channel/rotated rectangle for move/p3)
         let nx1 = drag.origX1, ny1 = drag.origY1, nx2 = drag.origX2, ny2 = drag.origY2;
         let widthY = drag.origY3;
         if (drag.mode === 'move') {
@@ -6095,7 +6231,17 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           if (hitTest(d, x, y, chart, series, candlesRef.current)) { hoverCursor = 'ew-resize'; break; }
         } else if (d.type === 'hray' || d.type === 'crossline') {
           if (hitTest(d, x, y, chart, series, candlesRef.current)) { hoverCursor = 'move'; break; }
-        } else if (d.type === 'channel' || d.type === 'rotatedRectangle' || d.type === 'fibChannel') {
+        } else if (d.type === 'channel' || d.type === 'rotatedRectangle') {
+          const lines = d.type === 'channel' ? getChannelLines(d, chart, series) : null;
+          const corners = d.type === 'rotatedRectangle' ? getRotatedRectCorners(d, chart, series)
+            : lines ? [{ x: lines.x1, y: lines.y1 }, { x: lines.x2, y: lines.y2 }, { x: lines.x2, y: lines.y2b }, { x: lines.x1, y: lines.y1b }] as [Pt, Pt, Pt, Pt]
+            : null;
+          if (!corners) continue;
+          const handle = hitSixHandle(corners, x, y, selectedIdsRef.current.includes(d.id));
+          if (handle === 'p3' || handle === 'mb') { hoverCursor = 'ns-resize'; break; }
+          if (handle) { hoverCursor = 'grab'; break; }
+          if (hitTest(d, x, y, chart, series, candlesRef.current)) { hoverCursor = 'move'; break; }
+        } else if (d.type === 'fibChannel') {
           const lines = computeParallelOffset(d.price1, d.time1, d.price2, d.time2, d.price3, d.time3, chart, series);
           if (!lines) continue;
           const { x1, y1, x2, y2, y1b, y2b } = lines;
@@ -6135,6 +6281,16 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           const x1 = timeToX(chart, d.time1), y1 = priceToY(series, d.price1);
           const x2 = timeToX(chart, d.time2), y2 = priceToY(series, d.price2);
           if (x1 == null || y1 == null || x2 == null || y2 == null) continue;
+          if (d.type === 'circle') {
+            // circle: center + edge handles (selected only) replace the box corners
+            if (selectedIdsRef.current.includes(d.id)) {
+              const ch = circleHandles(x1, y1, x2, y2);
+              if (Math.hypot(x - ch.center.x, y - ch.center.y) < 8) { hoverCursor = 'move'; break; }
+              if (ch.edges.some((p) => Math.hypot(x - p.x, y - p.y) < 8)) { hoverCursor = 'grab'; break; }
+            }
+            if (hitTest(d, x, y, chart, series, candlesRef.current)) { hoverCursor = 'move'; break; }
+            continue;
+          }
           const nearCorner = Math.hypot(x - x1, y - y1) < 8 || Math.hypot(x - x2, y - y2) < 8 ||
             Math.hypot(x - x1, y - y2) < 8 || Math.hypot(x - x2, y - y1) < 8;
           if (nearCorner) { hoverCursor = 'nwse-resize'; break; }
@@ -6288,19 +6444,40 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           const { x1, y1, x2, y2, y1b, y2b } = lines;
           const wx = (x1 + x2) / 2, wy = (y1b + y2b) / 2;
 
-          const nearP1 = Math.hypot(x - x1, y - y1) < 8;
-          const nearP2 = Math.hypot(x - x2, y - y2) < 8;
-          const nearWidth = Math.hypot(x - wx, y - wy) < 8;
-          if (!nearP1 && !nearP2 && !nearWidth && !hitTest(d, x, y, chart, series, candlesRef.current)) continue;
+          // perp rotated rectangle: stored P1/P2/P3 in screen px
+          let perp: { p1: Pt; p2: Pt; p3: Pt } | undefined;
+          if (d.type === 'rotatedRectangle' && d.geometry === 'perp') {
+            const x3 = timeToX(chart, d.time3), y3 = priceToY(series, d.price3);
+            if (x3 == null || y3 == null) continue;
+            perp = { p1: { x: x1, y: y1 }, p2: { x: x2, y: y2 }, p3: { x: x3, y: y3 } };
+          }
+
+          let mode: SixHandleMode | null;
+          if (d.type === 'fibChannel') {
+            // fibChannel: unchanged 3-handle behavior
+            mode = Math.hypot(x - x1, y - y1) < 8 ? 'p1' : Math.hypot(x - x2, y - y2) < 8 ? 'p2'
+              : Math.hypot(x - wx, y - wy) < 8 ? 'p3' : null;
+          } else {
+            const corners = d.type === 'rotatedRectangle' ? getRotatedRectCorners(d, chart, series)
+              : [{ x: x1, y: y1 }, { x: x2, y: y2 }, { x: x2, y: y2b }, { x: x1, y: y1b }] as [Pt, Pt, Pt, Pt];
+            if (!corners) continue;
+            mode = hitSixHandle(corners, x, y, selectedIdsRef.current.includes(d.id));
+          }
+          if (!mode && !hitTest(d, x, y, chart, series, candlesRef.current)) continue;
 
           dragRef.current = {
             active: true, kind: 'channel', id: d.id,
-            mode: nearP1 ? 'p1' : nearP2 ? 'p2' : nearWidth ? 'p3' : 'move',
+            mode: mode ?? 'move',
             startX: x, startY: y,
             origX1: x1, origY1: y1, origX2: x2, origY2: y2, origX3: wx, origY3: wy,
+            six: {
+              type: d.type,
+              orig: { price1: d.price1, time1: d.time1, price2: d.price2, time2: d.time2, price3: d.price3, time3: d.time3 },
+              lines, perp,
+            },
           };
           selectDrawing(d.id);
-          applyCursorValue(nearWidth ? 'ns-resize' : 'grabbing');
+          applyCursorValue(mode === 'p3' || mode === 'mb' ? 'ns-resize' : 'grabbing');
           e.preventDefault();
           e.stopPropagation();
           scheduleRender();
@@ -6391,15 +6568,22 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           const x2 = timeToX(chart, d.time2), y2 = priceToY(series, d.price2);
           if (x1 == null || y1 == null || x2 == null || y2 == null) continue;
 
-          const nearP1 = Math.hypot(x - x1, y - y1) < 8;
-          const nearP2 = Math.hypot(x - x2, y - y2) < 8;
-          const nearC2 = Math.hypot(x - x1, y - y2) < 8; // mixed corner: time1, price2
-          const nearC3 = Math.hypot(x - x2, y - y1) < 8; // mixed corner: time2, price1
-          if (!nearP1 && !nearP2 && !nearC2 && !nearC3 && !hitTest(d, x, y, chart, series, candlesRef.current)) continue;
+          // circle: center/edge handles (selected only) replace the 4 box corners
+          const isCircle = d.type === 'circle';
+          const ch = isCircle && selectedIdsRef.current.includes(d.id) ? circleHandles(x1, y1, x2, y2) : null;
+          const nearCenter = !!ch && Math.hypot(x - ch.center.x, y - ch.center.y) < 8;
+          const nearEdge = !!ch && !nearCenter && ch.edges.some((p) => Math.hypot(x - p.x, y - p.y) < 8);
+          const nearP1 = !isCircle && Math.hypot(x - x1, y - y1) < 8;
+          const nearP2 = !isCircle && Math.hypot(x - x2, y - y2) < 8;
+          const nearC2 = !isCircle && Math.hypot(x - x1, y - y2) < 8; // mixed corner: time1, price2
+          const nearC3 = !isCircle && Math.hypot(x - x2, y - y1) < 8; // mixed corner: time2, price1
+          if (!nearCenter && !nearEdge && !nearP1 && !nearP2 && !nearC2 && !nearC3 &&
+              !hitTest(d, x, y, chart, series, candlesRef.current)) continue;
 
           dragRef.current = {
             active: true, kind: 'box', id: d.id,
-            mode: nearP1 ? 'p1' : nearP2 ? 'p2' : nearC2 ? 'c2' : nearC3 ? 'c3' : 'move',
+            mode: nearCenter ? 'center' : nearEdge ? 'edge'
+              : nearP1 ? 'p1' : nearP2 ? 'p2' : nearC2 ? 'c2' : nearC3 ? 'c3' : 'move',
             startX: x, startY: y,
             origX1: x1, origY1: y1, origX2: x2, origY2: y2, origX3: 0, origY3: 0,
           };
