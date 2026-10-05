@@ -1206,10 +1206,12 @@ const FIB_ICON: Record<FibTool, React.ReactNode> = {
 
 // The Fibonacci group's flyout — flat list (no subsections), same pattern as
 // Annotation. FIB_ITEMS is kept flat for ALL_TOOL_ICON/ALL_TOOL_LABEL/Favorites.
+// The legacy 2-point 'fibExtension' is no longer offered in the menu (its slot
+// now creates Trend-Based Fib Extension, as on TradingView); saved ones still
+// render/edit, and FIB_LEGACY_ITEMS keeps its label for a starred favorite.
 const FIB_ITEMS: { tool: FibTool; label: string }[] = [
   { tool: 'fibonacci',         label: 'Fib Retracement' },
-  { tool: 'fibExtension',      label: 'Fib Extension' },
-  { tool: 'trendFibExtension', label: 'Trend-based Fib Extension' },
+  { tool: 'trendFibExtension', label: 'Trend-Based Fib Extension' },
   { tool: 'fibChannel',        label: 'Fib Channel' },
   { tool: 'fibTimeZone',       label: 'Fib Time Zone' },
   { tool: 'fibSpeedFan',       label: 'Fib Speed/Resistance Fan' },
@@ -1218,6 +1220,11 @@ const FIB_ITEMS: { tool: FibTool; label: string }[] = [
   { tool: 'fibWedge',          label: 'Fib Wedge' },
   { tool: 'pitchfan',          label: 'Pitchfan' },
   { tool: 'fibSpiral',         label: 'Fib Spiral' },
+];
+
+// Tools hidden from the Fibonacci menu but still labeled (favorites, tooltips).
+const FIB_LEGACY_ITEMS: { tool: FibTool; label: string }[] = [
+  { tool: 'fibExtension', label: 'Fib Extension' },
 ];
 
 const GANN_ICON: Record<GannTool, React.ReactNode> = {
@@ -1293,7 +1300,7 @@ export const ALL_TOOL_LABEL: Partial<Record<DrawingTool, string>> = {
   ...Object.fromEntries(SHAPE_ITEMS.map(({ tool, label }) => [tool, label])),
   ...Object.fromEntries(ANNOTATION_ITEMS.map(({ tool, label }) => [tool, label])),
   ...Object.fromEntries(POSITION_RANGE_ITEMS.map(({ tool, label }) => [tool, label])),
-  ...Object.fromEntries(FIB_ITEMS.map(({ tool, label }) => [tool, label])),
+  ...Object.fromEntries([...FIB_ITEMS, ...FIB_LEGACY_ITEMS].map(({ tool, label }) => [tool, label])),
   ...Object.fromEntries(GANN_ITEMS.map(({ tool, label }) => [tool, label])),
   ...Object.fromEntries(PATTERN_ITEMS.map(({ tool, label }) => [tool, label])),
   ...Object.fromEntries(CYCLES_ITEMS.map(({ tool, label }) => [tool, label])),

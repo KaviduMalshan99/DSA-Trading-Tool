@@ -603,12 +603,43 @@ export interface FibLevelConfig {
 
 export type FibExtend = 'none' | 'left' | 'right' | 'both';
 
-export interface FibonacciDrawing {
+/** TradingView-style label/background options shared by Fib Retracement
+ * (and the legacy 2-point Fib Extension, which reuses its shape) and
+ * Trend-Based Fib Extension. Every field is optional so drawings saved before
+ * they existed keep rendering exactly as before — read them with `??`. */
+export interface FibDisplayOptions {
+  /** position levels at 1 - pct instead of pct (labels still show pct); default false */
+  reverse?: boolean;
+  /** true: fill each band between consecutive enabled levels with the
+   * lower-priced level's color. undefined keeps the legacy look (a single
+   * faint rectangle for retracement, no fill for trend-based); default for
+   * new drawings is true. */
+  background?: boolean;
+  /** 0-100, default 15 */
+  backgroundOpacity?: number;
+  /** default true */
+  showPrices?: boolean;
+  /** default true */
+  showLevels?: boolean;
+  /** default 'values' */
+  levelsAs?: 'values' | 'percent';
+  /** default 'right' */
+  labelsSide?: 'left' | 'right';
+}
+
+export interface FibonacciDrawing extends FibDisplayOptions {
   id: string;
   type: 'fibonacci';
+  // Field names are historical. Level price = priceHigh - pct * (priceHigh - priceLow),
+  // so priceLow/timeLow is the START point (level 1) and priceHigh/timeHigh is
+  // the END point (level 0). Drawings created before click-order anchoring were
+  // sorted (priceHigh >= priceLow); new ones store click 1 in *Low and click 2
+  // in *High regardless of direction, which gives TradingView's "1 at the
+  // first point, 0 at the second" for both up and down moves.
   priceHigh: number; timeHigh: number;
   priceLow: number;  timeLow: number;
-  /** per-level enabled/ratio/color override, parallel to FIB_LEVELS */
+  /** self-describing level rows, used as-is when present. Absent = the
+   * drawing's legacy table (fibLevelsFor in DrawingCanvas.tsx). */
   levels?: FibLevelConfig[];
   /** shared line style applied to every level line */
   levelWidth?: number;
@@ -635,7 +666,7 @@ export interface FibExtensionDrawing extends Omit<FibonacciDrawing, 'type'> {
 // high/low anchor. Modeled on ChannelDrawing/TriangleDrawing's price1..3/
 // time1..3 3-point shape. Its ratio table is projected forward from C by the
 // A->B move (see fibLevelsFor / the render branch in DrawingCanvas.tsx).
-export interface TrendFibExtensionDrawing {
+export interface TrendFibExtensionDrawing extends FibDisplayOptions {
   id: string;
   type: 'trendFibExtension';
   price1: number; time1: number; // A
@@ -644,6 +675,8 @@ export interface TrendFibExtensionDrawing {
   levels?: FibLevelConfig[];
   levelWidth?: number;
   levelDash?: LineDash;
+  /** how far the level lines extend past the A/B/C x-range; default 'none' */
+  extend?: FibExtend;
   /** the A->B->C connecting lines */
   lineVisible?: boolean;
   lineColor?: string;

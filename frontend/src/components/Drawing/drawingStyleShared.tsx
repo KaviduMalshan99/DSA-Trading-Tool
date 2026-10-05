@@ -58,7 +58,10 @@ const POPOVER_Z = 1200;
 const POPOVER_GAP = 4;     // same offset as the old mt-1 under the swatch
 const VIEWPORT_MARGIN = 8;
 
-function useAnchoredPopover() {
+// `align` picks which anchor edge the popover hangs from by default: 'left'
+// (color swatches) or 'right' (width/dash dropdowns, matching their old
+// `right-0` placement). Either flips to the other edge when it would overflow.
+function useAnchoredPopover(align: 'left' | 'right' = 'left') {
   const [open, setOpen] = useState(false);
   const anchorRef = useRef<HTMLDivElement>(null);
   const popRef = useRef<HTMLDivElement>(null);
@@ -75,14 +78,20 @@ function useAnchoredPopover() {
     const height = pop.offsetHeight;
     const vw = document.documentElement.clientWidth;
     const vh = document.documentElement.clientHeight;
-    let left = r.left;
-    if (left + width > vw - VIEWPORT_MARGIN) left = r.right - width;
+    let left: number;
+    if (align === 'right') {
+      left = r.right - width;
+      if (left < VIEWPORT_MARGIN) left = r.left;
+    } else {
+      left = r.left;
+      if (left + width > vw - VIEWPORT_MARGIN) left = r.right - width;
+    }
     let top = r.bottom + POPOVER_GAP;
     if (top + height > vh - VIEWPORT_MARGIN && r.top > vh - r.bottom) top = r.top - POPOVER_GAP - height;
     left = Math.max(VIEWPORT_MARGIN, Math.min(left, vw - width - VIEWPORT_MARGIN));
     top = Math.max(VIEWPORT_MARGIN, Math.min(top, vh - height - VIEWPORT_MARGIN));
     setPos((p) => (p && p.left === left && p.top === top ? p : { left, top }));
-  }, []);
+  }, [align]);
 
   useLayoutEffect(() => {
     if (open) place();
@@ -172,27 +181,22 @@ export function MiniColorSwatch({ color, onChange }: { color: string; onChange: 
 }
 
 export function MiniWidthPicker({ width, onChange }: { width: number; onChange: (w: number) => void }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
-    document.addEventListener('mousedown', onDown);
-    return () => document.removeEventListener('mousedown', onDown);
-  }, [open]);
+  const { open, setOpen, anchorRef, popRef, popStyle } = useAnchoredPopover('right');
 
   return (
-    <div className="relative" ref={ref}>
+    <div className="relative" ref={anchorRef}>
       <button
         onClick={() => setOpen((v) => !v)}
         className="w-9 h-6 flex items-center justify-center rounded hover:bg-[var(--bg-hover-alt)] text-xs text-[var(--text-secondary)]"
       >
         {width}px
       </button>
-      {open && (
+      {open && createPortal(
         <div
-          className="absolute top-full right-0 mt-1 py-1"
-          style={{ background: 'var(--bg-panel-alt)', borderRadius: 6, boxShadow: '0 4px 12px rgba(0,0,0,0.45)', width: 72, zIndex: 90 }}
+          ref={popRef}
+          data-drawing-overlay={COLOR_POPOVER_OVERLAY}
+          className="py-1 select-none"
+          style={{ ...popStyle, background: 'var(--bg-panel-alt)', borderRadius: 6, boxShadow: '0 4px 12px rgba(0,0,0,0.45)', width: 72 }}
         >
           {WIDTHS.map((w) => (
             <button
@@ -203,7 +207,8 @@ export function MiniWidthPicker({ width, onChange }: { width: number; onChange: 
               {w}px
             </button>
           ))}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
@@ -327,18 +332,11 @@ export function FillToggleIcon({ filled }: { filled: boolean }) {
 }
 
 export function MiniDashPicker({ dash, onChange }: { dash: LineDash; onChange: (d: LineDash) => void }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
-    document.addEventListener('mousedown', onDown);
-    return () => document.removeEventListener('mousedown', onDown);
-  }, [open]);
+  const { open, setOpen, anchorRef, popRef, popStyle } = useAnchoredPopover('right');
   const current = DASHES.find((d) => d.value === dash) ?? DASHES[0];
 
   return (
-    <div className="relative" ref={ref}>
+    <div className="relative" ref={anchorRef}>
       <button
         onClick={() => setOpen((v) => !v)}
         className="w-9 h-6 flex items-center justify-center rounded hover:bg-[var(--bg-hover-alt)]"
@@ -348,10 +346,12 @@ export function MiniDashPicker({ dash, onChange }: { dash: LineDash; onChange: (
                 strokeDasharray={current.pattern === 'none' ? undefined : current.pattern} />
         </svg>
       </button>
-      {open && (
+      {open && createPortal(
         <div
-          className="absolute top-full right-0 mt-1 py-1"
-          style={{ background: 'var(--bg-panel-alt)', borderRadius: 6, boxShadow: '0 4px 12px rgba(0,0,0,0.45)', width: 100, zIndex: 90 }}
+          ref={popRef}
+          data-drawing-overlay={COLOR_POPOVER_OVERLAY}
+          className="py-1 select-none"
+          style={{ ...popStyle, background: 'var(--bg-panel-alt)', borderRadius: 6, boxShadow: '0 4px 12px rgba(0,0,0,0.45)', width: 100 }}
         >
           {DASHES.map(({ value, label, pattern }) => (
             <button
@@ -366,7 +366,8 @@ export function MiniDashPicker({ dash, onChange }: { dash: LineDash; onChange: (
               {label}
             </button>
           ))}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

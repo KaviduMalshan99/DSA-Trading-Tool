@@ -1,12 +1,16 @@
 import { useEffect, useRef, useCallback, useState, memo } from 'react';
 import type { IChartApi, ISeriesApi } from 'lightweight-charts';
-import { useDrawingStore, newDrawingId, CURSOR_MODES, type Drawing, type DrawingTool, type FibTool, type PatternType } from '../../store/drawingStore';
+import { useDrawingStore, newDrawingId, CURSOR_MODES, type Drawing, type DrawingTool, type FibExtend, type PatternType } from '../../store/drawingStore';
 import { useMarketStore } from '../../store/marketStore';
 import { useCandleStyleStore } from '../../store/candleStyleStore';
 import { toChartTimeSeconds, getChartTzOffsetSeconds } from '../../utils/chartTime';
 import { firstPriceAnchor, shiftDrawingTimes } from '../../utils/drawingTimeShift';
 import { computeSessionVWAPFromCandles } from '../../utils/klineAnalytics';
 import { decimalsForPrice } from '../../utils/priceFormat';
+import {
+  FIB_LEVELS, FIB_EXTENSION_LEVELS, FIB_TREND_EXT_LEVELS, FIB_CHANNEL_LEVELS, fibLevelsFor,
+  newFibLevels, fibLevelPoints, fibPriceDecimals, fibLabelText, type FibLevelPoint,
+} from './fibLevels';
 import { saveLocal } from '../../services/persist';
 import type { Candle } from '../../types/market';
 import {
@@ -144,67 +148,9 @@ const CURSOR_STYLE: Record<string, string> = {
 
 type LWTime = import('lightweight-charts').Time;
 
-export const FIB_LEVELS = [
-  { pct: 0,     color: '#787B86', label: '0' },
-  { pct: 0.236, color: '#F23645', label: '0.236' },
-  { pct: 0.382, color: '#FF9800', label: '0.382' },
-  { pct: 0.500, color: '#4CAF50', label: '0.5' },
-  { pct: 0.618, color: '#2196F3', label: '0.618' },
-  { pct: 0.786, color: '#9C27B0', label: '0.786' },
-  { pct: 1.618, color: '#00BCD4', label: '1.618' },
-] as const;
-
-// Fib Extension's ratio table — the render loop iterates whichever level
-// array `fibLevelsFor` resolves to with no clamping, so these extension
-// ratios (beyond the 0..1 retracement range) just work.
-export const FIB_EXTENSION_LEVELS = [
-  { pct: 0,     color: '#787B86', label: '0' },
-  { pct: 0.618, color: '#2196F3', label: '0.618' },
-  { pct: 1.0,   color: '#787B86', label: '1.0' },
-  { pct: 1.272, color: '#FF9800', label: '1.272' },
-  { pct: 1.618, color: '#00BCD4', label: '1.618' },
-  { pct: 2.0,   color: '#F23645', label: '2.0' },
-  { pct: 2.618, color: '#9C27B0', label: '2.618' },
-] as const;
-
-// Trend-based Fib Extension's ratio table — projected forward from the
-// origin (click C) by the A->B move, see the 'trendFibExtension' render
-// branch below.
-export const FIB_TREND_EXT_LEVELS = [
-  { pct: 0,     color: '#787B86', label: '0' },
-  { pct: 0.382, color: '#FF9800', label: '0.382' },
-  { pct: 0.618, color: '#2196F3', label: '0.618' },
-  { pct: 1.0,   color: '#787B86', label: '1.0' },
-  { pct: 1.272, color: '#FF9800', label: '1.272' },
-  { pct: 1.618, color: '#00BCD4', label: '1.618' },
-  { pct: 2.618, color: '#9C27B0', label: '2.618' },
-] as const;
-
-// Fib Channel's ratio table — 0 is the baseline, 1 is the fully-offset
-// parallel line, and every ratio in between is the baseline shifted by that
-// fraction of the channel width (see the 'fibChannel' render branch below).
-export const FIB_CHANNEL_LEVELS = [
-  { pct: 0,     color: '#787B86', label: '0' },
-  { pct: 0.236, color: '#F23645', label: '0.236' },
-  { pct: 0.382, color: '#FF9800', label: '0.382' },
-  { pct: 0.500, color: '#4CAF50', label: '0.5' },
-  { pct: 0.618, color: '#2196F3', label: '0.618' },
-  { pct: 0.786, color: '#9C27B0', label: '0.786' },
-  { pct: 1.0,   color: '#787B86', label: '1.0' },
-] as const;
-
-// Every fib-family tool shares one drawing/render/hitTest pattern per shape —
-// only which ratio table they read differs. Every FIB_LEVELS read that must
-// also serve the other fib tools goes through this helper instead of a
-// constant directly, so Fib Retracement/Extension's own resolution never changes.
-export function fibLevelsFor(type: FibTool) {
-  switch (type) {
-    case 'fibExtension': return FIB_EXTENSION_LEVELS;
-    case 'trendFibExtension': return FIB_TREND_EXT_LEVELS;
-    case 'fibChannel': return FIB_CHANNEL_LEVELS;
-    default: return FIB_LEVELS;
-  }
-}
+// The fib ratio tables and level math live in fibLevels.ts (pure, testable);
+// re-exported here because other modules import them from DrawingCanvas.
+export { FIB_LEVELS, FIB_EXTENSION_LEVELS, FIB_TREND_EXT_LEVELS, FIB_CHANNEL_LEVELS, fibLevelsFor };
 
 // Draws one fib level: a horizontal line from spanLeft to spanRight at `y`,
 // plus its "${label} ${price}" text label — factored out of the Fib
@@ -236,6 +182,53 @@ function drawFibLevelLine(
   ctx.fillStyle = color;
   ctx.font = '10px monospace';
   ctx.fillText(label, labelX, y - 3);
+}
+
+// Label x for a fib level. 'right' is the original placement (just past the
+// anchors' right edge, pulled in near the canvas edge). 'left' ends the text
+// just before the line's left end, or starts it at the canvas edge when the
+// line is extended left.
+function fibLabelX(
+  ctx: CanvasRenderingContext2D,
+  label: string,
+  side: 'left' | 'right',
+  spanLeft: number,
+  xRight: number,
+  W: number,
+): number {
+  if (side === 'right') return Math.min(xRight + 4, W - 120);
+  ctx.font = '10px monospace';
+  return Math.max(4, spanLeft - 4 - ctx.measureText(label).width);
+}
+
+// Price precision for fib labels: the series' price format when available.
+function seriesFibDecimals(series: ISeriesApi<'Candlestick'>, samplePrice: number): number {
+  let pf: { precision?: number; minMove?: number } | undefined;
+  try { pf = series.options().priceFormat as { precision?: number; minMove?: number }; } catch { pf = undefined; }
+  return fibPriceDecimals(pf, samplePrice);
+}
+
+// TradingView "Background": one band per gap between consecutive enabled
+// levels (sorted by price), filled with the lower-priced level's color.
+function drawFibBands(
+  ctx: CanvasRenderingContext2D,
+  pts: FibLevelPoint[],
+  series: ISeriesApi<'Candlestick'>,
+  spanLeft: number,
+  spanRight: number,
+  opacityPct: number,
+  eraserHover: boolean,
+): void {
+  const ys = pts
+    .map((p) => ({ y: priceToY(series, p.price), color: p.color }))
+    .filter((p): p is { y: number; color: string } => p.y != null)
+    .sort((a, b) => a.y - b.y); // top (highest price) first
+  for (let i = 0; i + 1 < ys.length; i++) {
+    const top = ys[i], bottom = ys[i + 1];
+    if (bottom.y - top.y <= 0) continue;
+    ctx.fillStyle = hexToRgba(eraserHover ? '#f85149' : bottom.color, opacityPct);
+    ctx.fillRect(spanLeft, top.y, spanRight - spanLeft, bottom.y - top.y);
+  }
 }
 
 // Fib Speed/Resistance Fan's ray ratios — shared by the render branch and
@@ -3437,26 +3430,33 @@ function renderDrawing(
 
     const levelDash: number[] = d.levelDash === 'dashed' ? [8, 4] : d.levelDash === 'solid' ? [] : [4, 3];
 
-    fibLevelsFor(d.type).forEach(({ pct: defaultPct, color: defaultColor }, i) => {
-      const cfg = d.levels?.[i];
-      if (cfg?.enabled === false) return;
-      const pct = cfg?.pct ?? defaultPct;
-      const price = d.priceHigh - pct * range;
+    // price = priceHigh - r * (priceHigh - priceLow): priceLow is level 1 (start),
+    // priceHigh is level 0 (end) — see FibonacciDrawing's field comment.
+    const levelPts = fibLevelPoints(d, (r) => d.priceHigh - r * range);
+    if (d.background === true) {
+      drawFibBands(ctx, levelPts, series, spanLeft, spanRight, d.backgroundOpacity ?? 15, eraserHover);
+    }
+
+    const decimals = seriesFibDecimals(series, d.priceHigh);
+    const labelSide = d.labelsSide ?? 'right';
+    levelPts.forEach(({ pct, color, price }) => {
       const y = priceToY(series, price);
       if (y == null) return;
 
-      const lineColor = eraserHover ? '#f85149' : (cfg?.color ?? defaultColor);
-      const priceStr = price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      const lineColor = eraserHover ? '#f85149' : color;
+      const label = fibLabelText(d, pct, price, decimals);
       drawFibLevelLine(
         ctx, lineColor, y, spanLeft, spanRight,
         d.levelWidth ?? (pct === 0.618 ? 1.5 : 1), levelDash, selected ? 1 : 0.85,
-        `${pct}  ${priceStr}`, Math.min(xRight + 4, W - 120),
+        label, fibLabelX(ctx, label, labelSide, spanLeft, xRight, W),
       );
     });
 
-    // shaded region
-    ctx.fillStyle = eraserHover ? 'rgba(248,81,73,0.06)' : 'rgba(33,150,243,0.04)';
-    ctx.fillRect(xLeft, Math.min(yH, yL), xRight - xLeft, Math.abs(yH - yL));
+    // legacy shaded region — only for drawings saved before the Background option
+    if (d.background === undefined) {
+      ctx.fillStyle = eraserHover ? 'rgba(248,81,73,0.06)' : 'rgba(33,150,243,0.04)';
+      ctx.fillRect(xLeft, Math.min(yH, yL), xRight - xLeft, Math.abs(yH - yL));
+    }
 
     // diagonal line connecting the two anchor points — TradingView calls this
     // the "Trend line"; thin dotted by default, toggleable in the settings panel
@@ -3494,22 +3494,29 @@ function renderDrawing(
     // the A->B move, projected forward from origin C
     const move = d.price2 - d.price1;
 
+    const extend = d.extend ?? 'none';
+    const spanLeft  = extend === 'left'  || extend === 'both' ? 0 : xLeft;
+    const spanRight = extend === 'right' || extend === 'both' ? W : xRight;
+
     const levelDash: number[] = d.levelDash === 'dashed' ? [8, 4] : d.levelDash === 'solid' ? [] : [4, 3];
 
-    fibLevelsFor(d.type).forEach(({ pct: defaultPct, color: defaultColor }, i) => {
-      const cfg = d.levels?.[i];
-      if (cfg?.enabled === false) return;
-      const pct = cfg?.pct ?? defaultPct;
-      const price = d.price3 + move * pct;
+    const levelPts = fibLevelPoints(d, (r) => d.price3 + move * r);
+    if (d.background === true) {
+      drawFibBands(ctx, levelPts, series, spanLeft, spanRight, d.backgroundOpacity ?? 15, eraserHover);
+    }
+
+    const decimals = seriesFibDecimals(series, d.price3);
+    const labelSide = d.labelsSide ?? 'right';
+    levelPts.forEach(({ pct, color, price }) => {
       const y = priceToY(series, price);
       if (y == null) return;
 
-      const lineColor = eraserHover ? '#f85149' : (cfg?.color ?? defaultColor);
-      const priceStr = price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      const lineColor = eraserHover ? '#f85149' : color;
+      const label = fibLabelText(d, pct, price, decimals);
       drawFibLevelLine(
-        ctx, lineColor, y, xLeft, xRight,
+        ctx, lineColor, y, spanLeft, spanRight,
         d.levelWidth ?? (pct === 0.618 ? 1.5 : 1), levelDash, selected ? 1 : 0.85,
-        `${pct}  ${priceStr}`, Math.min(xRight + 4, W - 120),
+        label, fibLabelX(ctx, label, labelSide, spanLeft, xRight, W),
       );
     });
 
@@ -3927,6 +3934,35 @@ function doubleCurveControls(
     c1: perpOffset(x1, y1, x2, y2, len1 * 0.25),
     c2: perpOffset(x2, y2, x3, y3, -(len2 * 0.25)),
   };
+}
+
+// Fib level lines (and, with Background on, the filled body between the
+// outermost enabled levels) are hit only within the lines' x-extent ± TOL.
+// An extended side is unbounded — mx is always inside the canvas, so this
+// matches the edge-to-edge line the renderer draws without needing W.
+function hitFibLevels(
+  levelPts: FibLevelPoint[],
+  extend: FibExtend | undefined,
+  background: boolean,
+  xLeft: number,
+  xRight: number,
+  mx: number,
+  my: number,
+  series: ISeriesApi<'Candlestick'>,
+  TOL: number,
+): boolean {
+  const ext = extend ?? 'none';
+  const spanLeft  = ext === 'left'  || ext === 'both' ? -Infinity : xLeft;
+  const spanRight = ext === 'right' || ext === 'both' ?  Infinity : xRight;
+  if (mx < spanLeft - TOL || mx > spanRight + TOL) return false;
+  let minY = Infinity, maxY = -Infinity;
+  for (const p of levelPts) {
+    const y = priceToY(series, p.price);
+    if (y == null) continue;
+    if (Math.abs(my - y) < TOL) return true;
+    minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+  }
+  return background && levelPts.length > 1 && mx >= spanLeft && mx <= spanRight && my >= minY && my <= maxY;
 }
 
 // ── hit-test a drawing (returns true if mouse is close enough to select) ─────
@@ -4562,23 +4598,16 @@ function hitTest(
   }
 
   if (d.type === 'fibonacci' || d.type === 'fibExtension') {
+    const xH = timeToX(chart, d.timeHigh), yH = priceToY(series, d.priceHigh);
+    const xL = timeToX(chart, d.timeLow),  yL = priceToY(series, d.priceLow);
+    if (xH == null || yH == null || xL == null || yL == null) return false;
     const range = d.priceHigh - d.priceLow;
-    const fibLevels = fibLevelsFor(d.type);
-    for (let i = 0; i < fibLevels.length; i++) {
-      const cfg = d.levels?.[i];
-      if (cfg?.enabled === false) continue;
-      const pct = cfg?.pct ?? fibLevels[i].pct;
-      const price = d.priceHigh - pct * range;
-      const y = priceToY(series, price);
-      if (y != null && Math.abs(my - y) < TOL) return true;
-    }
+    const levelPts = fibLevelPoints(d, (r) => d.priceHigh - r * range);
+    if (hitFibLevels(levelPts, d.extend, d.background === true, Math.min(xH, xL), Math.max(xH, xL), mx, my, series, TOL)) return true;
     if (d.lineVisible !== false) {
-      const xH = timeToX(chart, d.timeHigh), yH = priceToY(series, d.priceHigh);
-      const xL = timeToX(chart, d.timeLow),  yL = priceToY(series, d.priceLow);
-      if (xH != null && yH != null && xL != null && yL != null) {
-        return distToSegment(mx, my, xH, yH, xL, yL) < TOL;
-      }
+      return distToSegment(mx, my, xH, yH, xL, yL) < TOL;
     }
+    return false;
   }
 
   if (d.type === 'trendFibExtension') {
@@ -4586,15 +4615,9 @@ function hitTest(
     if (!pts3) return false;
     const { x1: xA, y1: yA, x2: xB, y2: yB, x3: xC, y3: yC } = pts3;
     const move = d.price2 - d.price1;
-    const fibLevels = fibLevelsFor(d.type);
-    for (let i = 0; i < fibLevels.length; i++) {
-      const cfg = d.levels?.[i];
-      if (cfg?.enabled === false) continue;
-      const pct = cfg?.pct ?? fibLevels[i].pct;
-      const price = d.price3 + move * pct;
-      const y = priceToY(series, price);
-      if (y != null && Math.abs(my - y) < TOL) return true;
-    }
+    const levelPts = fibLevelPoints(d, (r) => d.price3 + move * r);
+    if (hitFibLevels(levelPts, d.extend, d.background === true,
+        Math.min(xA, xB, xC), Math.max(xA, xB, xC), mx, my, series, TOL)) return true;
     if (d.lineVisible !== false) {
       return distToSegment(mx, my, xA, yA, xB, yB) < TOL || distToSegment(mx, my, xB, yB, xC, yC) < TOL;
     }
@@ -5076,16 +5099,17 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           else if (tool === 'gannSquare' && price2 != null && time2 != null)
             preview = { id: '__preview', type: 'gannSquare', price1, time1, price2, time2 };
           else if (tool === 'fibonacci' && price2 != null && time2 != null)
+            // click order, not sorted: click 1 = start (level 1), click 2 = end (level 0)
             preview = { id: '__preview', type: 'fibonacci',
-              priceHigh: Math.max(price1, price2), timeHigh: price1 >= price2 ? time1 : time2,
-              priceLow:  Math.min(price1, price2), timeLow:  price1 < price2  ? time1 : time2 };
+              priceLow: price1, timeLow: time1, priceHigh: price2, timeHigh: time2,
+              levels: newFibLevels(), background: true };
           else if (tool === 'fibExtension' && price2 != null && time2 != null)
             preview = { id: '__preview', type: 'fibExtension',
               priceHigh: Math.max(price1, price2), timeHigh: price1 >= price2 ? time1 : time2,
               priceLow:  Math.min(price1, price2), timeLow:  price1 < price2  ? time1 : time2 };
           else if (tool === 'trendFibExtension' && price2 != null && time2 != null)
             preview = { id: '__preview', type: 'trendFibExtension', price1, time1, price2, time2,
-              price3: price3 ?? price2, time3: time3 ?? time2 };
+              price3: price3 ?? price2, time3: time3 ?? time2, levels: newFibLevels(), background: true };
           else if (tool === 'fibChannel' && price2 != null && time2 != null)
             preview = { id: '__preview', type: 'fibChannel', price1, time1, price2, time2,
               price3: price3 ?? price2, time3: time3 ?? time2 };
@@ -5652,9 +5676,14 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
       addDrawing({ id, type: tool, price1, time1, price2, time2 });
     } else if (tool === 'fibonacci') {
       if (price2 == null || time2 == null) return;
+      // Click order, not sorted by price (drawings saved before this were
+      // sorted): click 1 -> priceLow/timeLow = start (level 1), click 2 ->
+      // priceHigh/timeHigh = end (level 0), so up and down moves both put 1 at
+      // the first point like TradingView. Levels are written explicitly so a
+      // later change to the default table can't alter this drawing.
       addDrawing({ id, type: 'fibonacci',
-        priceHigh: Math.max(price1, price2), timeHigh: price1 >= price2 ? time1 : time2,
-        priceLow:  Math.min(price1, price2), timeLow:  price1 < price2  ? time1 : time2 });
+        priceLow: price1, timeLow: time1, priceHigh: price2, timeHigh: time2,
+        levels: newFibLevels(), background: true });
     } else if (tool === 'fibExtension') {
       if (price2 == null || time2 == null) return;
       addDrawing({ id, type: 'fibExtension',
@@ -5662,7 +5691,8 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
         priceLow:  Math.min(price1, price2), timeLow:  price1 < price2  ? time1 : time2 });
     } else if (tool === 'trendFibExtension') {
       if (price2 == null || time2 == null || price3 == null || time3 == null) return;
-      addDrawing({ id, type: 'trendFibExtension', price1, time1, price2, time2, price3, time3 });
+      addDrawing({ id, type: 'trendFibExtension', price1, time1, price2, time2, price3, time3,
+        levels: newFibLevels(), background: true });
     } else if (tool === 'fibChannel') {
       if (price2 == null || time2 == null || price3 == null || time3 == null) return;
       addDrawing({ id, type: 'fibChannel', price1, time1, price2, time2, price3, time3 });

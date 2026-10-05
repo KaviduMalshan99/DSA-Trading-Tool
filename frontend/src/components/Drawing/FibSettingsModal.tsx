@@ -5,7 +5,7 @@ import {
   type FibLevelConfig,
   type FibExtend,
 } from '../../store/drawingStore';
-import { fibLevelsFor } from './DrawingCanvas';
+import { resolveFibLevels } from './fibLevels';
 import { MiniColorSwatch, MiniWidthPicker, MiniDashPicker } from './drawingStyleShared';
 
 interface Props {
@@ -15,8 +15,11 @@ interface Props {
 
 type Tab = 'Style' | 'Coordinates' | 'Visibility';
 
+// The drawing's own rows (a copy): its saved `levels` as-is, or — for an old
+// drawing that never had any — its type's legacy table, so the first edit
+// writes back exactly the rows it was already showing.
 function ensureLevels(fib: FibLikeDrawing): FibLevelConfig[] {
-  return fib.levels ?? fibLevelsFor(fib.type).map((l) => ({ enabled: true, pct: l.pct, color: l.color }));
+  return resolveFibLevels(fib);
 }
 
 const EXTEND_OPTIONS: { value: FibExtend; label: string }[] = [
@@ -26,10 +29,12 @@ const EXTEND_OPTIONS: { value: FibExtend; label: string }[] = [
   { value: 'both',  label: 'Extend both' },
 ];
 
+const SELECT_STYLE = { background: 'var(--bg-app)', color: 'var(--text-secondary)', border: '1px solid var(--border-color-softer)' };
+
 const FIB_TITLES: Record<FibLikeDrawing['type'], string> = {
   fibonacci: 'Fib Retracement',
   fibExtension: 'Fib Extension',
-  trendFibExtension: 'Trend-based Fib Extension',
+  trendFibExtension: 'Trend-Based Fib Extension',
   fibChannel: 'Fib Channel',
 };
 
@@ -89,7 +94,7 @@ export function FibSettingsModal({ fib, onClose }: Props) {
   const setLevel = (i: number, levelPatch: Partial<FibLevelConfig>) => {
     const levels = ensureLevels(fib);
     levels[i] = { ...levels[i], ...levelPatch };
-    patch({ levels: [...levels] });
+    patch({ levels });
   };
 
   const handleCancel = () => {
@@ -165,25 +170,106 @@ export function FibSettingsModal({ fib, onClose }: Props) {
                 </div>
               </div>
 
-              {(fib.type === 'fibonacci' || fib.type === 'fibExtension') && (
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-[var(--text-secondary)]">Extend</span>
-                  <select
-                    value={fib.extend ?? 'none'}
-                    onChange={(e) => patch({ extend: e.target.value as FibExtend })}
-                    className="text-sm px-2 py-1 rounded"
-                    style={{ background: 'var(--bg-app)', color: 'var(--text-secondary)', border: '1px solid var(--border-color-softer)' }}
-                  >
-                    {EXTEND_OPTIONS.map((o) => (
-                      <option key={o.value} value={o.value}>{o.label}</option>
-                    ))}
-                  </select>
-                </div>
+              {fib.type !== 'fibChannel' && (
+                <>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-[var(--text-secondary)]">Extend</span>
+                    <select
+                      value={fib.extend ?? 'none'}
+                      onChange={(e) => patch({ extend: e.target.value as FibExtend })}
+                      className="text-sm px-2 py-1 rounded"
+                      style={SELECT_STYLE}
+                    >
+                      {EXTEND_OPTIONS.map((o) => (
+                        <option key={o.value} value={o.value}>{o.label}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <label className="flex items-center gap-2 text-sm text-[var(--text-secondary)]">
+                    <input
+                      type="checkbox"
+                      checked={fib.reverse ?? false}
+                      onChange={(e) => patch({ reverse: e.target.checked })}
+                    />
+                    Reverse
+                  </label>
+
+                  <div className="flex items-center justify-between">
+                    <label className="flex items-center gap-2 text-sm text-[var(--text-secondary)]">
+                      <input
+                        type="checkbox"
+                        checked={fib.background === true}
+                        onChange={(e) => patch({ background: e.target.checked })}
+                      />
+                      Background
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        step={1}
+                        value={fib.backgroundOpacity ?? 15}
+                        disabled={fib.background !== true}
+                        onChange={(e) => patch({ backgroundOpacity: Number(e.target.value) })}
+                        className="w-24 accent-[var(--accent)]"
+                      />
+                      <span className="w-9 text-right text-xs font-mono text-[var(--text-secondary)]">
+                        {fib.backgroundOpacity ?? 15}%
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <label className="flex items-center gap-2 text-sm text-[var(--text-secondary)]">
+                        <input
+                          type="checkbox"
+                          checked={fib.showPrices ?? true}
+                          onChange={(e) => patch({ showPrices: e.target.checked })}
+                        />
+                        Prices
+                      </label>
+                      <label className="flex items-center gap-2 text-sm text-[var(--text-secondary)]">
+                        <input
+                          type="checkbox"
+                          checked={fib.showLevels ?? true}
+                          onChange={(e) => patch({ showLevels: e.target.checked })}
+                        />
+                        Levels
+                      </label>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={fib.levelsAs ?? 'values'}
+                        disabled={fib.showLevels === false}
+                        onChange={(e) => patch({ levelsAs: e.target.value as 'values' | 'percent' })}
+                        className="text-sm px-2 py-1 rounded"
+                        style={SELECT_STYLE}
+                      >
+                        <option value="values">Values</option>
+                        <option value="percent">Percent</option>
+                      </select>
+                      <select
+                        value={fib.labelsSide ?? 'right'}
+                        onChange={(e) => patch({ labelsSide: e.target.value as 'left' | 'right' })}
+                        className="text-sm px-2 py-1 rounded"
+                        style={SELECT_STYLE}
+                      >
+                        <option value="left">Left</option>
+                        <option value="right">Right</option>
+                      </select>
+                    </div>
+                  </div>
+                </>
               )}
 
-              <div className="pt-2 grid grid-cols-2 gap-x-4 gap-y-2" style={{ borderTop: '1px solid var(--border-color-softer)' }}>
-                {fibLevelsFor(fib.type).map((defaults, i) => {
-                  const lvl = levels[i];
+              <div
+                className="pt-2 grid grid-cols-2 gap-x-4 gap-y-2 overflow-y-auto"
+                style={{ borderTop: '1px solid var(--border-color-softer)', maxHeight: 260 }}
+              >
+                {levels.map((lvl, i) => {
                   return (
                     <div key={i} className="flex items-center gap-2 pt-2">
                       <input
@@ -196,7 +282,7 @@ export function FibSettingsModal({ fib, onClose }: Props) {
                         enabled={lvl.enabled}
                         onCommit={(n) => setLevel(i, { pct: n })}
                       />
-                      <MiniColorSwatch color={lvl.color ?? defaults.color} onChange={(c) => setLevel(i, { color: c })} />
+                      <MiniColorSwatch color={lvl.color ?? '#787B86'} onChange={(c) => setLevel(i, { color: c })} />
                     </div>
                   );
                 })}
@@ -206,32 +292,25 @@ export function FibSettingsModal({ fib, onClose }: Props) {
 
           {tab === 'Coordinates' && (fib.type === 'fibonacci' || fib.type === 'fibExtension') && (
             <div className="flex flex-col gap-4 text-sm text-[var(--text-secondary)]">
-              <div>
-                <div className="text-xs text-[var(--text-muted)] mb-1 uppercase tracking-wide">Point 1 (high)</div>
-                <div className="flex items-center gap-2">
-                  <span className="w-12 text-xs text-[var(--text-muted)]">Price</span>
-                  <input
-                    type="number"
-                    value={fib.priceHigh}
-                    onChange={(e) => { const n = Number(e.target.value); if (Number.isFinite(n)) patch({ priceHigh: n }); }}
-                    className="flex-1 px-2 py-1 rounded font-mono text-xs"
-                    style={{ background: 'var(--bg-app)', border: '1px solid var(--border-color-softer)', color: 'var(--text-secondary)' }}
-                  />
+              {([
+                // historical field names: priceLow = start / level 1, priceHigh = end / level 0
+                ['Start (level 1)', 'priceLow'],
+                ['End (level 0)', 'priceHigh'],
+              ] as const).map(([label, key]) => (
+                <div key={key}>
+                  <div className="text-xs text-[var(--text-muted)] mb-1 uppercase tracking-wide">{label}</div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-12 text-xs text-[var(--text-muted)]">Price</span>
+                    <input
+                      type="number"
+                      value={fib[key]}
+                      onChange={(e) => { const n = Number(e.target.value); if (Number.isFinite(n)) patch({ [key]: n }); }}
+                      className="flex-1 px-2 py-1 rounded font-mono text-xs"
+                      style={{ background: 'var(--bg-app)', border: '1px solid var(--border-color-softer)', color: 'var(--text-secondary)' }}
+                    />
+                  </div>
                 </div>
-              </div>
-              <div>
-                <div className="text-xs text-[var(--text-muted)] mb-1 uppercase tracking-wide">Point 2 (low)</div>
-                <div className="flex items-center gap-2">
-                  <span className="w-12 text-xs text-[var(--text-muted)]">Price</span>
-                  <input
-                    type="number"
-                    value={fib.priceLow}
-                    onChange={(e) => { const n = Number(e.target.value); if (Number.isFinite(n)) patch({ priceLow: n }); }}
-                    className="flex-1 px-2 py-1 rounded font-mono text-xs"
-                    style={{ background: 'var(--bg-app)', border: '1px solid var(--border-color-softer)', color: 'var(--text-secondary)' }}
-                  />
-                </div>
-              </div>
+              ))}
             </div>
           )}
 
