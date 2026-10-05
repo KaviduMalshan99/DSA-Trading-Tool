@@ -129,3 +129,48 @@ export function channelDragPatch(
 export function circleCorners(c: Pt, r: number): { x1: number; y1: number; x2: number; y2: number } {
   return { x1: c.x - r, y1: c.y - r, x2: c.x + r, y2: c.y + r };
 }
+
+// ── Arc / Curve: on-curve control handle ────────────────────────────────────
+// The stored third point C is the quadratic's off-curve control point. The
+// handle the user sees and drags is the curve's own midpoint
+// H = B(½) = (P1 + 2C + P2) / 4, so the curve always passes through it.
+
+export function quadOnCurveHandle(p1: Pt, c: Pt, p2: Pt): Pt {
+  return { x: (p1.x + 2 * c.x + p2.x) / 4, y: (p1.y + 2 * c.y + p2.y) / 4 };
+}
+
+// Inverse of quadOnCurveHandle: the control point C = 2H − (P1 + P2) / 2.
+export function quadControlFromOnCurve(p1: Pt, h: Pt, p2: Pt): Pt {
+  return { x: 2 * h.x - (p1.x + p2.x) / 2, y: 2 * h.y - (p1.y + p2.y) / 2 };
+}
+
+// ── Long / Short Position clamps ────────────────────────────────────────────
+// Screen-y ordering (y grows downward): long  → yTarget < yEntry < yStop,
+//                                       short → yStop < yEntry < yTarget.
+export const POSITION_MIN_GAP_PX = 2;
+
+export type PositionSide = 'long' | 'short';
+
+// Clamp a dragged target/stop/entry y so the three lines keep their order
+// with at least POSITION_MIN_GAP_PX between neighbours. For 'entry', when the
+// target/stop gap is already too small to fit it, the entry stays put.
+export function clampPositionY(
+  side: PositionSide, mode: 'target' | 'stop' | 'entry', y: number,
+  ys: { entry: number; target: number; stop: number },
+): number {
+  const g = POSITION_MIN_GAP_PX;
+  // `above` is the line drawn higher on screen (smaller y)
+  const above = side === 'long' ? 'target' : 'stop';
+  if (mode === 'entry') {
+    const lo = (side === 'long' ? ys.target : ys.stop) + g;
+    const hi = (side === 'long' ? ys.stop : ys.target) - g;
+    if (lo > hi) return ys.entry;
+    return Math.min(hi, Math.max(lo, y));
+  }
+  return mode === above ? Math.min(y, ys.entry - g) : Math.max(y, ys.entry + g);
+}
+
+// Right-edge (width) drag: time2 stays at least one bar after time1.
+export function clampPositionTime2(time1: number, time2: number, barSec: number): number {
+  return Math.max(time2, time1 + barSec);
+}

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback, useState, memo } from 'react';
 import type { IChartApi, ISeriesApi } from 'lightweight-charts';
-import { useDrawingStore, newDrawingId, type Drawing, type DrawingTool, type FibTool, type PatternType } from '../../store/drawingStore';
+import { useDrawingStore, newDrawingId, CURSOR_MODES, type Drawing, type DrawingTool, type FibTool, type PatternType } from '../../store/drawingStore';
 import { useMarketStore } from '../../store/marketStore';
 import { useCandleStyleStore } from '../../store/candleStyleStore';
 import { toChartTimeSeconds, getChartTzOffsetSeconds } from '../../utils/chartTime';
@@ -11,6 +11,7 @@ import { saveLocal } from '../../services/persist';
 import type { Candle } from '../../types/market';
 import {
   perpCorners, dragPerpRect, channelDragPatch, circleCorners,
+  quadOnCurveHandle, quadControlFromOnCurve, clampPositionY, clampPositionTime2,
   type Pt, type SixHandleMode,
 } from './shapeHandles';
 
@@ -2469,6 +2470,16 @@ function renderDrawing(
     const baseColor = d.color ?? '#2196F3';
     const dashPattern: number[] = d.dash === 'dashed' ? [8, 4] : d.dash === 'dotted' ? [2, 3] : [];
 
+    // Arc fill (opt-in, see ArcDrawing): curve P1→P2 closed by the chord P2→P1
+    if (d.type === 'arc' && d.filled === true) {
+      ctx.fillStyle = eraserHover ? 'rgba(248,81,73,0.1)' : hexToRgba(d.fillColor ?? baseColor, d.fillOpacity ?? 20);
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.quadraticCurveTo(cx, cy, x2, y2);
+      ctx.closePath();
+      ctx.fill();
+    }
+
     ctx.strokeStyle = eraserHover ? '#f85149' : hexToRgba(baseColor, d.opacity ?? 100);
     ctx.lineWidth = (d.width ?? 1.5) + (selected ? 1 : 0);
     ctx.setLineDash(dashPattern);
@@ -2479,18 +2490,15 @@ function renderDrawing(
     ctx.setLineDash([]);
 
     if (selected) {
+      // P1, P2 and the on-curve handle H (the curve's midpoint, not the
+      // off-curve control point C) — all the same filled dot
+      const h = quadOnCurveHandle({ x: x1, y: y1 }, { x: cx, y: cy }, { x: x2, y: y2 });
       ctx.fillStyle = eraserHover ? '#f85149' : baseColor;
-      for (const [hx, hy] of [[x1, y1], [x2, y2]] as const) {
+      for (const [hx, hy] of [[x1, y1], [x2, y2], [h.x, h.y]] as const) {
         ctx.beginPath();
         ctx.arc(hx, hy, 4, 0, Math.PI * 2);
         ctx.fill();
       }
-      // control-point handle, drawn hollow to distinguish it from the two anchors
-      ctx.strokeStyle = eraserHover ? '#f85149' : baseColor;
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.arc(cx, cy, 4, 0, Math.PI * 2);
-      ctx.stroke();
     }
 
   } else if (d.type === 'doubleCurve') {
@@ -3404,7 +3412,9 @@ function renderDrawing(
       ctx.fillRect(midX - 4, yTarget - 4, 8, 8);
       ctx.fillStyle = eraserHover ? '#f85149' : lossColor;
       ctx.fillRect(midX - 4, yStop - 4, 8, 8);
+      // entry-line ends: left = entry price (vertical), right = width
       ctx.fillStyle = eraserHover ? '#f85149' : '#787B86';
+      ctx.fillRect(lx - 4, yEntry - 4, 8, 8);
       ctx.fillRect(rx - 4, yEntry - 4, 8, 8);
     }
 
@@ -3853,6 +3863,27 @@ function quadraticPoint(
     x: mt * mt * x1 + 2 * mt * t * cx + t * t * x2,
     y: mt * mt * y1 + 2 * mt * t * cy + t * t * y2,
   };
+}
+
+// Text-family drawings whose text is empty only exist while their inline edit
+// is open (commitEdit deletes them otherwise) — never persist them, so a reload
+// mid-edit can't leave an empty drawing saved.
+function persistableDrawings(drawings: Drawing[]): Drawing[] {
+  return drawings.filter((d) => !(
+    (d.type === 'text' || d.type === 'signpost' || d.type === 'note' || d.type === 'callout' || d.type === 'comment') &&
+    !(d.text ?? '').trim()
+  ));
+}
+
+// Arc/Curve placement: ds.x3/y3 is the on-curve point H the user clicked (or
+// is hovering); returns the stored control point C = 2H − (P1 + P2) / 2.
+function arcControlFromOnCurve(
+  chart: IChartApi, series: ISeriesApi<'Candlestick'>,
+  ds: { x1: number; y1: number; x2: number; y2: number; x3: number; y3: number },
+): { price: number; time: number } | null {
+  const c = quadControlFromOnCurve({ x: ds.x1, y: ds.y1 }, { x: ds.x3, y: ds.y3 }, { x: ds.x2, y: ds.y2 });
+  const price = yToPrice(series, c.y), time = xToTime(chart, c.x);
+  return price == null || time == null ? null : { price, time };
 }
 
 function sampleQuadratic(
@@ -4328,7 +4359,11 @@ function hitTest(
     const pts3 = get3PointScreen(d.price1, d.time1, d.price2, d.time2, d.price3, d.time3, chart, series);
     if (!pts3) return false;
     const { x1, y1, x2, y2, x3: cx, y3: cy } = pts3;
-    return hitTestQuadratic(mx, my, x1, y1, cx, cy, x2, y2, TOL);
+    if (hitTestQuadratic(mx, my, x1, y1, cx, cy, x2, y2, TOL)) return true;
+    // filled arc: inside the curve + chord region (sampled curve, closed by
+    // pointInPolygon's implicit last→first edge = the chord)
+    return d.type === 'arc' && d.filled === true &&
+      pointInPolygon(mx, my, sampleQuadratic(x1, y1, cx, cy, x2, y2));
   }
 
   if (d.type === 'doubleCurve') {
@@ -4702,6 +4737,10 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
   const [editing, setEditingState] = useState<EditingNote | null>(null);
   const editingRef = useRef<EditingNote | null>(null);
   const setEditing = useCallback((v: EditingNote | null) => { editingRef.current = v; setEditingState(v); }, []);
+  // Latest commitEdit/flushEdit (defined further down) for window listeners and
+  // effect cleanups that must not capture a stale closure.
+  const commitEditRef = useRef<() => void>(() => {});
+  const flushEditRef  = useRef<() => boolean>(() => false);
 
   // Measure tool's transient stats readout — not a persisted Drawing, cleared
   // whenever the tool changes away from 'measure'.
@@ -4743,7 +4782,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
       | 'triangle' | 'arc' | 'curve' | 'doubleCurve' | 'trendFibExtension' | 'sector' | 'fibWedge' | 'pitchfan' | 'positionForecast'
       | 'arrowMark' | 'note' | 'position' | 'hline' | 'vline' | 'hray';
     id: string;
-    mode: 'move' | 'p1' | 'p2' | 'p3' | 'c2' | 'c3' | 'vertex' | 'target' | 'stop' | 'width'
+    mode: 'move' | 'p1' | 'p2' | 'p3' | 'c2' | 'c3' | 'vertex' | 'target' | 'stop' | 'width' | 'entry'
       | 'a1' | 'a2' | 'b1' | 'b2'
       // channel/rotated rectangle: opposite-side corners + P1P2-side midpoint;
       // circle: center handle + on-curve edge handle
@@ -4763,6 +4802,12 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
       orig: { price1: number; time1: number; price2: number; time2: number; price3: number; time3: number };
       lines?: { x1: number; y1: number; x2: number; y2: number; y1b: number; y2b: number };
       perp?: { p1: Pt; p2: Pt; p3: Pt };
+    };
+    // 'position' kind only: long/short side (from the drawing's type) and the
+    // stored values, so handle drags change only their own field exactly.
+    pos?: {
+      side: 'long' | 'short';
+      entryPrice: number; targetPrice: number; stopPrice: number; time1: number; time2: number;
     };
   } | null>(null);
   const dragPreviewRef = useRef<
@@ -4823,6 +4868,25 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
   // effect re-runs and re-shifts the UTC drawings by the new offset.
   const currentOffset = getChartTzOffsetSeconds();
 
+  // An inline text edit still open when the symbol/interval changes (or this
+  // subtree unmounts, e.g. the timezone remount) is committed here, onto the
+  // OLD key. Ordering: on a key change React runs every effect cleanup of this
+  // component before any effect body, so this cleanup (closing over the old
+  // key/offset) runs before the load effect below swaps in the new key's
+  // drawings. The save effect can't persist the commit — by its next run the
+  // store already holds the new key — so the old key is written directly here.
+  useEffect(() => {
+    const key = storageKey, offset = currentOffset;
+    return () => {
+      if (!flushEditRef.current()) return;
+      if (loadedKeyRef.current !== key) return;
+      try {
+        const utc = shiftDrawingTimes(persistableDrawings(useDrawingStore.getState().drawings), -offset);
+        saveLocal(key, JSON.stringify({ v: 2, drawings: utc }));
+      } catch { /* ignore */ }
+    };
+  }, [storageKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     try {
       const raw = localStorage.getItem(storageKey);
@@ -4854,7 +4918,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
     // re-render triggered by loadDrawings saves the correct array.
     if (drawings !== useDrawingStore.getState().drawings) return;
     try {
-      const utc = shiftDrawingTimes(drawings, -currentOffset);
+      const utc = shiftDrawingTimes(persistableDrawings(drawings), -currentOffset);
       saveLocal(storageKey, JSON.stringify({ v: 2, drawings: utc }));
     } catch { /* ignore */ }
   }, [drawings, storageKey, currentOffset]);
@@ -5078,12 +5142,14 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           else if (tool === 'positionForecast' && price2 != null && time2 != null)
             preview = { id: '__preview', type: 'positionForecast', price1, time1, price2, time2,
               price3: price3 ?? price2, time3: time3 ?? time2 };
-          else if (tool === 'arc' && price2 != null && time2 != null)
-            preview = { id: '__preview', type: 'arc', price1, time1, price2, time2,
-              price3: price3 ?? price2, time3: time3 ?? time2 };
-          else if (tool === 'curve' && price2 != null && time2 != null)
-            preview = { id: '__preview', type: 'curve', price1, time1, price2, time2,
-              price3: price3 ?? price2, time3: time3 ?? time2 };
+          else if ((tool === 'arc' || tool === 'curve') && price2 != null && time2 != null) {
+            // once P2 is placed, the cursor is the on-curve point H → control C
+            const c = ds.step >= 2 ? arcControlFromOnCurve(chart, series, ds) : null;
+            const p3 = c ? c.price : price3 ?? price2, t3 = c ? c.time : time3 ?? time2;
+            preview = tool === 'arc'
+              ? { id: '__preview', type: 'arc', price1, time1, price2, time2, price3: p3, time3: t3, filled: true }
+              : { id: '__preview', type: 'curve', price1, time1, price2, time2, price3: p3, time3: t3 };
+          }
           else if (tool === 'doubleCurve' && price2 != null && time2 != null)
             preview = { id: '__preview', type: 'doubleCurve', price1, time1, price2, time2,
               price3: price3 ?? price2, time3: time3 ?? time2 };
@@ -5283,25 +5349,46 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
   // Text/Price Note inline-edit overlay: commit saves the typed text (deleting
   // the drawing if left empty — an empty note is pointless); cancel discards a
   // freshly-placed empty note but leaves an existing one's prior text alone.
-  const commitEdit = useCallback(() => {
-    const ed = editingRef.current;
-    if (!ed) return;
+  // Store write shared by commitEdit and flushEdit. Reads the store directly
+  // (not drawingsRef) so it is correct inside effect cleanups too.
+  const applyEdit = useCallback((ed: EditingNote) => {
     // Table cell: write just that cell; an empty cell never deletes the table.
     if (ed.cell != null) {
-      const d = drawingsRef.current.find((dr) => dr.id === ed.id);
+      const d = useDrawingStore.getState().drawings.find((dr) => dr.id === ed.id);
       if (d?.type === 'table') {
         const cells = d.cells.slice();
         cells[ed.cell] = ed.value.trim();
         updateDrawing(ed.id, { cells });
       }
-      setEditing(null);
-      scheduleRender();
       return;
     }
     const trimmed = ed.value.trim();
     if (trimmed.length === 0) deleteDrawing(ed.id);
     else updateDrawing(ed.id, { text: trimmed });
+  }, [deleteDrawing, updateDrawing]);
+
+  // Commit without the UI side effects (tool revert, render) — used when the
+  // symbol/interval changes or the component unmounts. True if it committed.
+  const flushEdit = useCallback((): boolean => {
+    const ed = editingRef.current;
+    if (!ed) return false;
     setEditing(null);
+    applyEdit(ed);
+    return true;
+  }, [applyEdit, setEditing]);
+  flushEditRef.current = flushEdit;
+
+  const commitEdit = useCallback(() => {
+    const ed = editingRef.current;
+    if (!ed) return;
+    if (ed.cell != null) {
+      setEditing(null);
+      applyEdit(ed);
+      scheduleRender();
+      return;
+    }
+    setEditing(null);
+    applyEdit(ed);
     // Only auto-revert if Text/Signpost/Note/Callout/Comment is still the
     // active tool — if this commit was triggered by switching to a
     // *different* tool mid-edit, that tool choice must win, not get
@@ -5311,7 +5398,8 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
       setTool(lastCursorModeRef.current);
     }
     scheduleRender();
-  }, [deleteDrawing, updateDrawing, setEditing, scheduleRender, setTool]);
+  }, [applyEdit, setEditing, scheduleRender, setTool]);
+  commitEditRef.current = commitEdit;
 
   const cancelEdit = useCallback(() => {
     const ed = editingRef.current;
@@ -5639,12 +5727,17 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
     } else if (tool === 'positionForecast') {
       if (price2 == null || time2 == null || price3 == null || time3 == null) return;
       addDrawing({ id, type: 'positionForecast', price1, time1, price2, time2, price3, time3 });
-    } else if (tool === 'arc') {
-      if (price2 == null || time2 == null || price3 == null || time3 == null) return;
-      addDrawing({ id, type: 'arc', price1, time1, price2, time2, price3, time3 });
-    } else if (tool === 'curve') {
-      if (price2 == null || time2 == null || price3 == null || time3 == null) return;
-      addDrawing({ id, type: 'curve', price1, time1, price2, time2, price3, time3 });
+    } else if (tool === 'arc' || tool === 'curve') {
+      // the 3rd click is the on-curve point H; store the control point C
+      const c = arcControlFromOnCurve(chart, series, ds);
+      if (price2 == null || time2 == null || !c) return;
+      if (tool === 'arc') {
+        // fill defaults match the rectangle's (fill color follows the line color)
+        addDrawing({ id, type: 'arc', price1, time1, price2, time2, price3: c.price, time3: c.time,
+          filled: true, fillOpacity: 20 });
+      } else {
+        addDrawing({ id, type: 'curve', price1, time1, price2, time2, price3: c.price, time3: c.time });
+      }
     } else if (tool === 'doubleCurve') {
       if (price2 == null || time2 == null || price3 == null || time3 == null) return;
       addDrawing({ id, type: 'doubleCurve', price1, time1, price2, time2, price3, time3 });
@@ -5974,6 +6067,10 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
             nx1 = x; ny1 = y;
           } else if (drag.mode === 'p2') {
             nx2 = x; ny2 = y;
+          } else if (drag.mode === 'p3' && (drag.kind === 'arc' || drag.kind === 'curve')) {
+            // cursor is the on-curve point H → control point C = 2H − (P1 + P2) / 2
+            const c = quadControlFromOnCurve({ x: nx1, y: ny1 }, { x, y }, { x: nx2, y: ny2 });
+            nx3 = c.x; ny3 = c.y;
           } else if (drag.mode === 'p3') {
             nx3 = x; ny3 = y;
           }
@@ -6033,19 +6130,36 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           return;
         }
 
+        if (drag.kind === 'position' && drag.pos && drag.mode !== 'move') {
+          // handle drags: only the dragged field changes (the rest keep their
+          // exact stored values); target/stop/entry are clamped in screen px so
+          // the three lines never cross (see clampPositionY)
+          const o = drag.pos;
+          const ys = { entry: drag.origY1, target: drag.origY2, stop: drag.origY3 };
+          let { entryPrice, targetPrice, stopPrice, time2 } = o;
+          if (drag.mode === 'target' || drag.mode === 'stop' || drag.mode === 'entry') {
+            const p = yToPrice(series, clampPositionY(o.side, drag.mode, y, ys));
+            if (p == null) return;
+            if (drag.mode === 'target') targetPrice = p;
+            else if (drag.mode === 'stop') stopPrice = p;
+            else entryPrice = p;
+          } else if (drag.mode === 'width') {
+            const t = xToTime(chart, x);
+            if (t == null) return;
+            time2 = clampPositionTime2(o.time1, t, estimateBarIntervalSec(candlesRef.current) ?? 60);
+          }
+          dragPreviewRef.current = { kind: 'position', id: drag.id, entryPrice, targetPrice, stopPrice, time1: o.time1, time2 };
+          scheduleRender();
+          return;
+        }
+
         if (drag.kind === 'position') {
-          // origX1/origY1 = left edge x / entry y; origX2/origY2 = right edge x / target y; origY3 = stop y
+          // body move: origX1/origY1 = left edge x / entry y; origX2/origY2 = right edge x / target y; origY3 = stop y
           let nx1 = drag.origX1, nx2 = drag.origX2;
           let nyEntry = drag.origY1, nyTarget = drag.origY2, nyStop = drag.origY3;
           if (drag.mode === 'move') {
             nx1 += dx; nx2 += dx;
             nyEntry += dy; nyTarget += dy; nyStop += dy;
-          } else if (drag.mode === 'target') {
-            nyTarget = y;
-          } else if (drag.mode === 'stop') {
-            nyStop = y;
-          } else if (drag.mode === 'width') {
-            nx2 = x;
           }
           const entryPrice  = yToPrice(series, nyEntry);
           const targetPrice = yToPrice(series, nyTarget);
@@ -6274,7 +6388,11 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           const pts3 = get3PointScreen(d.price1, d.time1, d.price2, d.time2, d.price3, d.time3, chart, series);
           if (!pts3) continue;
           const { x1, y1, x2, y2, x3, y3 } = pts3;
-          const nearAny = Math.hypot(x - x1, y - y1) < 8 || Math.hypot(x - x2, y - y2) < 8 || Math.hypot(x - x3, y - y3) < 8;
+          const h3 = d.type === 'arc' || d.type === 'curve'
+            ? (selectedIdsRef.current.includes(d.id) ? quadOnCurveHandle({ x: x1, y: y1 }, { x: x3, y: y3 }, { x: x2, y: y2 }) : null)
+            : { x: x3, y: y3 };
+          const nearAny = Math.hypot(x - x1, y - y1) < 8 || Math.hypot(x - x2, y - y2) < 8 ||
+            (!!h3 && Math.hypot(x - h3.x, y - h3.y) < 8);
           if (nearAny) { hoverCursor = 'grab'; break; }
           if (hitTest(d, x, y, chart, series, candlesRef.current)) { hoverCursor = 'move'; break; }
         } else if (d.type === 'rectangle' || d.type === 'circle' || d.type === 'ellipse' || d.type === 'priceRange' || d.type === 'dateRange' || d.type === 'datePriceRange' || d.type === 'gannBox' || d.type === 'gannSquare' || d.type === 'table' || d.type === 'barsPattern') {
@@ -6322,8 +6440,10 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           const yStop = priceToY(series, d.stopPrice);
           if (x1 == null || x2 == null || yEntry == null || yTarget == null || yStop == null) continue;
           const midX = (x1 + x2) / 2;
+          const lx = Math.min(x1, x2), rx = Math.max(x1, x2);
           if (Math.hypot(x - midX, y - yTarget) < 8 || Math.hypot(x - midX, y - yStop) < 8) { hoverCursor = 'ns-resize'; break; }
-          if (Math.hypot(x - x2, y - yEntry) < 8) { hoverCursor = 'ew-resize'; break; }
+          if (selectedIdsRef.current.includes(d.id) && Math.hypot(x - lx, y - yEntry) < 8) { hoverCursor = 'ns-resize'; break; }
+          if (Math.hypot(x - rx, y - yEntry) < 8) { hoverCursor = 'ew-resize'; break; }
           if (hitTest(d, x, y, chart, series, candlesRef.current)) { hoverCursor = 'move'; break; }
         }
       }
@@ -6335,6 +6455,23 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
 
     const onWinDownCapture = (e: MouseEvent) => {
       if (e.button !== 0) return; // right/middle click never draws, drags or deselects
+      // An open inline text edit is committed by any mousedown on the chart
+      // (the textarea itself is an overlay target, so typing clicks are
+      // exempt). Needed because the canvas/drag handlers preventDefault, so the
+      // textarea never blurs. With a cursor-group tool the click then goes on
+      // to select/drag as usual; with any other tool (e.g. Text itself) this
+      // click is consumed so it doesn't also place a new drawing.
+      if (editingRef.current && !isOverlayTarget(e) && isOverChart(e)) {
+        const toolAtClick = activeToolRef.current;
+        commitEditRef.current();
+        // the commit may have deleted an empty drawing — don't hit-test a stale list
+        drawingsRef.current = useDrawingStore.getState().drawings;
+        if (!(CURSOR_MODES as readonly DrawingTool[]).includes(toolAtClick)) {
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
+      }
       // Ctrl/Cmd+click toggles selection (onWinDown) — never starts a drag.
       if (e.ctrlKey || e.metaKey) return;
       if (isOverlayTarget(e)) return;
@@ -6546,7 +6683,12 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
 
           const nearP1 = Math.hypot(x - x1, y - y1) < 8;
           const nearP2 = Math.hypot(x - x2, y - y2) < 8;
-          const nearP3 = Math.hypot(x - x3, y - y3) < 8;
+          // arc/curve: the third handle is the on-curve point H (selected only);
+          // origX3/origY3 below stay the stored control point C
+          const h3 = d.type === 'arc' || d.type === 'curve'
+            ? (selectedIdsRef.current.includes(d.id) ? quadOnCurveHandle({ x: x1, y: y1 }, { x: x3, y: y3 }, { x: x2, y: y2 }) : null)
+            : { x: x3, y: y3 };
+          const nearP3 = !!h3 && Math.hypot(x - h3.x, y - h3.y) < 8;
           if (!nearP1 && !nearP2 && !nearP3 && !hitTest(d, x, y, chart, series, candlesRef.current)) continue;
 
           dragRef.current = {
@@ -6705,20 +6847,31 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           const yStop   = priceToY(series, d.stopPrice);
           if (x1 == null || x2 == null || yEntry == null || yTarget == null || yStop == null) continue;
           const midX = (x1 + x2) / 2;
+          // entry-line handles sit at the box's left/right edges (lx/rx) —
+          // the same points the renderer draws them at
+          const lx = Math.min(x1, x2), rx = Math.max(x1, x2);
 
           const nearTarget = Math.hypot(x - midX, y - yTarget) < 8;
           const nearStop   = Math.hypot(x - midX, y - yStop) < 8;
-          const nearWidth  = Math.hypot(x - x2, y - yEntry) < 8;
-          if (!nearTarget && !nearStop && !nearWidth && !hitTest(d, x, y, chart, series, candlesRef.current)) continue;
+          // left entry handle is new -> only active when selected
+          const nearEntry  = !nearTarget && !nearStop && selectedIdsRef.current.includes(d.id) &&
+            Math.hypot(x - lx, y - yEntry) < 8;
+          const nearWidth  = Math.hypot(x - rx, y - yEntry) < 8;
+          if (!nearTarget && !nearStop && !nearEntry && !nearWidth && !hitTest(d, x, y, chart, series, candlesRef.current)) continue;
 
           dragRef.current = {
             active: true, kind: 'position', id: d.id,
-            mode: nearTarget ? 'target' : nearStop ? 'stop' : nearWidth ? 'width' : 'move',
+            mode: nearTarget ? 'target' : nearStop ? 'stop' : nearEntry ? 'entry' : nearWidth ? 'width' : 'move',
             startX: x, startY: y,
             origX1: x1, origY1: yEntry, origX2: x2, origY2: yTarget, origX3: 0, origY3: yStop,
+            pos: {
+              side: d.type === 'longPosition' ? 'long' : 'short',
+              entryPrice: d.entryPrice, targetPrice: d.targetPrice, stopPrice: d.stopPrice,
+              time1: d.time1, time2: d.time2,
+            },
           };
           selectDrawing(d.id);
-          applyCursorValue(nearWidth ? 'ew-resize' : nearTarget || nearStop ? 'ns-resize' : 'move');
+          applyCursorValue(nearWidth ? 'ew-resize' : nearTarget || nearStop || nearEntry ? 'ns-resize' : 'move');
           e.preventDefault();
           e.stopPropagation();
           scheduleRender();

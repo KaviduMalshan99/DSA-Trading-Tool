@@ -360,22 +360,25 @@ export const DrawingStyleToolbar = memo(function DrawingStyleToolbar({ sharedCha
 
   if (selected.type === 'rectangle' || selected.type === 'rotatedRectangle' || selected.type === 'circle' ||
       selected.type === 'sector' || selected.type === 'positionForecast' ||
-      selected.type === 'ellipse' || selected.type === 'triangle' ||
+      selected.type === 'ellipse' || selected.type === 'triangle' || selected.type === 'arc' ||
       isDrawingOfType(selected, CHANNEL_TYPES)) {
     const shape = selected;
     const isChannel = isDrawingOfType(shape, CHANNEL_TYPES);
+    // Arc (the only fillable THREE_POINT_TYPES member) draws at width 1.5 and
+    // its fill is opt-in (filled === true), unlike the shapes' filled !== false.
+    const isArc = shape.type === 'arc';
     const color = shape.color ?? '#2196F3';
-    const width = shape.width ?? (isChannel ? 1.5 : 1);
+    const width = shape.width ?? (isChannel || isArc ? 1.5 : 1);
     const dash = shape.dash ?? 'solid';
     const opacity = shape.opacity ?? 100;
-    const filled = shape.filled !== false;
+    const filled = isArc ? shape.filled === true : shape.filled !== false;
     const fillColor = shape.fillColor ?? color;
     const fillOpacity = shape.fillOpacity ?? (isChannel ? 8 : 20);
 
     return (
       <div ref={toolbarRef} data-drawing-overlay="style-toolbar" className="absolute flex items-center gap-0.5 py-1 px-1 select-none" style={toolbarStyle}>
         <ColorOpacityButton
-          title={isChannel ? 'Line color' : 'Border color'}
+          title={isChannel || isArc ? 'Line color' : 'Border color'}
           color={color} opacity={opacity}
           onColorChange={(c) => updateDrawing(shape.id, { color: c })}
           onOpacityChange={(o) => updateDrawing(shape.id, { opacity: o })}

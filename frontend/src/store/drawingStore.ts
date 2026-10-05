@@ -332,12 +332,15 @@ export interface GhostFeedDrawing {
 // Arc: a single quadratic curve from p1 (start) to p2 (end), bulging toward
 // p3 (control point). Same 3-point shape as Curve — kept as a separate
 // type/label per the toolbar spec even though the math is identical.
-export interface ArcDrawing extends LineStyle {
+// Fill (Arc only, not Curve) is opt-in: the region between the curve and the
+// P2→P1 chord is painted only when `filled === true`, so arcs saved before
+// fill existed stay unfilled. New arcs are created with `filled: true`.
+export interface ArcDrawing extends LineStyle, FillStyle {
   id: string;
   type: 'arc';
   price1: number; time1: number; // start
   price2: number; time2: number; // end
-  price3: number; time3: number; // control/bulge
+  price3: number; time3: number; // control/bulge (off-curve; the handle sits on the curve)
 }
 
 // Curve: functionally identical to Arc (quadratic curve, p3 is the control
