@@ -7,7 +7,7 @@ import { useMarketStore } from '../../store/marketStore';
 import { priceToY, timeToX, computeParallelOffset, computeRegression, getRotatedRectCorners } from './DrawingCanvas';
 import { FibSettingsModal } from './FibSettingsModal';
 import {
-  MiniWidthPicker, MiniDashPicker, ColorOpacityButton, MiniColorSwatch, MiniSizePicker,
+  MiniWidthPicker, MiniDashPicker, ColorOpacityButton, MiniColorSwatch, MiniSizePicker, COLOR_POPOVER_OVERLAY,
   FillToggleIcon, TrashIcon, GearIcon,
 } from './drawingStyleShared';
 
@@ -311,6 +311,8 @@ export const DrawingStyleToolbar = memo(function DrawingStyleToolbar({ sharedCha
       // the Fib settings modal renders as a sibling (fixed to the viewport, not
       // anchored under the toolbar), so clicks inside it must not count as "outside"
       if (target instanceof Element && target.closest('[data-drawing-overlay="fib-modal"]')) return;
+      // same for the color popovers, which are portaled to <body>
+      if (target instanceof Element && target.closest(`[data-drawing-overlay="${COLOR_POPOVER_OVERLAY}"]`)) return;
       setOpenMenu(null);
     };
     document.addEventListener('mousedown', onOutsideMouseDown);

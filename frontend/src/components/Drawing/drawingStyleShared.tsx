@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
+import { createPortal } from 'react-dom';
 import type { LineDash } from '../../store/drawingStore';
 
 function hslToHex(h: number, s: number, l: number): string {
@@ -48,30 +49,111 @@ export function GearIcon() {
   );
 }
 
+// Color popovers render in a portal on document.body (position: fixed) so a
+// scrolling ancestor — e.g. a settings modal's overflow-y-auto body — can't clip
+// them. They sit above the modals (z 1000) and carry data-drawing-overlay so
+// DrawingCanvas and the style toolbar don't treat clicks in them as "outside".
+export const COLOR_POPOVER_OVERLAY = 'color-popover';
+const POPOVER_Z = 1200;
+const POPOVER_GAP = 4;     // same offset as the old mt-1 under the swatch
+const VIEWPORT_MARGIN = 8;
+
+function useAnchoredPopover() {
+  const [open, setOpen] = useState(false);
+  const anchorRef = useRef<HTMLDivElement>(null);
+  const popRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+
+  // Below-left of the swatch by default; flip upward / align to the swatch's
+  // right edge when there isn't room, then clamp fully inside the viewport.
+  const place = useCallback(() => {
+    const anchor = anchorRef.current;
+    const pop = popRef.current;
+    if (!anchor || !pop) return;
+    const r = anchor.getBoundingClientRect();
+    const width = pop.offsetWidth;
+    const height = pop.offsetHeight;
+    const vw = document.documentElement.clientWidth;
+    const vh = document.documentElement.clientHeight;
+    let left = r.left;
+    if (left + width > vw - VIEWPORT_MARGIN) left = r.right - width;
+    let top = r.bottom + POPOVER_GAP;
+    if (top + height > vh - VIEWPORT_MARGIN && r.top > vh - r.bottom) top = r.top - POPOVER_GAP - height;
+    left = Math.max(VIEWPORT_MARGIN, Math.min(left, vw - width - VIEWPORT_MARGIN));
+    top = Math.max(VIEWPORT_MARGIN, Math.min(top, vh - height - VIEWPORT_MARGIN));
+    setPos((p) => (p && p.left === left && p.top === top ? p : { left, top }));
+  }, []);
+
+  useLayoutEffect(() => {
+    if (open) place();
+    else setPos(null);
+  }, [open, place]);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (anchorRef.current?.contains(t) || popRef.current?.contains(t)) return;
+      close();
+    };
+    // Capture phase + stopPropagation: Esc closes only this popover — not the
+    // modal around it, and never DrawingCanvas's deselect/cancel shortcut.
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.stopPropagation();
+      e.preventDefault();
+      close();
+    };
+    // Follow the swatch while its container scrolls; close once it leaves the viewport.
+    const onScroll = () => {
+      const r = anchorRef.current?.getBoundingClientRect();
+      if (!r || r.bottom < 0 || r.top > window.innerHeight || r.right < 0 || r.left > window.innerWidth) close();
+      else place();
+    };
+    document.addEventListener('mousedown', onDown);
+    window.addEventListener('keydown', onKey, true);
+    window.addEventListener('scroll', onScroll, true);
+    window.addEventListener('resize', place);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      window.removeEventListener('keydown', onKey, true);
+      window.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('resize', place);
+    };
+  }, [open, place]);
+
+  const popStyle: CSSProperties = {
+    position: 'fixed',
+    left: pos?.left ?? 0,
+    top: pos?.top ?? 0,
+    zIndex: POPOVER_Z,
+    // hidden for the single layout pass before it's measured and placed
+    visibility: pos ? 'visible' : 'hidden',
+  };
+
+  return { open, setOpen, anchorRef, popRef, popStyle };
+}
+
 // Small popover controls — each manages its own open/close state and closes
 // on an outside click. Reused by the trend-line-style toolbar and the
 // Fibonacci settings modal.
 export function MiniColorSwatch({ color, onChange }: { color: string; onChange: (c: string) => void }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
-    document.addEventListener('mousedown', onDown);
-    return () => document.removeEventListener('mousedown', onDown);
-  }, [open]);
+  const { open, setOpen, anchorRef, popRef, popStyle } = useAnchoredPopover();
 
   return (
-    <div className="relative" ref={ref}>
+    <div className="relative" ref={anchorRef}>
       <button
         onClick={() => setOpen((v) => !v)}
         className="w-5 h-5 rounded-full border border-white/30 flex-shrink-0"
         style={{ background: color }}
       />
-      {open && (
+      {open && createPortal(
         <div
-          className="absolute top-full left-0 mt-1 p-2 grid grid-cols-7 gap-1"
-          style={{ background: 'var(--bg-panel-alt)', borderRadius: 8, boxShadow: '0 4px 12px rgba(0,0,0,0.45)', width: 200, zIndex: 90 }}
+          ref={popRef}
+          data-drawing-overlay={COLOR_POPOVER_OVERLAY}
+          className="p-2 grid grid-cols-7 gap-1 select-none"
+          style={{ ...popStyle, background: 'var(--bg-panel-alt)', borderRadius: 8, boxShadow: '0 4px 12px rgba(0,0,0,0.45)', width: 200 }}
         >
           {COLOR_SWATCHES.map((c) => (
             <button
@@ -82,7 +164,8 @@ export function MiniColorSwatch({ color, onChange }: { color: string; onChange: 
               style={{ background: c, borderColor: c.toLowerCase() === color.toLowerCase() ? 'var(--accent)' : 'rgba(255,255,255,0.15)' }}
             />
           ))}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
@@ -138,17 +221,10 @@ export function ColorOpacityButton({
   onOpacityChange: (o: number) => void;
   title?: string;
 }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
-    document.addEventListener('mousedown', onDown);
-    return () => document.removeEventListener('mousedown', onDown);
-  }, [open]);
+  const { open, setOpen, anchorRef, popRef, popStyle } = useAnchoredPopover();
 
   return (
-    <div className="relative" ref={ref}>
+    <div className="relative" ref={anchorRef}>
       <button
         title={title}
         onClick={() => setOpen((v) => !v)}
@@ -156,10 +232,12 @@ export function ColorOpacityButton({
       >
         <span className="w-3.5 h-3.5 rounded-full border border-white/30" style={{ background: color, opacity: opacity / 100 }} />
       </button>
-      {open && (
+      {open && createPortal(
         <div
-          className="absolute top-full left-0 mt-1 p-3"
-          style={{ background: 'var(--bg-panel-alt)', borderRadius: 8, boxShadow: '0 4px 12px rgba(0,0,0,0.45)', width: 236, zIndex: 90 }}
+          ref={popRef}
+          data-drawing-overlay={COLOR_POPOVER_OVERLAY}
+          className="p-3 select-none"
+          style={{ ...popStyle, background: 'var(--bg-panel-alt)', borderRadius: 8, boxShadow: '0 4px 12px rgba(0,0,0,0.45)', width: 236 }}
         >
           <div className="grid grid-cols-7 gap-1.5">
             {COLOR_GRID.map((row, ri) =>
@@ -193,7 +271,8 @@ export function ColorOpacityButton({
               className="w-full accent-[var(--accent)]"
             />
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
