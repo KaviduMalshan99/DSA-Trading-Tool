@@ -5,6 +5,7 @@ import { useChartStore } from '../../store/chartStore';
 import { useDrawingStore } from '../../store/drawingStore';
 import { useIndicatorStore } from '../../store/indicatorStore';
 import { useMarketStore } from '../../store/marketStore';
+import { useReplayStore } from '../../store/replayStore';
 import { pasteDrawings } from '../Drawing/DrawingCanvas';
 import { nudgeRedraw } from './PriceScaleButtons';
 
@@ -21,6 +22,33 @@ const RESET_RIGHT_MARGIN = 5;
 const EDGE_GAP = 4;
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+/**
+ * TradingView "Reset chart view": auto-scale the price axis and reframe the
+ * time axis exactly as a fresh load does. View-only — no store writes.
+ * Sub-panels follow via their logical-range subscription.
+ */
+function resetChartView(chart: IChartApi | null) {
+  if (!chart) return;
+  chart.priceScale('right').applyOptions({ autoScale: true });
+  // In replay the series holds only the bars up to the cursor (see ReplayEngine).
+  const { isActive, cursorTime } = useReplayStore.getState();
+  const candles = useMarketStore.getState().candles;
+  const total = isActive && cursorTime != null
+    ? candles.filter((c) => c.t <= cursorTime).length
+    : candles.length;
+  if (total > 0) {
+    chart.timeScale().setVisibleLogicalRange({
+      from: Math.max(0, total - RESET_VISIBLE_BARS),
+      to: total - 1 + RESET_RIGHT_MARGIN,
+    });
+  }
+  nudgeRedraw(chart);
+}
+
+const isTypingTarget = (t: EventTarget | null) =>
+  t instanceof HTMLElement &&
+  (t.isContentEditable || t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT');
 
 /**
  * TradingView-style right-click menu for the chart area. One menu everywhere
@@ -60,6 +88,18 @@ export function ChartContextMenu({ sharedChartRef, sharedSeriesRef, chartAreaRef
     area.addEventListener('contextmenu', onContextMenu);
     return () => area.removeEventListener('contextmenu', onContextMenu);
   }, [chartAreaRef]);
+
+  // Alt+R — same as the menu's "Reset chart". e.code, since Alt changes e.key on macOS.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code !== 'KeyR' || !e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+      if (isTypingTarget(e.target)) return;
+      e.preventDefault();
+      resetChartView(sharedChartRef.current);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [sharedChartRef]);
 
   // Flip/clamp so the menu stays fully on-screen.
   useLayoutEffect(() => {
@@ -105,20 +145,6 @@ export function ChartContextMenu({ sharedChartRef, sharedSeriesRef, chartAreaRef
 
   if (!anchor) return null;
 
-  const resetChart = () => {
-    const chart = sharedChartRef.current;
-    if (!chart) return;
-    chart.priceScale('right').applyOptions({ autoScale: true });
-    const total = useMarketStore.getState().candles.length;
-    if (total > 0) {
-      chart.timeScale().setVisibleLogicalRange({
-        from: Math.max(0, total - RESET_VISIBLE_BARS),
-        to: total - 1 + RESET_RIGHT_MARGIN,
-      });
-    }
-    nudgeRedraw(chart);
-  };
-
   const items: { key: string; label: string; disabled: boolean; run: () => void }[] = [
     { key: 'copy', label: 'Copy', disabled: selectedCount === 0, run: copySelected },
     {
@@ -139,7 +165,7 @@ export function ChartContextMenu({ sharedChartRef, sharedSeriesRef, chartAreaRef
       disabled: indicatorCount === 0,
       run: clearAllIndicators,
     },
-    { key: 'reset', label: 'Reset chart', disabled: false, run: resetChart },
+    { key: 'reset', label: 'Reset chart', disabled: false, run: () => resetChartView(sharedChartRef.current) },
     { key: 'settings', label: 'Settings', disabled: false, run: () => setSettingsOpen(true) },
   ];
 

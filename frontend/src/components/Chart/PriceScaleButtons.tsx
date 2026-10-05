@@ -66,9 +66,16 @@ export function PriceScaleButtons({ sharedChartRef }: PriceScaleButtonsProps) {
 
     area.addEventListener('pointerup', syncAuto, true);
     area.addEventListener('dblclick', syncAuto, true);
+    // Programmatic changes (Reset chart / Alt+R) end with a range nudge.
+    const chart = sharedChartRef.current;
+    chart?.timeScale().subscribeVisibleLogicalRangeChange(syncAuto);
     return () => {
       cancelAnimationFrame(raf);
       observer.disconnect();
+      // Skip if TradingChart already disposed it (same guard as the sub-panels).
+      if (chart && sharedChartRef.current === chart) {
+        chart.timeScale().unsubscribeVisibleLogicalRangeChange(syncAuto);
+      }
       area.removeEventListener('pointerup', syncAuto, true);
       area.removeEventListener('dblclick', syncAuto, true);
     };
