@@ -126,7 +126,29 @@ export interface FillStyle {
   fillOpacity?: number;
 }
 
-export interface TrendLineDrawing extends LineStyle {
+export type LabelVAlign = 'top' | 'middle' | 'bottom';
+export type LabelHAlign = 'left' | 'center' | 'right';
+
+// Optional text label edited in the drawing settings modal's Text tab (lines,
+// shapes, channels, patterns, path/polyline — see LABEL_DRAWING_TYPES in
+// drawingLabels.ts). Deliberately NOT the text-family `text` field: an empty
+// labelText just means "no label", it never deletes the drawing. Every field
+// is optional so drawings saved before labels existed render unchanged.
+export interface LabelStyle {
+  labelText?: string;
+  /** defaults to the drawing's line color */
+  labelColor?: string;
+  /** px, default 14 */
+  labelSize?: number;
+  labelBold?: boolean;
+  labelItalic?: boolean;
+  /** default 'top' */
+  labelVAlign?: LabelVAlign;
+  /** default 'center' */
+  labelHAlign?: LabelHAlign;
+}
+
+export interface TrendLineDrawing extends LineStyle, LabelStyle {
   id: string;
   type: 'trendline';
   price1: number; time1: number;
@@ -135,7 +157,7 @@ export interface TrendLineDrawing extends LineStyle {
 
 // Ray: identical 2-point shape to Trend Line — rendered extended past point 2
 // to the chart edge (still anchored/starting at point 1).
-export interface RayDrawing extends LineStyle {
+export interface RayDrawing extends LineStyle, LabelStyle {
   id: string;
   type: 'ray';
   price1: number; time1: number;
@@ -144,7 +166,7 @@ export interface RayDrawing extends LineStyle {
 
 // Extended Line: identical 2-point shape to Trend Line — rendered extended
 // past both points to the chart edges.
-export interface ExtendedLineDrawing extends LineStyle {
+export interface ExtendedLineDrawing extends LineStyle, LabelStyle {
   id: string;
   type: 'extendedLine';
   price1: number; time1: number;
@@ -170,13 +192,13 @@ export interface TrendAngleDrawing extends LineStyle {
   price2: number; time2: number;
 }
 
-export interface HLineDrawing extends LineStyle {
+export interface HLineDrawing extends LineStyle, LabelStyle {
   id: string;
   type: 'hline';
   price: number;
 }
 
-export interface HRayDrawing extends LineStyle {
+export interface HRayDrawing extends LineStyle, LabelStyle {
   id: string;
   type: 'hray';
   price: number;
@@ -184,7 +206,7 @@ export interface HRayDrawing extends LineStyle {
   time: number;
 }
 
-export interface VLineDrawing extends LineStyle {
+export interface VLineDrawing extends LineStyle, LabelStyle {
   id: string;
   type: 'vline';
   time: number;
@@ -193,21 +215,21 @@ export interface VLineDrawing extends LineStyle {
 // Crossline: a single anchor point rendered as both a full-width horizontal
 // line (at `price`) and a full-height vertical line (at `time`) — like
 // overlaying Horizontal Line + Vertical Line at one point.
-export interface CrosslineDrawing extends LineStyle {
+export interface CrosslineDrawing extends LineStyle, LabelStyle {
   id: string;
   type: 'crossline';
   price: number;
   time: number;
 }
 
-export interface RectangleDrawing extends LineStyle, FillStyle {
+export interface RectangleDrawing extends LineStyle, FillStyle, LabelStyle {
   id: string;
   type: 'rectangle';
   price1: number; time1: number;
   price2: number; time2: number;
 }
 
-export interface RotatedRectangleDrawing extends LineStyle, FillStyle {
+export interface RotatedRectangleDrawing extends LineStyle, FillStyle, LabelStyle {
   id: string;
   type: 'rotatedRectangle';
   // one edge of the rectangle (like a trend line)
@@ -221,7 +243,7 @@ export interface RotatedRectangleDrawing extends LineStyle, FillStyle {
   geometry?: 'perp';
 }
 
-export interface CircleDrawing extends LineStyle, FillStyle {
+export interface CircleDrawing extends LineStyle, FillStyle, LabelStyle {
   id: string;
   type: 'circle';
   // bounding-box corners — TradingView's "Circle" inscribes an ellipse in this box
@@ -232,14 +254,14 @@ export interface CircleDrawing extends LineStyle, FillStyle {
 // Ellipse: functionally identical to Circle (both inscribe an ellipse in a
 // 2-corner bounding box) — kept as its own labeled tool per the toolbar spec,
 // but the shape/render/hitTest/drag are all shared with CircleDrawing.
-export interface EllipseDrawing extends LineStyle, FillStyle {
+export interface EllipseDrawing extends LineStyle, FillStyle, LabelStyle {
   id: string;
   type: 'ellipse';
   price1: number; time1: number;
   price2: number; time2: number;
 }
 
-export interface PathDrawing extends LineStyle {
+export interface PathDrawing extends LineStyle, LabelStyle {
   id: string;
   type: 'path';
   points: { price: number; time: number }[];
@@ -247,7 +269,7 @@ export interface PathDrawing extends LineStyle {
 
 // Polyline: identical points[] geometry to Path, minus Path's trailing
 // arrowhead — see the `d.type === 'path'` gate in the renderer.
-export interface PolylineDrawing extends LineStyle {
+export interface PolylineDrawing extends LineStyle, LabelStyle {
   id: string;
   type: 'polyline';
   points: { price: number; time: number }[];
@@ -269,7 +291,7 @@ export interface HighlighterDrawing extends LineStyle {
 
 // Triangle: a closed 3-vertex filled polygon — 3 independent clicks (unlike
 // Rotated Rectangle's baseline+offset), each vertex independently draggable.
-export interface TriangleDrawing extends LineStyle, FillStyle {
+export interface TriangleDrawing extends LineStyle, FillStyle, LabelStyle {
   id: string;
   type: 'triangle';
   price1: number; time1: number;
@@ -335,7 +357,7 @@ export interface GhostFeedDrawing {
 // Fill (Arc only, not Curve) is opt-in: the region between the curve and the
 // P2→P1 chord is painted only when `filled === true`, so arcs saved before
 // fill existed stay unfilled. New arcs are created with `filled: true`.
-export interface ArcDrawing extends LineStyle, FillStyle {
+export interface ArcDrawing extends LineStyle, FillStyle, LabelStyle {
   id: string;
   type: 'arc';
   price1: number; time1: number; // start
@@ -345,7 +367,7 @@ export interface ArcDrawing extends LineStyle, FillStyle {
 
 // Curve: functionally identical to Arc (quadratic curve, p3 is the control
 // point) — see the shared quadratic sample/render helper in DrawingCanvas.tsx.
-export interface CurveDrawing extends LineStyle {
+export interface CurveDrawing extends LineStyle, LabelStyle {
   id: string;
   type: 'curve';
   price1: number; time1: number; // start
@@ -372,7 +394,7 @@ export interface DoubleCurveDrawing extends LineStyle {
 // ArrowMarkDrawing below.)
 export type ArrowVariant = 'plain' | 'marker';
 
-export interface ArrowDrawing extends LineStyle {
+export interface ArrowDrawing extends LineStyle, LabelStyle {
   id: string;
   type: 'arrow';
   variant?: ArrowVariant;
@@ -831,7 +853,7 @@ export interface GannSquareDrawing extends LineStyle {
 
 // Line color/width/dash/opacity style both channel lines + the median; the
 // fill defaults to the line color at 8% (see DrawingCanvas).
-export interface ChannelDrawing extends LineStyle, FillStyle {
+export interface ChannelDrawing extends LineStyle, FillStyle, LabelStyle {
   id: string;
   type: 'channel';
   // baseline (like a trend line)
@@ -841,7 +863,7 @@ export interface ChannelDrawing extends LineStyle, FillStyle {
   price3: number; time3: number;
 }
 
-export interface RegressionDrawing {
+export interface RegressionDrawing extends LabelStyle {
   id: string;
   type: 'regression';
   // one color drives all three lines + both band fills; unset keeps the
@@ -859,7 +881,7 @@ export interface RegressionDrawing {
 // [time1, time2], Line B is flat at price3 spanning the same time window.
 // price2 is captured (same click sequence as Parallel Channel) but unused for
 // geometry — only its time2 matters, as the right edge of the band.
-export interface FlatChannelDrawing extends LineStyle, FillStyle {
+export interface FlatChannelDrawing extends LineStyle, FillStyle, LabelStyle {
   id: string;
   type: 'flatChannel';
   price1: number; time1: number;
@@ -872,7 +894,7 @@ export interface FlatChannelDrawing extends LineStyle, FillStyle {
 // clicks. Extends LineStyle so both segments share one configurable color/
 // width/dash/opacity (Parallel Channel/Flat Top-Bottom expose the same
 // LineStyle fields plus FillStyle).
-export interface DisjointChannelDrawing extends LineStyle {
+export interface DisjointChannelDrawing extends LineStyle, LabelStyle {
   id: string;
   type: 'disjointChannel';
   priceA1: number; timeA1: number;
@@ -894,7 +916,7 @@ export interface DisjointChannelDrawing extends LineStyle {
 // unfilled; new xabcd drawings are created with filled: true.
 export type PatternType = 'abcd' | 'xabcd' | 'cypher' | 'threeDrives' | 'headShoulders';
 
-export interface PatternDrawing extends LineStyle, FillStyle {
+export interface PatternDrawing extends LineStyle, FillStyle, LabelStyle {
   id: string;
   type: PatternType;
   points: { price: number; time: number }[];
@@ -1059,6 +1081,9 @@ interface DrawingState {
   selectedIds: string[];
   // Deep copies taken by Copy (Ctrl/Cmd+C); session-only, never persisted.
   clipboard: Drawing[];
+  // Drawing whose settings modal (DrawingSettingsModal) is open — set by the
+  // style toolbar's gear and by double-clicking the drawing. Session-only.
+  settingsDrawingId: string | null;
 
   setTool: (tool: DrawingTool) => void;
   addDrawing: (drawing: Drawing) => void;
@@ -1082,6 +1107,11 @@ interface DrawingState {
   toggleFavorite: (tool: DrawingTool) => void;
   toggleFavoritesBar: () => void;
   setFavoritesBarPos: (pos: { x: number; y: number }) => void;
+  // Opens the settings modal and snapshots the drawing + undo stacks, so the
+  // modal's live-preview edits can be rolled back (Cancel) or collapsed into
+  // a single undo step (Ok) by closeDrawingSettings.
+  openDrawingSettings: (id: string) => void;
+  closeDrawingSettings: (commit: boolean) => void;
 }
 
 function isCursorMode(tool: DrawingTool): tool is CursorMode {
@@ -1140,6 +1170,15 @@ let lastMutation: { id: string; at: number } | null = null;
 // Pastes since the last Copy — scales the paste offset.
 let pasteCount = 0;
 
+// Snapshot taken by openDrawingSettings: the drawing as it was, plus the undo
+// stacks at that moment (see closeDrawingSettings).
+let settingsSession: {
+  id: string;
+  original: Drawing;
+  history: Drawing[][];
+  redoStack: Drawing[][];
+} | null = null;
+
 export function newDrawingId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
@@ -1176,6 +1215,7 @@ export const useDrawingStore = create<DrawingState>((set) => ({
   redoStack: [],
   selectedIds: [],
   clipboard: [],
+  settingsDrawingId: null,
 
   setTool: (tool) =>
     set((s) => {
@@ -1276,7 +1316,11 @@ export const useDrawingStore = create<DrawingState>((set) => ({
   // A fresh symbol/interval's persisted drawings aren't part of this session's
   // undo timeline — reset both stacks rather than carrying over stale
   // snapshots (otherwise redo could resurrect another symbol's drawings).
-  loadDrawings: (drawings) => { lastMutation = null; set({ drawings, history: [], redoStack: [], selectedIds: [] }); },
+  loadDrawings: (drawings) => {
+    lastMutation = null;
+    settingsSession = null;
+    set({ drawings, history: [], redoStack: [], selectedIds: [], settingsDrawingId: null });
+  },
   undo: () =>
     set((s) => {
       if (s.history.length === 0) return {};
@@ -1313,4 +1357,40 @@ export const useDrawingStore = create<DrawingState>((set) => ({
     }),
   toggleFavoritesBar: () => set((s) => ({ favoritesBarOpen: !s.favoritesBarOpen })),
   setFavoritesBarPos: (pos) => set({ favoritesBarPos: pos }),
+  openDrawingSettings: (id) =>
+    set((s) => {
+      const original = s.drawings.find((d) => d.id === id);
+      if (!original) return {};
+      settingsSession = { id, original, history: s.history, redoStack: s.redoStack };
+      return { settingsDrawingId: id };
+    }),
+  closeDrawingSettings: (commit) =>
+    set((s) => {
+      const session = settingsSession;
+      settingsSession = null;
+      lastMutation = null;
+      if (!session || session.id !== s.settingsDrawingId) return { settingsDrawingId: null };
+      const current = s.drawings.find((d) => d.id === session.id);
+      // Drawing gone (undone/deleted elsewhere) — nothing to keep or restore.
+      if (!current) return { settingsDrawingId: null };
+      if (commit) {
+        // Every live-preview edit pushed its own history entry; replace them
+        // with one entry holding the pre-modal drawing, so Ok is one undo step.
+        if (current === session.original) return { settingsDrawingId: null };
+        return {
+          settingsDrawingId: null,
+          history: pushHistory(session.history, s.drawings.map((d) => (d.id === session.id ? session.original : d))),
+          redoStack: [],
+        };
+      }
+      // Cancel: swap the original object back in whole (not a shallow merge,
+      // which would leave fields the modal added, e.g. labelText, behind) and
+      // drop the preview edits' history entries.
+      return {
+        settingsDrawingId: null,
+        drawings: s.drawings.map((d) => (d.id === session.id ? session.original : d)),
+        history: session.history,
+        redoStack: session.redoStack,
+      };
+    }),
 }));

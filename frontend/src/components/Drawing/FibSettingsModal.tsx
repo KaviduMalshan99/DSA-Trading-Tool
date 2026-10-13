@@ -13,7 +13,7 @@ interface Props {
   onClose: () => void;
 }
 
-type Tab = 'Style' | 'Coordinates' | 'Visibility';
+type Tab = 'Style' | 'Coordinates';
 
 // The drawing's own rows (a copy): its saved `levels` as-is, or — for an old
 // drawing that never had any — its type's legacy table, so the first edit
@@ -125,7 +125,7 @@ export function FibSettingsModal({ fib, onClose }: Props) {
 
         {/* tabs */}
         <div className="flex gap-4 px-4 pt-2" style={{ borderBottom: '1px solid var(--border-color-softer)' }}>
-          {(['Style', 'Coordinates', 'Visibility'] as Tab[]).map((t) => (
+          {(['Style', 'Coordinates'] as Tab[]).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -362,11 +362,6 @@ export function FibSettingsModal({ fib, onClose }: Props) {
             </div>
           )}
 
-          {tab === 'Visibility' && (
-            <div className="text-sm text-[var(--text-muted)]">
-              Per-timeframe visibility isn't supported yet — this drawing is shown on every timeframe.
-            </div>
-          )}
         </div>
 
         {/* footer */}

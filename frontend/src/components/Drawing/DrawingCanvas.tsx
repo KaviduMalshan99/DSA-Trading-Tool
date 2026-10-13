@@ -19,6 +19,10 @@ import {
   quadOnCurveHandle, quadControlFromOnCurve, clampPositionY, clampPositionTime2,
   type Pt, type SixHandleMode,
 } from './shapeHandles';
+import {
+  isLabelDrawing, clipSegment, segmentLabelPlacement, vlineLabelPlacement, boxLabelPlacement,
+  pointLabelPlacement, boundsOf, paintLabel, type LabelPlacement, type Pt as LabelPt,
+} from './drawingLabels';
 
 // Tools that should own mouse events on the overlay canvas (blocking chart
 // pan/zoom underneath). Cursor-group tools (cross/dot/arrow/demonstration/eraser)
@@ -3739,6 +3743,117 @@ function renderDrawing(
   ctx.restore();
 }
 
+// ── text label (settings modal's Text tab) on top of a drawing ──────────────
+// Resolves each family's label anchor in screen px (see drawingLabels.ts for
+// the placement math) and paints it. Called right after renderDrawing so the
+// label sits on top; never part of hitTest, so selection is unchanged.
+function renderDrawingLabel(
+  ctx: CanvasRenderingContext2D, W: number, H: number, d: Drawing,
+  chart: IChartApi, series: ISeriesApi<'Candlestick'>, candles: Candle[],
+  chartBg: string, eraserHover: boolean,
+) {
+  if (!isLabelDrawing(d) || !(d.labelText ?? '').trim()) return;
+  const v = d.labelVAlign ?? 'top';
+  const h = d.labelHAlign ?? 'center';
+  const pt = (price: number, time: number): LabelPt | null => {
+    const x = timeToX(chart, time), y = priceToY(series, price);
+    return x == null || y == null ? null : { x, y };
+  };
+  const along = (a: LabelPt | null, b: LabelPt | null): LabelPlacement | null => {
+    if (!a || !b) return null;
+    const seg = clipSegment(a, b, W, H);
+    return seg ? segmentLabelPlacement(seg[0], seg[1], v, h) : null;
+  };
+  const box = (pts: (LabelPt | null)[]): LabelPlacement | null =>
+    pts.every((p): p is LabelPt => p != null) ? boxLabelPlacement(boundsOf(pts as LabelPt[]), v, h) : null;
+
+  let placement: LabelPlacement | null = null;
+  switch (d.type) {
+    case 'trendline':
+    case 'arrow':
+      placement = along(pt(d.price1, d.time1), pt(d.price2, d.time2));
+      break;
+    case 'ray':
+    case 'extendedLine': {
+      const a = pt(d.price1, d.time1), b = pt(d.price2, d.time2);
+      if (!a || !b) break;
+      const ext = extendLineToRect(a.x, a.y, b.x, b.y, W, H);
+      const start = d.type === 'extendedLine' && ext ? { x: ext.ax, y: ext.ay } : a;
+      placement = along(start, ext ? { x: ext.bx, y: ext.by } : b);
+      break;
+    }
+    case 'hline':
+    case 'crossline': {
+      const y = priceToY(series, d.price);
+      if (y != null) placement = along({ x: 0, y }, { x: W, y });
+      break;
+    }
+    case 'hray': {
+      const a = pt(d.price, d.time);
+      if (a) placement = along(a, { x: W, y: a.y });
+      break;
+    }
+    case 'vline': {
+      const x = timeToX(chart, d.time);
+      // 22px: keep clear of the line's own date/time tag at the bottom
+      if (x != null && x >= 0 && x <= W) placement = vlineLabelPlacement(x, H, v, h, 22);
+      break;
+    }
+    case 'rectangle':
+    case 'circle':
+    case 'ellipse':
+      placement = box([pt(d.price1, d.time1), pt(d.price2, d.time2)]);
+      break;
+    case 'triangle':
+      placement = box([pt(d.price1, d.time1), pt(d.price2, d.time2), pt(d.price3, d.time3)]);
+      break;
+    case 'rotatedRectangle': {
+      const corners = getRotatedRectCorners(d, chart, series);
+      if (corners) placement = box(corners);
+      break;
+    }
+    case 'arc':
+    case 'curve': {
+      const s = get3PointScreen(d.price1, d.time1, d.price2, d.time2, d.price3, d.time3, chart, series);
+      if (s) {
+        const on = quadOnCurveHandle({ x: s.x1, y: s.y1 }, { x: s.x3, y: s.y3 }, { x: s.x2, y: s.y2 });
+        placement = pointLabelPlacement(on, v, h);
+      }
+      break;
+    }
+    case 'channel':
+    case 'flatChannel': {
+      const lines = d.type === 'channel' ? getChannelLines(d, chart, series) : getFlatChannelLines(d, chart, series);
+      if (lines) placement = along({ x: lines.x1, y: lines.y1 }, { x: lines.x2, y: lines.y2 });
+      break;
+    }
+    case 'disjointChannel':
+      placement = along(pt(d.priceA1, d.timeA1), pt(d.priceA2, d.timeA2));
+      break;
+    case 'regression': {
+      const reg = computeRegression(candles, d.time1, d.time2);
+      if (reg) placement = along(pt(reg.midStart, reg.startTime), pt(reg.midEnd, reg.endTime));
+      break;
+    }
+    default:
+      // path / polyline / patterns: along the first segment
+      if (d.points.length >= 2) {
+        placement = along(pt(d.points[0].price, d.points[0].time), pt(d.points[1].price, d.points[1].time));
+      }
+  }
+  paintLabel(ctx, d, placement, chartBg, eraserHover ? '#f85149' : undefined);
+}
+
+// Chart background behind the overlay canvas (ChartContainer's bg-[var(--bg-app)]),
+// for the box behind labels that sit on a line.
+function readChartBg(): string {
+  try {
+    return getComputedStyle(document.documentElement).getPropertyValue('--bg-app').trim() || '#0d1117';
+  } catch {
+    return '#0d1117';
+  }
+}
+
 // Shared by Parallel Channel and Rotated Rectangle: a baseline (price1/time1 →
 // price2/time2) plus a third point whose PRICE offset from the baseline is
 // applied uniformly to get a second, parallel line. (This is a vertical/price
@@ -5091,6 +5206,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
       // completed drawings — skipped entirely while "Hide All Drawings" is on
       const eraserActive = activeToolRef.current === 'eraser';
       const drag = dragPreviewRef.current;
+      let chartBg: string | null = null; // read lazily, only when a label is drawn
       for (const d of (drawingsHiddenRef.current ? [] : drawingsRef.current)) {
         let dd: Drawing = d;
         if (drag && drag.id === d.id) {
@@ -5154,11 +5270,16 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
             dd = { ...d, price: drag.price, time: drag.time };
           }
         }
+        const eraserHover = eraserActive && d.id === hoverEraseIdRef.current;
         renderDrawing(
           ctx, W, H, dd, chart, series, candlesRef.current,
           selectedIdsRef.current.includes(d.id),
-          eraserActive && d.id === hoverEraseIdRef.current,
+          eraserHover,
         );
+        if (isLabelDrawing(dd) && dd.labelText?.trim()) {
+          chartBg ??= readChartBg();
+          renderDrawingLabel(ctx, W, H, dd, chart, series, candlesRef.current, chartBg, eraserHover);
+        }
       }
 
       // live preview while placing a multi-click drawing (trend line, rectangle,
@@ -7171,6 +7292,15 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           setEditing({ id: d.id, x: rx + c * cw, y: ry + r * ch + 2, w: cw, h: ch, value: d.cells[idx] ?? '', isNew: false, cell: idx });
           return;
         }
+        if (isLabelDrawing(d)) {
+          // Lines/shapes/channels/patterns: open the settings modal. Not for
+          // locked (view-only) or hidden drawings — same as the style toolbar.
+          if (drawingsLockedRef.current || drawingsHiddenRef.current) continue;
+          if (!hitTest(d, x, y, chart, series, candlesRef.current)) continue;
+          selectDrawing(d.id);
+          useDrawingStore.getState().openDrawingSettings(d.id);
+          return;
+        }
         if (d.type !== 'text' && d.type !== 'signpost' && d.type !== 'note' &&
             d.type !== 'callout' && d.type !== 'comment') continue;
         if (!hitTest(d, x, y, chart, series, candlesRef.current)) continue;
@@ -7218,6 +7348,10 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
       // typing Backspace/Escape inside the text-edit textarea must not also
       // delete the selected drawing or reset in-progress drawing state
       if (e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement) return;
+      // The drawing settings modal is open: its keys stop at the dialog, but
+      // focus can drop to <body> (e.g. after a portaled color popover closes),
+      // and Delete/Ctrl+Z must not act on the chart underneath it then either.
+      if (useDrawingStore.getState().settingsDrawingId) return;
 
       if (e.key === 'Escape') {
         drawingRef.current.active = false;

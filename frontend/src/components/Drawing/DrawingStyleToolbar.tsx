@@ -6,6 +6,8 @@ import {
 import { useMarketStore } from '../../store/marketStore';
 import { priceToY, timeToX, computeParallelOffset, computeRegression, getRotatedRectCorners } from './DrawingCanvas';
 import { FibSettingsModal } from './FibSettingsModal';
+import { DrawingSettingsHost } from './DrawingSettingsModal';
+import { isLabelDrawing } from './drawingLabels';
 import {
   MiniWidthPicker, MiniDashPicker, ColorOpacityButton, MiniColorSwatch, MiniSizePicker, COLOR_POPOVER_OVERLAY,
   FillToggleIcon, TrashIcon, GearIcon,
@@ -83,8 +85,19 @@ interface Props {
   sharedSeriesRef: React.RefObject<ISeriesApi<'Candlestick'> | null>;
 }
 
+// The settings modal host lives beside the toolbar (not inside it) so it stays
+// mounted while the toolbar itself is hidden (e.g. its anchor scrolled off-screen).
 export const DrawingStyleToolbar = memo(function DrawingStyleToolbar({ sharedChartRef, sharedSeriesRef }: Props) {
-  const { drawings, selectedIds, updateDrawing, deleteDrawing, drawingsHidden, drawingsLocked } = useDrawingStore();
+  return (
+    <>
+      <StyleToolbar sharedChartRef={sharedChartRef} sharedSeriesRef={sharedSeriesRef} />
+      <DrawingSettingsHost sharedSeriesRef={sharedSeriesRef} />
+    </>
+  );
+});
+
+function StyleToolbar({ sharedChartRef, sharedSeriesRef }: Props) {
+  const { drawings, selectedIds, updateDrawing, deleteDrawing, drawingsHidden, drawingsLocked, openDrawingSettings } = useDrawingStore();
   // Toolbar only targets a single selection; hidden for 0 or 2+.
   const selectedId = selectedIds.length === 1 ? selectedIds[0] : null;
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
@@ -322,6 +335,17 @@ export const DrawingStyleToolbar = memo(function DrawingStyleToolbar({ sharedCha
   if (!pos || !selected || drawingsHidden || drawingsLocked) return null;
   if (!isDrawingOfType(selected, STYLE_TOOLBAR_TYPES)) return null;
 
+  // Gear that opens DrawingSettingsModal — only for the types it supports.
+  const settingsButton = (d: Drawing) => isLabelDrawing(d) && (
+    <button
+      title="Settings"
+      onClick={() => openDrawingSettings(d.id)}
+      className="w-7 h-7 flex items-center justify-center rounded text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover-alt)]"
+    >
+      <GearIcon />
+    </button>
+  );
+
   const toolbarStyle: React.CSSProperties = {
     left: Math.max(4, pos.x),
     top: Math.max(4, pos.y),
@@ -409,6 +433,7 @@ export const DrawingStyleToolbar = memo(function DrawingStyleToolbar({ sharedCha
 
         <div className="w-px h-5 bg-[var(--border-color-softer)] mx-0.5" />
 
+        {settingsButton(shape)}
         <button
           title="Delete"
           onClick={() => deleteDrawing(shape.id)}
@@ -528,6 +553,7 @@ export const DrawingStyleToolbar = memo(function DrawingStyleToolbar({ sharedCha
 
         <div className="w-px h-5 bg-[var(--border-color-softer)] mx-0.5" />
 
+        {settingsButton(reg)}
         <button
           title="Delete"
           onClick={() => deleteDrawing(reg.id)}
@@ -654,6 +680,7 @@ export const DrawingStyleToolbar = memo(function DrawingStyleToolbar({ sharedCha
 
       <div className="w-px h-5 bg-[var(--border-color-softer)] mx-0.5" />
 
+      {settingsButton(selected)}
       <button
         title="Delete"
         onClick={() => deleteDrawing(selected.id)}
@@ -663,4 +690,4 @@ export const DrawingStyleToolbar = memo(function DrawingStyleToolbar({ sharedCha
       </button>
     </div>
   );
-});
+}
