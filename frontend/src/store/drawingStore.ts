@@ -889,9 +889,12 @@ export interface DisjointChannelDrawing extends LineStyle {
 // Three Drives) instead of needing bespoke per-tool geometry handling like
 // TriangleDrawing/DisjointChannelDrawing above. Only the `type` tag varies;
 // per-type point-count/labels/ratio-legs are resolved in DrawingCanvas.tsx.
+// FillStyle is only rendered for xabcd (triangles X-A-B and B-C-D) and is
+// opt-in (filled === true): patterns saved before the field existed stay
+// unfilled; new xabcd drawings are created with filled: true.
 export type PatternType = 'abcd' | 'xabcd' | 'cypher' | 'threeDrives' | 'headShoulders';
 
-export interface PatternDrawing extends LineStyle {
+export interface PatternDrawing extends LineStyle, FillStyle {
   id: string;
   type: PatternType;
   points: { price: number; time: number }[];

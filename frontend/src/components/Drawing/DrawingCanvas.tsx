@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback, useState, memo } from 'react';
 import type { IChartApi, ISeriesApi } from 'lightweight-charts';
-import { useDrawingStore, newDrawingId, CURSOR_MODES, type Drawing, type DrawingTool, type FibExtend, type PatternType } from '../../store/drawingStore';
+import { useDrawingStore, newDrawingId, CURSOR_MODES, type Drawing, type DrawingTool, type FibExtend, type PatternType, type PatternDrawing } from '../../store/drawingStore';
 import { useMarketStore } from '../../store/marketStore';
 import { useCandleStyleStore } from '../../store/candleStyleStore';
 import { toChartTimeSeconds, getChartTzOffsetSeconds } from '../../utils/chartTime';
@@ -12,6 +12,7 @@ import {
   newFibLevels, fibLevelPoints, fibPriceDecimals, fibLabelText, type FibLevelPoint,
 } from './fibLevels';
 import { saveLocal } from '../../services/persist';
+import { PATTERN_DIAGONALS, PATTERN_FILL_TRIANGLES, diagonalRatio, formatRatio, letterSide } from './patternGeometry';
 import type { Candle } from '../../types/market';
 import {
   perpCorners, dragPerpRect, channelDragPatch, circleCorners,
@@ -2575,20 +2576,45 @@ function renderDrawing(
     // leg-ratio labels. Kept as its own branch (not folded into the Path
     // branch above) so it never picks up Path's arrowhead and so the label/
     // ratio/neckline extras stay scoped to these 5 types only.
-    const pts = d.points
-      .map((p) => ({ x: timeToX(chart, p.time), y: priceToY(series, p.price) }))
-      .filter((p): p is { x: number; y: number } => p.x != null && p.y != null);
+    // sp keeps the stored index (null where a point can't be converted), so
+    // letters/ratios/diagonals stay attached to the right point; pts is the
+    // filtered list used only for the connected legs and vertex dots.
+    const sp = d.points.map((p) => {
+      const x = timeToX(chart, p.time), y = priceToY(series, p.price);
+      return x != null && y != null ? { x, y } : null;
+    });
+    const pts = sp.filter((p): p is { x: number; y: number } => p != null);
     if (pts.length < 2) { ctx.restore(); return; }
+    const prices = d.points.map((p) => p.price);
+    const isHarmonic = d.type === 'abcd' || d.type === 'xabcd';
 
     const baseColor = d.color ?? '#2196F3';
     const lineColor = hexToRgba(baseColor, d.opacity ?? 100);
     const dashPattern: number[] = d.dash === 'dashed' ? [8, 4] : d.dash === 'dotted' ? [2, 3] : [];
 
+    // XABCD fill (opt-in, see PatternDrawing): triangles X-A-B and B-C-D
+    if (d.type === 'xabcd' && d.filled === true) {
+      ctx.fillStyle = eraserHover ? 'rgba(248,81,73,0.1)' : hexToRgba(d.fillColor ?? baseColor, d.fillOpacity ?? 20);
+      for (const tri of PATTERN_FILL_TRIANGLES.xabcd ?? []) {
+        const [p0, p1, p2] = tri.map((i) => sp[i]);
+        if (!p0 || !p1 || !p2) continue;
+        ctx.beginPath();
+        ctx.moveTo(p0.x, p0.y);
+        ctx.lineTo(p1.x, p1.y);
+        ctx.lineTo(p2.x, p2.y);
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
+
     // Head & Shoulders' neckline: derived at render time from the two trough
     // points (index 1 and 3), never stored — same "derive, don't store"
     // approach Gann Fan's secondary rays and Double Curve's control points use.
-    if (d.type === 'headShoulders' && pts.length >= 4) {
-      const ext = extendLineToRect(pts[1].x, pts[1].y, pts[3].x, pts[3].y, W, H);
+    // Looked up by stored index (sp), so a point that can't be converted skips
+    // the neckline instead of shifting it onto the wrong vertices.
+    const neckA = sp[1], neckB = sp[3];
+    if (d.type === 'headShoulders' && neckA && neckB) {
+      const ext = extendLineToRect(neckA.x, neckA.y, neckB.x, neckB.y, W, H);
       if (ext) {
         ctx.strokeStyle = eraserHover ? '#f85149' : hexToRgba(baseColor, (d.opacity ?? 100) * 0.7);
         ctx.lineWidth = 1;
@@ -2612,36 +2638,114 @@ function renderDrawing(
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // point dots + letter labels (A/B/C/D, X/A/B/C/D, 1..6, or LS/H/RS)
+    if (isHarmonic) {
+      // TradingView-style dashed diagonals (X-B, A-C, B-D, X-D / A-C, B-D)
+      // with their price-space ratio at the midpoint. During the creation
+      // preview only the diagonals whose points exist are drawn.
+      const diagonals = PATTERN_DIAGONALS[d.type] ?? [];
+      ctx.strokeStyle = eraserHover ? '#f85149' : lineColor;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
+      for (const dg of diagonals) {
+        const a = sp[dg.from], b = sp[dg.to];
+        if (!a || !b) continue;
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+      }
+      ctx.setLineDash([]);
+
+      ctx.font = 'bold 11px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      for (const dg of diagonals) {
+        const a = sp[dg.from], b = sp[dg.to];
+        if (!a || !b) continue;
+        const ratio = diagonalRatio(prices, dg);
+        if (ratio == null) continue;
+        const label = formatRatio(ratio);
+        const boxW = ctx.measureText(label).width + 10, boxH = 16;
+        // shift the box off the line along its upward-facing normal
+        const len = Math.hypot(b.x - a.x, b.y - a.y);
+        let nx = 0, ny = -1;
+        if (len > 0) {
+          nx = -(b.y - a.y) / len; ny = (b.x - a.x) / len;
+          if (ny > 0) { nx = -nx; ny = -ny; }
+        }
+        const off = Math.abs(nx) * boxW / 2 + Math.abs(ny) * boxH / 2 + 3;
+        const cx = (a.x + b.x) / 2 + nx * off, cy = (a.y + b.y) / 2 + ny * off;
+        const bx = Math.min(Math.max(cx - boxW / 2, 4), W - boxW - 4);
+        const by = cy - boxH / 2, r = 3;
+        ctx.fillStyle = eraserHover ? '#f85149' : hexToRgba(baseColor, 85);
+        ctx.beginPath();
+        ctx.moveTo(bx + r, by);
+        ctx.arcTo(bx + boxW, by, bx + boxW, by + boxH, r);
+        ctx.arcTo(bx + boxW, by + boxH, bx, by + boxH, r);
+        ctx.arcTo(bx, by + boxH, bx, by, r);
+        ctx.arcTo(bx, by, bx + boxW, by, r);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(label, bx + boxW / 2, by + boxH / 2 + 1);
+      }
+      ctx.textAlign = 'start';
+      ctx.textBaseline = 'alphabetic';
+    }
+
+    // vertex dots = the vertex-drag handles, so only on the selected drawing —
+    // plus the creation preview, so the points placed so far are visible
+    if (selected || d.id === '__preview') {
+      ctx.fillStyle = eraserHover ? '#f85149' : baseColor;
+      for (const p of pts) {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 3.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // letter labels (A/B/C/D, X/A/B/C/D, 1..6, or LS/H/RS). ABCD/XABCD put
+    // them above peaks / below troughs; the others keep the up-right offset.
     const letters = PATTERN_POINT_LABELS[d.type];
     ctx.fillStyle = eraserHover ? '#f85149' : baseColor;
     ctx.font = 'bold 11px sans-serif';
-    for (let i = 0; i < pts.length; i++) {
-      ctx.beginPath();
-      ctx.arc(pts[i].x, pts[i].y, selected ? 3.5 : 3, 0, Math.PI * 2);
-      ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+    ctx.lineWidth = 3;
+    for (let i = 0; i < sp.length; i++) {
+      const p = sp[i];
       const letter = letters[i];
-      if (letter) {
-        ctx.strokeStyle = 'rgba(0,0,0,0.55)';
-        ctx.lineWidth = 3;
-        ctx.strokeText(letter, pts[i].x + 6, pts[i].y - 8);
-        ctx.fillText(letter, pts[i].x + 6, pts[i].y - 8);
+      if (!p || !letter) continue;
+      if (isHarmonic) {
+        const above = letterSide(prices, i) === 'above';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = above ? 'bottom' : 'top';
+        const ty = above ? p.y - 6 : p.y + 6;
+        ctx.strokeText(letter, p.x, ty);
+        ctx.fillText(letter, p.x, ty);
+      } else {
+        ctx.strokeText(letter, p.x + 6, p.y - 8);
+        ctx.fillText(letter, p.x + 6, p.y - 8);
       }
     }
+    ctx.textAlign = 'start';
+    ctx.textBaseline = 'alphabetic';
 
     // leg-ratio labels (BC/AB, CD/BC, ...) at each segment's midpoint, computed
     // in PRICE space (same abs-price-diff approach Info Line's label uses) —
     // the first leg has no previous leg to ratio against, so it's skipped.
-    if (d.type !== 'headShoulders') {
+    // ABCD/XABCD show their ratios on the diagonals instead (above).
+    if (d.type === 'cypher' || d.type === 'threeDrives') {
       ctx.font = 'bold 11px sans-serif';
       for (let i = 1; i < d.points.length - 1; i++) {
+        const a = sp[i], b = sp[i + 1];
+        if (!a || !b) continue;
         const prevLeg = Math.abs(d.points[i].price - d.points[i - 1].price);
         const leg = Math.abs(d.points[i + 1].price - d.points[i].price);
         if (prevLeg === 0) continue;
         const ratio = leg / prevLeg;
         const label = ratio.toFixed(3);
 
-        const midX = (pts[i].x + pts[i + 1].x) / 2, midY = (pts[i].y + pts[i + 1].y) / 2;
+        const midX = (a.x + b.x) / 2, midY = (a.y + b.y) / 2;
         const textW = ctx.measureText(label).width;
         const boxW = textW + 10, boxH = 16;
         const bx = Math.min(Math.max(midX - boxW / 2, 4), W - boxW - 4);
@@ -3788,6 +3892,30 @@ function pointInPolygon(mx: number, my: number, pts: { x: number; y: number }[])
   return inside;
 }
 
+// ABCD/XABCD hits beyond the legs: the dashed diagonals, plus the inside of
+// XABCD's triangles when filled. Indexed by stored point (see the render branch).
+function hitHarmonicExtras(
+  d: PatternDrawing,
+  mx: number, my: number, TOL: number,
+  chart: IChartApi, series: ISeriesApi<'Candlestick'>,
+): boolean {
+  const sp = d.points.map((p) => {
+    const x = timeToX(chart, p.time), y = priceToY(series, p.price);
+    return x != null && y != null ? { x, y } : null;
+  });
+  for (const dg of PATTERN_DIAGONALS[d.type] ?? []) {
+    const a = sp[dg.from], b = sp[dg.to];
+    if (a && b && distToSegment(mx, my, a.x, a.y, b.x, b.y) < TOL) return true;
+  }
+  if (d.type === 'xabcd' && d.filled === true) {
+    for (const tri of PATTERN_FILL_TRIANGLES.xabcd ?? []) {
+      const corners = tri.map((i) => sp[i]);
+      if (corners.every((c) => c != null) && pointInPolygon(mx, my, corners as { x: number; y: number }[])) return true;
+    }
+  }
+  return false;
+}
+
 function distToSegment(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
   const dx = bx - ax, dy = by - ay;
   const len2 = dx * dx + dy * dy;
@@ -4419,6 +4547,7 @@ function hitTest(
     for (let i = 0; i < pts.length - 1; i++) {
       if (distToSegment(mx, my, pts[i].x, pts[i].y, pts[i + 1].x, pts[i + 1].y) < TOL) return true;
     }
+    if (d.type === 'abcd' || d.type === 'xabcd') return hitHarmonicExtras(d, mx, my, TOL, chart, series);
     return false;
   }
 
@@ -5135,7 +5264,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
               if (p == null || t == null) break;
               partialPoints.push({ price: p, time: t });
             }
-            if (partialPoints.length >= 2) preview = { id: '__preview', type: tool, points: partialPoints };
+            if (partialPoints.length >= 2) preview = { id: '__preview', type: tool, points: partialPoints, ...(tool === 'xabcd' && { filled: true }) };
           }
           else if (tool === 'rotatedRectangle' && price2 != null && time2 != null)
             preview = { id: '__preview', type: 'rotatedRectangle', price1, time1, price2, time2,
@@ -5724,7 +5853,8 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
         if (p == null || t == null) return;
         points.push({ price: p, time: t });
       }
-      addDrawing({ id, type: tool, points });
+      // XABCD fill is opt-in per drawing (old saves stay unfilled); new ones start filled
+      addDrawing(tool === 'xabcd' ? { id, type: tool, points, filled: true } : { id, type: tool, points });
     } else if (tool === 'regression') {
       if (time2 == null) return;
       addDrawing({ id, type: 'regression', time1, time2 });
