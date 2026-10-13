@@ -13,6 +13,7 @@ import { fibPriceDecimals } from './fibLevels';
 import {
   MiniColorSwatch, MiniWidthPicker, MiniDashPicker, ColorOpacityButton, FillToggleIcon,
 } from './drawingStyleShared';
+import { TemplateMenu } from './TemplateMenu';
 
 type Tab = 'Style' | 'Text' | 'Coordinates';
 const TABS: Tab[] = ['Style', 'Text', 'Coordinates'];
@@ -366,9 +367,10 @@ function DrawingSettingsModal({ drawing, decimals }: { drawing: LabelDrawing; de
       onClose={handleCancel}
       width={420}
       footer={
-        // Footer is justify-end: Cancel/Ok sit on the right, leaving the left
-        // free for B2's Template button (give it mr-auto).
+        // Footer is justify-end: Cancel/Ok sit on the right; the Template
+        // menu's mr-auto pushes it to the left.
         <>
+          <TemplateMenu type={drawing.type} drawing={drawing} onApply={(p) => patch(p as Partial<Drawing>)} />
           <button
             type="button"
             onClick={handleCancel}

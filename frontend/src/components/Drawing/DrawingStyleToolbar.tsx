@@ -8,6 +8,8 @@ import { priceToY, timeToX, computeParallelOffset, computeRegression, getRotated
 import { FibSettingsModal } from './FibSettingsModal';
 import { DrawingSettingsHost } from './DrawingSettingsModal';
 import { isLabelDrawing } from './drawingLabels';
+import { isTemplateType } from './drawingTemplates';
+import { TemplateMenu } from './TemplateMenu';
 import {
   MiniWidthPicker, MiniDashPicker, ColorOpacityButton, MiniColorSwatch, MiniSizePicker, COLOR_POPOVER_OVERLAY,
   FillToggleIcon, TrashIcon, GearIcon,
@@ -346,6 +348,23 @@ function StyleToolbar({ sharedChartRef, sharedSeriesRef }: Props) {
     </button>
   );
 
+  // Template menu — first on the toolbar, for every type that has templates.
+  // No modal session here, so applying commits the full patch (clear every
+  // template field + the template's values) as ONE updateDrawing: one undo
+  // step. Keyed by id so switching selection never carries an open menu over.
+  const templateButton = (d: Drawing) => isTemplateType(d.type) && (
+    <>
+      <TemplateMenu
+        key={d.id}
+        variant="icon"
+        type={d.type}
+        drawing={d}
+        onApply={(p) => updateDrawing(d.id, p as Partial<Drawing>)}
+      />
+      <div className="w-px h-5 bg-[var(--border-color-softer)] mx-0.5" />
+    </>
+  );
+
   const toolbarStyle: React.CSSProperties = {
     left: Math.max(4, pos.x),
     top: Math.max(4, pos.y),
@@ -363,6 +382,7 @@ function StyleToolbar({ sharedChartRef, sharedSeriesRef }: Props) {
     return (
       <>
         <div ref={toolbarRef} data-drawing-overlay="style-toolbar" className="absolute flex items-center gap-0.5 py-1 px-1 select-none" style={toolbarStyle}>
+          {templateButton(fib)}
           <button
             title="Settings"
             onClick={() => setOpenMenu('settings')}
@@ -404,6 +424,7 @@ function StyleToolbar({ sharedChartRef, sharedSeriesRef }: Props) {
 
     return (
       <div ref={toolbarRef} data-drawing-overlay="style-toolbar" className="absolute flex items-center gap-0.5 py-1 px-1 select-none" style={toolbarStyle}>
+        {templateButton(shape)}
         <ColorOpacityButton
           title={isChannel || optInFill ? 'Line color' : 'Border color'}
           color={color} opacity={opacity}
@@ -548,6 +569,7 @@ function StyleToolbar({ sharedChartRef, sharedSeriesRef }: Props) {
 
     return (
       <div ref={toolbarRef} data-drawing-overlay="style-toolbar" className="absolute flex items-center gap-0.5 py-1 px-1 select-none" style={toolbarStyle}>
+        {templateButton(reg)}
         <MiniColorSwatch color={color} onChange={(c) => updateDrawing(reg.id, { color: c })} />
         <MiniWidthPicker width={width} onChange={(w) => updateDrawing(reg.id, { width: w })} />
 
@@ -666,6 +688,7 @@ function StyleToolbar({ sharedChartRef, sharedSeriesRef }: Props) {
 
   return (
     <div ref={toolbarRef} data-drawing-overlay="style-toolbar" className="absolute flex items-center gap-0.5 py-1 px-1 select-none" style={toolbarStyle}>
+      {templateButton(selected)}
       <ColorOpacityButton
         color={color} opacity={opacity}
         onColorChange={(c) => updateDrawing(selected.id, { color: c })}

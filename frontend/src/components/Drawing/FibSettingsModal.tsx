@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   useDrawingStore,
   type FibLikeDrawing,
@@ -7,6 +7,7 @@ import {
 } from '../../store/drawingStore';
 import { resolveFibLevels } from './fibLevels';
 import { MiniColorSwatch, MiniWidthPicker, MiniDashPicker } from './drawingStyleShared';
+import { TemplateMenu } from './TemplateMenu';
 
 interface Props {
   fib: FibLikeDrawing;
@@ -83,11 +84,17 @@ function FibRatioInput({ value, enabled, onCommit }: {
 }
 
 export function FibSettingsModal({ fib, onClose }: Props) {
-  const { updateDrawing, deleteDrawing } = useDrawingStore();
-  // Snapshot taken once, when the modal mounts — Cancel restores this so
-  // live-previewed edits don't stick if the user backs out.
-  const originalRef = useRef<FibLikeDrawing>(fib);
+  const { updateDrawing, deleteDrawing, beginSettingsSession, endSettingsSession } = useDrawingStore();
   const [tab, setTab] = useState<Tab>('Style');
+
+  // Snapshot the drawing + undo stacks while mounted, like DrawingSettingsModal:
+  // Ok collapses the live-preview edits into one undo step, Cancel rolls them
+  // back. Unmounting without Ok (e.g. the toolbar going away) counts as Cancel;
+  // after an explicit close the cleanup's end is a no-op.
+  useEffect(() => {
+    beginSettingsSession(fib.id);
+    return () => endSettingsSession(fib.id, false);
+  }, [fib.id, beginSettingsSession, endSettingsSession]);
 
   const patch = (p: Partial<FibLikeDrawing>) => updateDrawing(fib.id, p);
 
@@ -98,9 +105,24 @@ export function FibSettingsModal({ fib, onClose }: Props) {
   };
 
   const handleCancel = () => {
-    updateDrawing(fib.id, originalRef.current);
+    endSettingsSession(fib.id, false);
     onClose();
   };
+  const handleOk = () => {
+    endSettingsSession(fib.id, true);
+    onClose();
+  };
+
+  // Esc cancels (a color popover's Esc is swallowed before it gets here).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      endSettingsSession(fib.id, false);
+      onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [fib.id, endSettingsSession, onClose]);
 
   const levels = ensureLevels(fib);
 
@@ -366,12 +388,15 @@ export function FibSettingsModal({ fib, onClose }: Props) {
 
         {/* footer */}
         <div className="flex items-center justify-between px-4 py-3" style={{ borderTop: '1px solid var(--border-color-softer)' }}>
-          <button
-            onClick={() => { deleteDrawing(fib.id); onClose(); }}
-            className="text-sm text-[#f85149] hover:underline"
-          >
-            Remove
-          </button>
+          <div className="flex items-center gap-3 mr-auto">
+            <button
+              onClick={() => { deleteDrawing(fib.id); onClose(); }}
+              className="text-sm text-[#f85149] hover:underline"
+            >
+              Remove
+            </button>
+            <TemplateMenu type={fib.type} drawing={fib} onApply={(p) => patch(p as Partial<FibLikeDrawing>)} />
+          </div>
           <div className="flex gap-2">
             <button
               onClick={handleCancel}
@@ -380,7 +405,7 @@ export function FibSettingsModal({ fib, onClose }: Props) {
               Cancel
             </button>
             <button
-              onClick={onClose}
+              onClick={handleOk}
               className="px-4 py-1.5 rounded text-sm text-white bg-[var(--accent)] hover:bg-[var(--accent-hover)]"
             >
               Ok
