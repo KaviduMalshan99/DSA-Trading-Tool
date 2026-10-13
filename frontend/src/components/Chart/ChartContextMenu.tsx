@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { type IChartApi } from 'lightweight-charts';
 import { useChartStore } from '../../store/chartStore';
 import { useDrawingTools } from '../../store/drawingStore';
-import { clearAllPanes, getActivePane, useActivePaneDrawings } from '../../store/drawingPanes';
+import { clearAllPanes, getActivePane, useActivePane, useActivePaneDrawings, useTotalDrawingCount } from '../../store/drawingPanes';
 import { useIndicatorStore } from '../../store/indicatorStore';
 import { useMarketStore } from '../../store/marketStore';
 import { useReplayStore } from '../../store/replayStore';
@@ -66,10 +66,13 @@ export function ChartContextMenu({ sharedChartRef, chartAreaRef }: ChartContextM
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  const drawingCount = useActivePaneDrawings((s) => s.drawings.length);
+  // Remove-all clears every mounted pane, so the count spans them all.
+  const drawingCount = useTotalDrawingCount();
   const drawingsLocked = useDrawingTools((s) => s.drawingsLocked);
   const selectedCount = useActivePaneDrawings((s) => s.selectedIds.length);
-  const clipboardCount = useDrawingTools((s) => s.clipboard?.items.length ?? 0);
+  const activePaneKind = useActivePane().kind;
+  // Paste only into a pane of the kind the clipboard was copied from.
+  const canPaste = useDrawingTools((s) => !!s.clipboard?.items.length && s.clipboard.sourceKind === activePaneKind);
   const copySelected = useActivePaneDrawings((s) => s.copySelected);
   const indicatorCount = useIndicatorStore((s) => s.activeIndicators.size + (s.activeSubPanel ? 1 : 0));
   const clearAllIndicators = useIndicatorStore((s) => s.clearAllIndicators);
@@ -155,7 +158,7 @@ export function ChartContextMenu({ sharedChartRef, chartAreaRef }: ChartContextM
     {
       key: 'paste',
       label: 'Paste',
-      disabled: clipboardCount === 0 || drawingsLocked,
+      disabled: !canPaste || drawingsLocked,
       run: () => pasteDrawings(getActivePane()),
     },
     {

@@ -2,7 +2,10 @@ import { useEffect, useRef, useCallback, useState, memo } from 'react';
 import type { IChartApi, ISeriesApi } from 'lightweight-charts';
 import { useShallow } from 'zustand/react/shallow';
 import { useDrawingTools, newDrawingId, CURSOR_MODES, type Drawing, type DrawingTool, type FibExtend, type PatternType, type PatternDrawing } from '../../store/drawingStore';
-import { usePaneDrawings, drawingsStorageKey, type DrawingPane } from '../../store/drawingPanes';
+import {
+  usePaneDrawings, drawingsStorageKey, activatePane, anySettingsOpen, beginGesture, endGesture, getActivePane,
+  getGesturePaneId, registerPaneHandlers, type DrawingPane,
+} from '../../store/drawingPanes';
 import { usePane } from './DrawingPaneContext';
 import { useMarketStore } from '../../store/marketStore';
 import { useCandleStyleStore } from '../../store/candleStyleStore';
@@ -470,7 +473,8 @@ const paneSeries = new Map<string, () => ISeriesApi<'Candlestick'> | null>();
 /** Paste the drawing clipboard into `pane` with a visible offset — shared by Ctrl/Cmd+V and the context menu. */
 export function pasteDrawings(pane: DrawingPane): void {
   const { clipboard, drawingsLocked } = useDrawingTools.getState();
-  if (!clipboard?.items.length || drawingsLocked) return;
+  // Only into a pane of the kind it was copied from (prices don't map across kinds).
+  if (!clipboard?.items.length || drawingsLocked || clipboard.sourceKind !== pane.kind) return;
   const series = paneSeries.get(pane.id)?.() ?? null;
   const dt = (estimateBarIntervalSec(useMarketStore.getState().candles) ?? 60) * PASTE_OFFSET_BARS;
   let dPrice = 0;
@@ -5677,6 +5681,24 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
   }, [applyEdit, setEditing]);
   flushEditRef.current = flushEdit;
 
+  // Abandons an in-progress placement (multi-click shape, freeform stroke,
+  // measure readout) — Escape, Ctrl+Z mid-placement, and another pane activating.
+  const cancelPlacement = useCallback(() => {
+    drawingRef.current.active = false;
+    drawingRef.current.step   = 0;
+    freeformRef.current.active = false;
+    freeformRef.current.tool   = null;
+    freeformRef.current.points = [];
+    measureResultRef.current = null;
+    scheduleRender();
+  }, [scheduleRender]);
+
+  // Lets activatePane tidy this pane up when another pane becomes active.
+  useEffect(() => registerPaneHandlers(pane.id, {
+    flushEdit: () => { if (flushEditRef.current()) scheduleRender(); },
+    cancelPlacement,
+  }), [pane, scheduleRender, cancelPlacement]);
+
   const commitEdit = useCallback(() => {
     const ed = editingRef.current;
     if (!ed) return;
@@ -6261,6 +6283,10 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
     };
 
     const onWinMove = (e: MouseEvent) => {
+      // Another pane owns the drag/placement under way — leave its cursor and
+      // our crosshair alone until it ends.
+      const owner = getGesturePaneId();
+      if (owner != null && owner !== pane.id) return;
       const canvas = canvasRef.current;
       const chart  = sharedChartRef.current;
       const series = sharedSeriesRef.current;
@@ -7187,6 +7213,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
     };
 
     const onWinUp = () => {
+      endGesture();
       // Safety net: if a Brush/Highlighter drag left the canvas bounds before
       // the button was released, our own onMouseUp never fires — finalize here instead.
       const fr = freeformRef.current;
@@ -7353,38 +7380,51 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
       }
     };
 
+    // Last pointerdown/right-click inside this pane's chart area makes it the
+    // active pane (pointerdown fires before mousedown, so the other panes are
+    // tidied up before this click is handled).
+    const onActivate = (e: MouseEvent) => { if (isOverChart(e)) activatePane(pane.id); };
+    // A drag grabbed by the capture handler belongs to this pane.
+    const onWinDownCaptureOwned = (e: MouseEvent) => {
+      onWinDownCapture(e);
+      if (dragRef.current?.active) beginGesture(pane.id);
+    };
+    window.addEventListener('pointerdown', onActivate, true);
+    window.addEventListener('contextmenu', onActivate, true);
     window.addEventListener('mousemove', onWinMove);
-    window.addEventListener('mousedown', onWinDownCapture, true);
+    window.addEventListener('mousedown', onWinDownCaptureOwned, true);
     window.addEventListener('mousedown', onWinDown);
     window.addEventListener('mouseup', onWinUp);
     window.addEventListener('dblclick', onWinDblClick);
     return () => {
+      window.removeEventListener('pointerdown', onActivate, true);
+      window.removeEventListener('contextmenu', onActivate, true);
       window.removeEventListener('mousemove', onWinMove);
-      window.removeEventListener('mousedown', onWinDownCapture, true);
+      window.removeEventListener('mousedown', onWinDownCaptureOwned, true);
       window.removeEventListener('mousedown', onWinDown);
       window.removeEventListener('mouseup', onWinUp);
       window.removeEventListener('dblclick', onWinDblClick);
     };
-  }, [scheduleRender, selectDrawing, toggleSelection, updateDrawing, applyCursor, applyCursorValue, finalizeFreeform, setEditing]);
+  }, [scheduleRender, selectDrawing, toggleSelection, updateDrawing, applyCursor, applyCursorValue, finalizeFreeform, setEditing, pane]);
 
   // ── keyboard: Delete / Escape ─────────────────────────────────────────────
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       // typing Backspace/Escape inside the text-edit textarea must not also
       // delete the selected drawing or reset in-progress drawing state
-      if (e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement) return;
-      // The drawing settings modal is open: its keys stop at the dialog, but
-      // focus can drop to <body> (e.g. after a portaled color popover closes),
-      // and Delete/Ctrl+Z must not act on the chart underneath it then either.
-      if (paneStore.getState().settingsDrawingId) return;
+      // (nor may typing in any other field — every pane's handler bails here).
+      const t = e.target;
+      if (t instanceof HTMLTextAreaElement || t instanceof HTMLInputElement || t instanceof HTMLSelectElement ||
+          (t instanceof HTMLElement && t.isContentEditable)) return;
+      // Keys act on the active pane only.
+      if (getActivePane().id !== pane.id) return;
+      // A settings modal (drawing or Fib, in any pane) is open: its keys stop at
+      // the dialog, but focus can drop to <body> (e.g. after a portaled color
+      // popover closes), and Delete/Ctrl+Z must not act on the chart then either.
+      if (anySettingsOpen()) return;
 
       if (e.key === 'Escape') {
-        drawingRef.current.active = false;
-        drawingRef.current.step   = 0;
-        freeformRef.current.active = false;
-        freeformRef.current.tool   = null;
-        freeformRef.current.points = [];
-        measureResultRef.current = null;
+        cancelPlacement();
         // Cancelling an in-progress placement above doesn't touch selection —
         // without this, Escape on an already-placed, already-selected drawing
         // did nothing, so its floating style toolbar stayed mounted. If the
@@ -7393,7 +7433,6 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
         // time/price) degenerated to a clamped top-left coordinate instead of
         // going off-screen, so it looked stuck in the drawing rail.
         if (selectedIdsRef.current.length) selectDrawing(null);
-        scheduleRender();
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
         const sel = selectedIdsRef.current;
         if (sel.length && !drawingsLockedRef.current) deleteDrawings(sel);
@@ -7403,7 +7442,8 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
         e.preventDefault();
         copySelected();
       } else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && (e.key === 'v' || e.key === 'V')) {
-        if (!useDrawingTools.getState().clipboard?.items.length || drawingsLockedRef.current) return;
+        const { clipboard } = useDrawingTools.getState();
+        if (!clipboard?.items.length || clipboard.sourceKind !== pane.kind || drawingsLockedRef.current) return;
         if (drawingRef.current.active || freeformRef.current.active) return;
         e.preventDefault();
         pasteDrawings(pane);
@@ -7414,13 +7454,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
         // to `drawings` yet, so there'd be nothing there for it to undo anyway.
         if (drawingRef.current.active || freeformRef.current.active) {
           e.preventDefault();
-          drawingRef.current.active = false;
-          drawingRef.current.step   = 0;
-          freeformRef.current.active = false;
-          freeformRef.current.tool   = null;
-          freeformRef.current.points = [];
-          measureResultRef.current = null;
-          scheduleRender();
+          cancelPlacement();
         } else if (!drawingsLockedRef.current) {
           e.preventDefault();
           undo();
@@ -7435,7 +7469,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [deleteDrawings, scheduleRender, undo, redo, selectDrawing, copySelected, pane]);
+  }, [deleteDrawings, cancelPlacement, undo, redo, selectDrawing, copySelected, pane]);
 
   // Trendline/hline/rectangle/fibonacci/eraser capture all events (chart
   // pan/zoom blocked — intentional while placing points or erasing).
@@ -7453,7 +7487,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
         ref={canvasRef}
         className="absolute inset-0"
         style={{ cursor: CURSOR_STYLE[activeTool] ?? (isCrosshairDrawingTool(activeTool) ? 'none' : 'default'), pointerEvents: capturesPointerEvents ? 'all' : 'none' }}
-        onMouseDown={handleMouseDown}
+        onMouseDown={(e) => { beginGesture(pane.id); handleMouseDown(e); }}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseLeave}

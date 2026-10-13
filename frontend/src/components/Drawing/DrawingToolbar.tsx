@@ -22,7 +22,7 @@ import {
   type CyclesTool,
   type DrawingTool,
 } from '../../store/drawingStore';
-import { clearAllPanes, useActivePaneDrawings } from '../../store/drawingPanes';
+import { clearAllPanes, useActivePaneDrawings, useTotalDrawingCount } from '../../store/drawingPanes';
 import { useShallow } from 'zustand/react/shallow';
 
 interface ToolBtn {
@@ -1370,9 +1370,11 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
     toggleKeepToolActive: s.toggleKeepToolActive, toggleDrawingsLocked: s.toggleDrawingsLocked, toggleDrawingsHidden: s.toggleDrawingsHidden,
     favoriteTools: s.favoriteTools, favoritesBarOpen: s.favoritesBarOpen, toggleFavorite: s.toggleFavorite, toggleFavoritesBar: s.toggleFavoritesBar,
   })));
-  const { drawings, selectedIds, deleteDrawings } = useActivePaneDrawings(useShallow((s) => ({
-    drawings: s.drawings, selectedIds: s.selectedIds, deleteDrawings: s.deleteDrawings,
+  const { selectedIds, deleteDrawings } = useActivePaneDrawings(useShallow((s) => ({
+    selectedIds: s.selectedIds, deleteDrawings: s.deleteDrawings,
   })));
+  // Hide/lock/remove-all are global, so they're enabled by drawings in any mounted pane.
+  const drawingCount = useTotalDrawingCount();
   const [cursorDropdownOpen, setCursorDropdownOpen] = useState(false);
   const [trendDropdownOpen, setTrendDropdownOpen] = useState(false);
   const [shapeDropdownOpen, setShapeDropdownOpen] = useState(false);
@@ -1948,11 +1950,11 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
 
       <button
         title={drawingsHidden ? 'Show All Drawings' : 'Hide All Drawings'}
-        disabled={drawings.length === 0}
+        disabled={drawingCount === 0}
         onClick={toggleDrawingsHidden}
         className={`
           w-9 h-9 flex items-center justify-center rounded transition-colors [&_svg]:w-5 [&_svg]:h-5
-          ${drawings.length === 0
+          ${drawingCount === 0
             ? 'text-[var(--border-color)] cursor-not-allowed'
             : drawingsHidden ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'}
         `}
@@ -1962,11 +1964,11 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
 
       <button
         title={drawingsLocked ? 'Unlock All Drawings' : 'Lock All Drawings'}
-        disabled={drawings.length === 0}
+        disabled={drawingCount === 0}
         onClick={toggleDrawingsLocked}
         className={`
           w-9 h-9 flex items-center justify-center rounded transition-colors [&_svg]:w-5 [&_svg]:h-5
-          ${drawings.length === 0
+          ${drawingCount === 0
             ? 'text-[var(--border-color)] cursor-not-allowed'
             : drawingsLocked ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'}
         `}
@@ -2007,12 +2009,12 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
         <button
           aria-label="Delete options"
           title="Delete options"
-          disabled={drawings.length === 0}
+          disabled={drawingCount === 0}
           onClick={() => setDeleteMenuOpen((v) => !v)}
           className={`
             absolute bottom-0 right-0 w-3 h-3 flex items-center justify-center
             opacity-0 group-hover:opacity-100 transition-opacity
-            ${drawings.length > 0 ? 'text-[var(--text-muted)] hover:text-[var(--text-primary)]' : 'text-transparent'}
+            ${drawingCount > 0 ? 'text-[var(--text-muted)] hover:text-[var(--text-primary)]' : 'text-transparent'}
           `}
         >
           <CornerArrow />
@@ -2035,10 +2037,10 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
             </button>
             <button
               onClick={() => { clearAllPanes(); setDeleteMenuOpen(false); }}
-              disabled={drawings.length === 0 || drawingsLocked}
+              disabled={drawingCount === 0 || drawingsLocked}
               className={`
                 w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors
-                ${drawings.length > 0 && !drawingsLocked ? 'text-[#f85149] hover:bg-[#f85149] hover:text-white' : 'text-[var(--border-color)] cursor-not-allowed'}
+                ${drawingCount > 0 && !drawingsLocked ? 'text-[#f85149] hover:bg-[#f85149] hover:text-white' : 'text-[var(--border-color)] cursor-not-allowed'}
               `}
             >
               Remove All Drawings

@@ -1116,6 +1116,9 @@ export interface DrawingPaneState {
   // Drawing whose settings modal (DrawingSettingsModal) is open — set by the
   // style toolbar's gear and by double-clicking the drawing. Session-only.
   settingsDrawingId: string | null;
+  // Drawing owning the open settings snapshot (either modal), null when none —
+  // mirrors the store-private session so anySettingsOpen() can see Fib's too.
+  settingsSessionId: string | null;
 
   addDrawing: (drawing: Drawing) => void;
   updateDrawing: (id: string, patch: Partial<Drawing>) => void;
@@ -1331,6 +1334,7 @@ export function createDrawingPaneStore(paneId: string, kind: PaneKind): DrawingP
     redoStack: [],
     selectedIds: [],
     settingsDrawingId: null,
+    settingsSessionId: null,
 
     addDrawing: (drawing) =>
       set((s) => {
@@ -1409,7 +1413,7 @@ export function createDrawingPaneStore(paneId: string, kind: PaneKind): DrawingP
     loadDrawings: (drawings) => {
       lastMutation = null;
       settingsSession = null;
-      set({ drawings, history: [], redoStack: [], selectedIds: [], settingsDrawingId: null });
+      set({ drawings, history: [], redoStack: [], selectedIds: [], settingsDrawingId: null, settingsSessionId: null });
     },
     undo: () =>
       set((s) => {
@@ -1440,16 +1444,17 @@ export function createDrawingPaneStore(paneId: string, kind: PaneKind): DrawingP
         const original = s.drawings.find((d) => d.id === id);
         if (!original) return {};
         settingsSession = { id, original, history: s.history, redoStack: s.redoStack };
-        return { settingsDrawingId: id };
+        return { settingsDrawingId: id, settingsSessionId: id };
       }),
     closeDrawingSettings: (commit) =>
-      set((s) => ({ ...endSettingsSession(s, s.settingsDrawingId, commit), settingsDrawingId: null })),
+      set((s) => ({ ...endSettingsSession(s, s.settingsDrawingId, commit), settingsDrawingId: null, settingsSessionId: settingsSession?.id ?? null })),
     beginSettingsSession: (id) =>
       set((s) => {
         const original = s.drawings.find((d) => d.id === id);
         if (original) settingsSession = { id, original, history: s.history, redoStack: s.redoStack };
-        return {};
+        return { settingsSessionId: settingsSession?.id ?? null };
       }),
-    endSettingsSession: (id, commit) => set((s) => endSettingsSession(s, id, commit)),
+    endSettingsSession: (id, commit) =>
+      set((s) => ({ ...endSettingsSession(s, id, commit), settingsSessionId: settingsSession?.id ?? null })),
   }));
 }
