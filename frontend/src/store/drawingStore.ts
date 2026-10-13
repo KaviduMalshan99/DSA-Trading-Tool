@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { createStore, type StoreApi } from 'zustand/vanilla';
 import { shiftDrawingPrices, shiftDrawingTimes } from '../utils/drawingTimeShift';
 
 // The five cursor options exposed in the TradingView-style toolbar.
@@ -1022,7 +1023,21 @@ export type Drawing =
   | TimeCyclesDrawing
   | SineLineDrawing;
 
-interface DrawingState {
+// What a drawing pane plots against: the candle price scale ('price', the
+// main chart) or an indicator's value scale ('oscillator', RSI/MACD/… sub
+// panels). Drawings only paste into a pane of the kind they were copied from.
+export type PaneKind = 'price' | 'oscillator';
+
+// Deep copies taken by Copy (Ctrl/Cmd+C); session-only, never persisted.
+export interface DrawingClipboard {
+  sourceKind: PaneKind;
+  items: Drawing[];
+}
+
+// Tool choice, toggles and favorites — global across panes (one drawing
+// toolbar drives every pane). Per-pane drawings/undo/selection live in
+// createDrawingPaneStore below.
+interface DrawingToolsState {
   activeTool: DrawingTool;
   // The cursor-group tool last picked from the dropdown — kept separate from
   // activeTool so the toolbar button icon survives switching to a drawing tool.
@@ -1068,6 +1083,25 @@ interface DrawingState {
   // Dragged position of the floating Favorites toolbar; null = not moved yet
   // (use the caller's default position).
   favoritesBarPos: { x: number; y: number } | null;
+  // Pane the top toolbar's undo/redo, the context menu and other pane-less
+  // UI act on (see getActivePane in drawingPanes.ts). Always 'main' for now.
+  activePaneId: string;
+  clipboard: DrawingClipboard | null;
+  // Pastes since the last Copy — scales the paste offset.
+  pasteCount: number;
+
+  setTool: (tool: DrawingTool) => void;
+  toggleKeepToolActive: () => void;
+  toggleDrawingsLocked: () => void;
+  toggleDrawingsHidden: () => void;
+  toggleFavorite: (tool: DrawingTool) => void;
+  toggleFavoritesBar: () => void;
+  setFavoritesBarPos: (pos: { x: number; y: number }) => void;
+}
+
+export interface DrawingPaneState {
+  readonly paneId: string;
+  readonly kind: PaneKind;
   drawings: Drawing[];
   // Snapshots of `drawings` taken right before each mutating action (add,
   // update, delete, clearAll) — Ctrl+Z pops the last one back into `drawings`.
@@ -1079,20 +1113,19 @@ interface DrawingState {
   // `drawings` here before restoring; any new mutation clears it.
   redoStack: Drawing[][];
   selectedIds: string[];
-  // Deep copies taken by Copy (Ctrl/Cmd+C); session-only, never persisted.
-  clipboard: Drawing[];
   // Drawing whose settings modal (DrawingSettingsModal) is open — set by the
   // style toolbar's gear and by double-clicking the drawing. Session-only.
   settingsDrawingId: string | null;
 
-  setTool: (tool: DrawingTool) => void;
   addDrawing: (drawing: Drawing) => void;
   updateDrawing: (id: string, patch: Partial<Drawing>) => void;
   deleteDrawing: (id: string) => void;
   deleteDrawings: (ids: string[]) => void;
+  // Copies the selection into the global clipboard (tagged with this pane's kind).
   copySelected: () => void;
   // Pastes the clipboard offset by `n × (dt, dPrice)`, where n counts pastes
   // since the last copy — repeated pastes step further instead of stacking.
+  // No-op if the clipboard came from a pane of another kind.
   pasteClipboard: (dt: number, dPrice: number) => void;
   // Replaces the selection (null clears it).
   selectDrawing: (id: string | null) => void;
@@ -1101,18 +1134,19 @@ interface DrawingState {
   loadDrawings: (drawings: Drawing[]) => void;
   undo: () => void;
   redo: () => void;
-  toggleKeepToolActive: () => void;
-  toggleDrawingsLocked: () => void;
-  toggleDrawingsHidden: () => void;
-  toggleFavorite: (tool: DrawingTool) => void;
-  toggleFavoritesBar: () => void;
-  setFavoritesBarPos: (pos: { x: number; y: number }) => void;
   // Opens the settings modal and snapshots the drawing + undo stacks, so the
   // modal's live-preview edits can be rolled back (Cancel) or collapsed into
   // a single undo step (Ok) by closeDrawingSettings.
   openDrawingSettings: (id: string) => void;
   closeDrawingSettings: (commit: boolean) => void;
+  // The same snapshot/commit/rollback without settingsDrawingId, for modals
+  // mounted elsewhere (FibSettingsModal). End is a no-op unless `id` owns the
+  // open session.
+  beginSettingsSession: (id: string) => void;
+  endSettingsSession: (id: string, commit: boolean) => void;
 }
+
+export type DrawingPaneStore = StoreApi<DrawingPaneState>;
 
 function isCursorMode(tool: DrawingTool): tool is CursorMode {
   return (CURSOR_MODES as readonly string[]).includes(tool);
@@ -1162,35 +1196,15 @@ function pushHistory(history: Drawing[][], snapshot: Drawing[]): Drawing[][] {
 // number inputs, …) call updateDrawing on every drag tick/keystroke, not just
 // on commit. Without coalescing, one slider drag would blow through the
 // entire MAX_HISTORY cap on a single gesture and evict real undo-worthy
-// history (earlier shapes). Module-level like `latestCandlesForExtrapolation`
-// in DrawingCanvas.tsx — pure bookkeeping, doesn't need to be reactive state.
+// history (earlier shapes). The per-pane `lastMutation` bookkeeping lives in
+// createDrawingPaneStore's closure — it doesn't need to be reactive state.
 const COALESCE_WINDOW_MS = 400;
-let lastMutation: { id: string; at: number } | null = null;
-
-// Pastes since the last Copy — scales the paste offset.
-let pasteCount = 0;
-
-// Snapshot taken by openDrawingSettings: the drawing as it was, plus the undo
-// stacks at that moment (see closeDrawingSettings).
-let settingsSession: {
-  id: string;
-  original: Drawing;
-  history: Drawing[][];
-  redoStack: Drawing[][];
-} | null = null;
 
 export function newDrawingId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-function pushHistoryFor(history: Drawing[][], snapshot: Drawing[], id: string): Drawing[][] {
-  const now = Date.now();
-  const coalesce = lastMutation != null && lastMutation.id === id && now - lastMutation.at < COALESCE_WINDOW_MS;
-  lastMutation = { id, at: now };
-  return coalesce ? history : pushHistory(history, snapshot);
-}
-
-export const useDrawingStore = create<DrawingState>((set) => ({
+export const useDrawingTools = create<DrawingToolsState>((set) => ({
   activeTool: 'cross',
   lastCursorMode: 'cross',
   lastTrendTool: 'trendline',
@@ -1210,12 +1224,9 @@ export const useDrawingStore = create<DrawingState>((set) => ({
   favoriteTools: [],
   favoritesBarOpen: false,
   favoritesBarPos: null,
-  drawings: [],
-  history: [],
-  redoStack: [],
-  selectedIds: [],
-  clipboard: [],
-  settingsDrawingId: null,
+  activePaneId: 'main',
+  clipboard: null,
+  pasteCount: 0,
 
   setTool: (tool) =>
     set((s) => {
@@ -1246,105 +1257,6 @@ export const useDrawingStore = create<DrawingState>((set) => ({
         magnetEnabled: cursorGroup ? false : s.magnetEnabled,
       };
     }),
-  addDrawing: (drawing) =>
-    set((s) => {
-      lastMutation = null;
-      return { history: pushHistory(s.history, s.drawings), redoStack: [], drawings: [...s.drawings, drawing] };
-    }),
-  updateDrawing: (id, patch) =>
-    set((s) => ({
-      history: pushHistoryFor(s.history, s.drawings, id),
-      redoStack: [],
-      drawings: s.drawings.map((d) => (d.id === id ? ({ ...d, ...patch } as Drawing) : d)),
-    })),
-  deleteDrawing: (id) =>
-    set((s) => {
-      lastMutation = null;
-      return {
-        history: pushHistory(s.history, s.drawings),
-        redoStack: [],
-        drawings: s.drawings.filter((d) => d.id !== id),
-        selectedIds: s.selectedIds.filter((x) => x !== id),
-      };
-    }),
-  // One history snapshot for the whole batch, so a single undo restores all.
-  deleteDrawings: (ids) =>
-    set((s) => {
-      if (!ids.length) return {};
-      lastMutation = null;
-      const kill = new Set(ids);
-      return {
-        history: pushHistory(s.history, s.drawings),
-        redoStack: [],
-        drawings: s.drawings.filter((d) => !kill.has(d.id)),
-        selectedIds: s.selectedIds.filter((x) => !kill.has(x)),
-      };
-    }),
-  copySelected: () =>
-    set((s) => {
-      if (!s.selectedIds.length) return {};
-      pasteCount = 0;
-      return { clipboard: s.drawings.filter((d) => s.selectedIds.includes(d.id)).map((d) => structuredClone(d)) };
-    }),
-  // One history snapshot for all clones (one undo), and the clones become the selection.
-  pasteClipboard: (dt, dPrice) =>
-    set((s) => {
-      if (!s.clipboard.length) return {};
-      lastMutation = null;
-      pasteCount += 1;
-      const shifted = shiftDrawingPrices(shiftDrawingTimes(s.clipboard, dt * pasteCount), dPrice * pasteCount);
-      const clones = shifted.map((d) => ({ ...structuredClone(d), id: newDrawingId() }) as Drawing);
-      return {
-        history: pushHistory(s.history, s.drawings),
-        redoStack: [],
-        drawings: [...s.drawings, ...clones],
-        selectedIds: clones.map((d) => d.id),
-      };
-    }),
-  selectDrawing: (id) => set({ selectedIds: id ? [id] : [] }),
-  toggleSelection: (id) =>
-    set((s) => ({
-      selectedIds: s.selectedIds.includes(id)
-        ? s.selectedIds.filter((x) => x !== id)
-        : [...s.selectedIds, id],
-    })),
-  clearAll: () =>
-    set((s) => {
-      lastMutation = null;
-      return { history: pushHistory(s.history, s.drawings), redoStack: [], drawings: [], selectedIds: [] };
-    }),
-  // A fresh symbol/interval's persisted drawings aren't part of this session's
-  // undo timeline — reset both stacks rather than carrying over stale
-  // snapshots (otherwise redo could resurrect another symbol's drawings).
-  loadDrawings: (drawings) => {
-    lastMutation = null;
-    settingsSession = null;
-    set({ drawings, history: [], redoStack: [], selectedIds: [], settingsDrawingId: null });
-  },
-  undo: () =>
-    set((s) => {
-      if (s.history.length === 0) return {};
-      lastMutation = null;
-      const prev = s.history[s.history.length - 1];
-      return {
-        drawings: prev,
-        history: s.history.slice(0, -1),
-        redoStack: pushHistory(s.redoStack, s.drawings),
-        selectedIds: [],
-      };
-    }),
-  redo: () =>
-    set((s) => {
-      if (s.redoStack.length === 0) return {};
-      lastMutation = null;
-      const next = s.redoStack[s.redoStack.length - 1];
-      return {
-        drawings: next,
-        redoStack: s.redoStack.slice(0, -1),
-        history: pushHistory(s.history, s.drawings),
-        selectedIds: [],
-      };
-    }),
   toggleKeepToolActive: () => set((s) => ({ keepToolActive: !s.keepToolActive })),
   toggleDrawingsLocked: () => set((s) => ({ drawingsLocked: !s.drawingsLocked })),
   toggleDrawingsHidden: () => set((s) => ({ drawingsHidden: !s.drawingsHidden })),
@@ -1357,40 +1269,187 @@ export const useDrawingStore = create<DrawingState>((set) => ({
     }),
   toggleFavoritesBar: () => set((s) => ({ favoritesBarOpen: !s.favoritesBarOpen })),
   setFavoritesBarPos: (pos) => set({ favoritesBarPos: pos }),
-  openDrawingSettings: (id) =>
-    set((s) => {
-      const original = s.drawings.find((d) => d.id === id);
-      if (!original) return {};
-      settingsSession = { id, original, history: s.history, redoStack: s.redoStack };
-      return { settingsDrawingId: id };
-    }),
-  closeDrawingSettings: (commit) =>
-    set((s) => {
-      const session = settingsSession;
-      settingsSession = null;
-      lastMutation = null;
-      if (!session || session.id !== s.settingsDrawingId) return { settingsDrawingId: null };
-      const current = s.drawings.find((d) => d.id === session.id);
-      // Drawing gone (undone/deleted elsewhere) — nothing to keep or restore.
-      if (!current) return { settingsDrawingId: null };
-      if (commit) {
-        // Every live-preview edit pushed its own history entry; replace them
-        // with one entry holding the pre-modal drawing, so Ok is one undo step.
-        if (current === session.original) return { settingsDrawingId: null };
-        return {
-          settingsDrawingId: null,
-          history: pushHistory(session.history, s.drawings.map((d) => (d.id === session.id ? session.original : d))),
-          redoStack: [],
-        };
-      }
-      // Cancel: swap the original object back in whole (not a shallow merge,
-      // which would leave fields the modal added, e.g. labelText, behind) and
-      // drop the preview edits' history entries.
-      return {
-        settingsDrawingId: null,
-        drawings: s.drawings.map((d) => (d.id === session.id ? session.original : d)),
-        history: session.history,
-        redoStack: session.redoStack,
-      };
-    }),
 }));
+
+/** One pane's drawings, undo/redo stacks, selection and settings session.
+ * Created per pane via the registry in drawingPanes.ts. */
+export function createDrawingPaneStore(paneId: string, kind: PaneKind): DrawingPaneStore {
+  // Last updateDrawing target, for COALESCE_WINDOW_MS coalescing.
+  let lastMutation: { id: string; at: number } | null = null;
+
+  // Snapshot taken by openDrawingSettings: the drawing as it was, plus the undo
+  // stacks at that moment (see closeDrawingSettings).
+  let settingsSession: {
+    id: string;
+    original: Drawing;
+    history: Drawing[][];
+    redoStack: Drawing[][];
+  } | null = null;
+
+  function pushHistoryFor(history: Drawing[][], snapshot: Drawing[], id: string): Drawing[][] {
+    const now = Date.now();
+    const coalesce = lastMutation != null && lastMutation.id === id && now - lastMutation.at < COALESCE_WINDOW_MS;
+    lastMutation = { id, at: now };
+    return coalesce ? history : pushHistory(history, snapshot);
+  }
+
+  // Ends the open settings session if it belongs to `id` (a stale or foreign
+  // session is just dropped).
+  function endSettingsSession(s: DrawingPaneState, id: string | null, commit: boolean): Partial<DrawingPaneState> {
+    const session = settingsSession;
+    if (session && session.id !== id) return {};
+    settingsSession = null;
+    lastMutation = null;
+    if (!session) return {};
+    const current = s.drawings.find((d) => d.id === session.id);
+    // Drawing gone (undone/deleted elsewhere) — nothing to keep or restore.
+    if (!current) return {};
+    if (commit) {
+      // Every live-preview edit pushed its own history entry; replace them
+      // with one entry holding the pre-modal drawing, so Ok is one undo step.
+      if (current === session.original) return {};
+      return {
+        history: pushHistory(session.history, s.drawings.map((d) => (d.id === session.id ? session.original : d))),
+        redoStack: [],
+      };
+    }
+    // Cancel: swap the original object back in whole (not a shallow merge,
+    // which would leave fields the modal added, e.g. labelText, behind) and
+    // drop the preview edits' history entries.
+    return {
+      drawings: s.drawings.map((d) => (d.id === session.id ? session.original : d)),
+      history: session.history,
+      redoStack: session.redoStack,
+    };
+  }
+
+  return createStore<DrawingPaneState>((set, get) => ({
+    paneId,
+    kind,
+    drawings: [],
+    history: [],
+    redoStack: [],
+    selectedIds: [],
+    settingsDrawingId: null,
+
+    addDrawing: (drawing) =>
+      set((s) => {
+        lastMutation = null;
+        return { history: pushHistory(s.history, s.drawings), redoStack: [], drawings: [...s.drawings, drawing] };
+      }),
+    updateDrawing: (id, patch) =>
+      set((s) => ({
+        history: pushHistoryFor(s.history, s.drawings, id),
+        redoStack: [],
+        drawings: s.drawings.map((d) => (d.id === id ? ({ ...d, ...patch } as Drawing) : d)),
+      })),
+    deleteDrawing: (id) =>
+      set((s) => {
+        lastMutation = null;
+        return {
+          history: pushHistory(s.history, s.drawings),
+          redoStack: [],
+          drawings: s.drawings.filter((d) => d.id !== id),
+          selectedIds: s.selectedIds.filter((x) => x !== id),
+        };
+      }),
+    // One history snapshot for the whole batch, so a single undo restores all.
+    deleteDrawings: (ids) =>
+      set((s) => {
+        if (!ids.length) return {};
+        lastMutation = null;
+        const kill = new Set(ids);
+        return {
+          history: pushHistory(s.history, s.drawings),
+          redoStack: [],
+          drawings: s.drawings.filter((d) => !kill.has(d.id)),
+          selectedIds: s.selectedIds.filter((x) => !kill.has(x)),
+        };
+      }),
+    copySelected: () => {
+      const s = get();
+      if (!s.selectedIds.length) return;
+      useDrawingTools.setState({
+        clipboard: { sourceKind: kind, items: s.drawings.filter((d) => s.selectedIds.includes(d.id)).map((d) => structuredClone(d)) },
+        pasteCount: 0,
+      });
+    },
+    // One history snapshot for all clones (one undo), and the clones become the selection.
+    pasteClipboard: (dt, dPrice) =>
+      set((s) => {
+        const { clipboard, pasteCount: prevCount } = useDrawingTools.getState();
+        if (!clipboard || !clipboard.items.length || clipboard.sourceKind !== kind) return {};
+        lastMutation = null;
+        const pasteCount = prevCount + 1;
+        useDrawingTools.setState({ pasteCount });
+        const shifted = shiftDrawingPrices(shiftDrawingTimes(clipboard.items, dt * pasteCount), dPrice * pasteCount);
+        const clones = shifted.map((d) => ({ ...structuredClone(d), id: newDrawingId() }) as Drawing);
+        return {
+          history: pushHistory(s.history, s.drawings),
+          redoStack: [],
+          drawings: [...s.drawings, ...clones],
+          selectedIds: clones.map((d) => d.id),
+        };
+      }),
+    selectDrawing: (id) => set({ selectedIds: id ? [id] : [] }),
+    toggleSelection: (id) =>
+      set((s) => ({
+        selectedIds: s.selectedIds.includes(id)
+          ? s.selectedIds.filter((x) => x !== id)
+          : [...s.selectedIds, id],
+      })),
+    clearAll: () =>
+      set((s) => {
+        lastMutation = null;
+        return { history: pushHistory(s.history, s.drawings), redoStack: [], drawings: [], selectedIds: [] };
+      }),
+    // A fresh symbol/interval's persisted drawings aren't part of this session's
+    // undo timeline — reset both stacks rather than carrying over stale
+    // snapshots (otherwise redo could resurrect another symbol's drawings).
+    loadDrawings: (drawings) => {
+      lastMutation = null;
+      settingsSession = null;
+      set({ drawings, history: [], redoStack: [], selectedIds: [], settingsDrawingId: null });
+    },
+    undo: () =>
+      set((s) => {
+        if (s.history.length === 0) return {};
+        lastMutation = null;
+        const prev = s.history[s.history.length - 1];
+        return {
+          drawings: prev,
+          history: s.history.slice(0, -1),
+          redoStack: pushHistory(s.redoStack, s.drawings),
+          selectedIds: [],
+        };
+      }),
+    redo: () =>
+      set((s) => {
+        if (s.redoStack.length === 0) return {};
+        lastMutation = null;
+        const next = s.redoStack[s.redoStack.length - 1];
+        return {
+          drawings: next,
+          redoStack: s.redoStack.slice(0, -1),
+          history: pushHistory(s.history, s.drawings),
+          selectedIds: [],
+        };
+      }),
+    openDrawingSettings: (id) =>
+      set((s) => {
+        const original = s.drawings.find((d) => d.id === id);
+        if (!original) return {};
+        settingsSession = { id, original, history: s.history, redoStack: s.redoStack };
+        return { settingsDrawingId: id };
+      }),
+    closeDrawingSettings: (commit) =>
+      set((s) => ({ ...endSettingsSession(s, s.settingsDrawingId, commit), settingsDrawingId: null })),
+    beginSettingsSession: (id) =>
+      set((s) => {
+        const original = s.drawings.find((d) => d.id === id);
+        if (original) settingsSession = { id, original, history: s.history, redoStack: s.redoStack };
+        return {};
+      }),
+    endSettingsSession: (id, commit) => set((s) => endSettingsSession(s, id, commit)),
+  }));
+}

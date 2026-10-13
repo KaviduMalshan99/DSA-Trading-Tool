@@ -36,6 +36,7 @@ SYNC_KEYS = frozenset({
     "dsa-fav-indicators",
     "dsa-position-calc",
     "dsa-alerts",
+    "dsa-drawing-templates",
 })
 SYNC_KEY_PATTERN = re.compile(r"^dsa_drawings_[A-Za-z0-9._-]{1,40}_[A-Za-z0-9]{1,8}$")
 

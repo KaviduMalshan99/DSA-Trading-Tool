@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import {
-  useDrawingStore,
   type FibLikeDrawing,
   type FibLevelConfig,
   type FibExtend,
 } from '../../store/drawingStore';
+import { usePaneDrawings } from '../../store/drawingPanes';
+import { useShallow } from 'zustand/react/shallow';
 import { resolveFibLevels } from './fibLevels';
 import { MiniColorSwatch, MiniWidthPicker, MiniDashPicker } from './drawingStyleShared';
 import { TemplateMenu } from './TemplateMenu';
@@ -84,7 +85,10 @@ function FibRatioInput({ value, enabled, onCommit }: {
 }
 
 export function FibSettingsModal({ fib, onClose }: Props) {
-  const { updateDrawing, deleteDrawing, beginSettingsSession, endSettingsSession } = useDrawingStore();
+  const { updateDrawing, deleteDrawing, beginSettingsSession, endSettingsSession } = usePaneDrawings(useShallow((s) => ({
+    updateDrawing: s.updateDrawing, deleteDrawing: s.deleteDrawing,
+    beginSettingsSession: s.beginSettingsSession, endSettingsSession: s.endSettingsSession,
+  })));
   const [tab, setTab] = useState<Tab>('Style');
 
   // Snapshot the drawing + undo stacks while mounted, like DrawingSettingsModal:

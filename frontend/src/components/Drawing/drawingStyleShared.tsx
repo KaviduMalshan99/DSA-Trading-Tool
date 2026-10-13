@@ -61,7 +61,7 @@ const VIEWPORT_MARGIN = 8;
 // `align` picks which anchor edge the popover hangs from by default: 'left'
 // (color swatches) or 'right' (width/dash dropdowns, matching their old
 // `right-0` placement). Either flips to the other edge when it would overflow.
-function useAnchoredPopover(align: 'left' | 'right' = 'left') {
+export function useAnchoredPopover(align: 'left' | 'right' = 'left') {
   const [open, setOpen] = useState(false);
   const anchorRef = useRef<HTMLDivElement>(null);
   const popRef = useRef<HTMLDivElement>(null);
@@ -141,7 +141,7 @@ function useAnchoredPopover(align: 'left' | 'right' = 'left') {
     visibility: pos ? 'visible' : 'hidden',
   };
 
-  return { open, setOpen, anchorRef, popRef, popStyle };
+  return { open, setOpen, anchorRef, popRef, popStyle, place };
 }
 
 // Small popover controls — each manages its own open/close state and closes

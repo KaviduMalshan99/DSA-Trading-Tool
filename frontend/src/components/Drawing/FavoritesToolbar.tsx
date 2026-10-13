@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, memo } from 'react';
-import { useDrawingStore } from '../../store/drawingStore';
+import { useShallow } from 'zustand/react/shallow';
+import { useDrawingTools } from '../../store/drawingStore';
 import { ALL_TOOL_ICON, ALL_TOOL_LABEL } from './DrawingToolbar';
 
 function GripIcon() {
@@ -31,7 +32,11 @@ export const FavoritesToolbar = memo(function FavoritesToolbar() {
   const {
     favoriteTools, favoritesBarOpen, favoritesBarPos, setFavoritesBarPos, toggleFavoritesBar,
     activeTool, setTool,
-  } = useDrawingStore();
+  } = useDrawingTools(useShallow((s) => ({
+    favoriteTools: s.favoriteTools, favoritesBarOpen: s.favoritesBarOpen, favoritesBarPos: s.favoritesBarPos,
+    setFavoritesBarPos: s.setFavoritesBarPos, toggleFavoritesBar: s.toggleFavoritesBar,
+    activeTool: s.activeTool, setTool: s.setTool,
+  })));
   const [dragPos, setDragPos] = useState(favoritesBarPos ?? DEFAULT_POS);
   const draggingRef = useRef(false);
   const offsetRef = useRef({ dx: 0, dy: 0 });

@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState, memo } from 'react';
 import type { IChartApi, ISeriesApi } from 'lightweight-charts';
 import {
-  useDrawingStore, resizeTableCells, TABLE_MAX_DIM, type Drawing, type PositionDrawing,
+  useDrawingTools, resizeTableCells, TABLE_MAX_DIM, type Drawing, type PositionDrawing,
 } from '../../store/drawingStore';
+import { usePane, usePaneDrawings } from '../../store/drawingPanes';
+import { useShallow } from 'zustand/react/shallow';
 import { useMarketStore } from '../../store/marketStore';
 import { priceToY, timeToX, computeParallelOffset, computeRegression, getRotatedRectCorners } from './DrawingCanvas';
 import { FibSettingsModal } from './FibSettingsModal';
@@ -99,7 +101,12 @@ export const DrawingStyleToolbar = memo(function DrawingStyleToolbar({ sharedCha
 });
 
 function StyleToolbar({ sharedChartRef, sharedSeriesRef }: Props) {
-  const { drawings, selectedIds, updateDrawing, deleteDrawing, drawingsHidden, drawingsLocked, openDrawingSettings } = useDrawingStore();
+  const paneStore = usePane().store;
+  const { drawings, selectedIds, updateDrawing, deleteDrawing, openDrawingSettings } = usePaneDrawings(useShallow((s) => ({
+    drawings: s.drawings, selectedIds: s.selectedIds, updateDrawing: s.updateDrawing, deleteDrawing: s.deleteDrawing,
+    openDrawingSettings: s.openDrawingSettings,
+  })));
+  const { drawingsHidden, drawingsLocked } = useDrawingTools(useShallow((s) => ({ drawingsHidden: s.drawingsHidden, drawingsLocked: s.drawingsLocked })));
   // Toolbar only targets a single selection; hidden for 0 or 2+.
   const selectedId = selectedIds.length === 1 ? selectedIds[0] : null;
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
@@ -615,7 +622,7 @@ function StyleToolbar({ sharedChartRef, sharedSeriesRef }: Props) {
     // Each grid button reads the latest table from the store (not this
     // render's copy) and applies one updateDrawing — one undo step.
     const resize = (dRows: number, dCols: number) => {
-      const t = useDrawingStore.getState().drawings.find((d) => d.id === table.id);
+      const t = paneStore.getState().drawings.find((d) => d.id === table.id);
       if (t?.type !== 'table') return;
       const rows = Math.min(TABLE_MAX_DIM, Math.max(1, t.rows + dRows));
       const cols = Math.min(TABLE_MAX_DIM, Math.max(1, t.cols + dCols));

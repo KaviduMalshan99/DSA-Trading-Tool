@@ -27,6 +27,7 @@ import { TradeChecklist } from '../Overlay/TradeChecklist';
 import { ClusterScanner } from '../Overlay/ClusterScanner';
 import { DrawingToolbar } from '../Drawing/DrawingToolbar';
 import { DrawingCanvas } from '../Drawing/DrawingCanvas';
+import { DrawingPaneProvider } from '../Drawing/DrawingPaneContext';
 import { PriceScaleButtons } from './PriceScaleButtons';
 import { ChartContextMenu } from './ChartContextMenu';
 import { DrawingStyleToolbar } from '../Drawing/DrawingStyleToolbar';
@@ -156,22 +157,24 @@ export function ChartContainer({ sharedChartRef, sharedSeriesRef, chartAreaRef }
           />
         )}
 
-        {/* Drawing canvas — always on top */}
-        <DrawingCanvas
-          sharedChartRef={sharedChartRef}
-          sharedSeriesRef={sharedSeriesRef}
-        />
+        <DrawingPaneProvider paneId="main" kind="price">
+          {/* Drawing canvas — always on top */}
+          <DrawingCanvas
+            sharedChartRef={sharedChartRef}
+            sharedSeriesRef={sharedSeriesRef}
+          />
 
-        {/* "A" (auto-scale) / "L" (log) buttons in the price-axis × time-axis
-            corner — after DrawingCanvas and z-60 so they stay clickable while
-            a drawing tool is active. */}
-        <PriceScaleButtons chartRef={sharedChartRef} />
+          {/* "A" (auto-scale) / "L" (log) buttons in the price-axis × time-axis
+              corner — after DrawingCanvas and z-60 so they stay clickable while
+              a drawing tool is active. */}
+          <PriceScaleButtons chartRef={sharedChartRef} />
 
-        {/* Floating style toolbar for the selected drawing (TradingView-style) */}
-        <DrawingStyleToolbar
-          sharedChartRef={sharedChartRef}
-          sharedSeriesRef={sharedSeriesRef}
-        />
+          {/* Floating style toolbar for the selected drawing (TradingView-style) */}
+          <DrawingStyleToolbar
+            sharedChartRef={sharedChartRef}
+            sharedSeriesRef={sharedSeriesRef}
+          />
+        </DrawingPaneProvider>
 
         {/* Floating, draggable strip of starred tools — viewport-fixed, so it
             can be dragged anywhere regardless of where it's mounted */}
@@ -187,7 +190,7 @@ export function ChartContainer({ sharedChartRef, sharedSeriesRef, chartAreaRef }
 
         {/* Right-click menu (Copy/Paste, Remove tools/indicators, Reset chart, Settings) —
             listens for contextmenu on this div, renders portalled to body. */}
-        <ChartContextMenu sharedChartRef={sharedChartRef} sharedSeriesRef={sharedSeriesRef} chartAreaRef={chartAreaRef} />
+        <ChartContextMenu sharedChartRef={sharedChartRef} chartAreaRef={chartAreaRef} />
       </div>
 
       {/* Indicator sub-panel (RSI / Stoch RSI / MACD) with its resize divider —

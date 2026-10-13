@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, memo } from 'react';
 import { StarIcon, StarFilledIcon, FavoriteStarButton } from '../UI/FavoriteStarButton';
 import {
-  useDrawingStore,
+  useDrawingTools,
   CURSOR_MODES,
   TREND_TOOLS,
   SHAPE_TOOLS,
@@ -22,6 +22,8 @@ import {
   type CyclesTool,
   type DrawingTool,
 } from '../../store/drawingStore';
+import { clearAllPanes, useActivePaneDrawings } from '../../store/drawingPanes';
+import { useShallow } from 'zustand/react/shallow';
 
 interface ToolBtn {
   tool: DrawingTool;
@@ -1357,11 +1359,20 @@ function ComingSoonMenuItem({ label, icon }: ComingSoonItem) {
 export const DrawingToolbar = memo(function DrawingToolbar() {
   const {
     activeTool, lastCursorMode, lastTrendTool, lastShapeTool, lastAnnotationTool, lastPositionRangeTool,
-    lastFibGannTool, lastPatternCyclesTool,
-    drawings, setTool, selectedIds, deleteDrawings, clearAll,
+    lastFibGannTool, lastPatternCyclesTool, setTool,
     keepToolActive, drawingsLocked, drawingsHidden, toggleKeepToolActive, toggleDrawingsLocked, toggleDrawingsHidden,
     favoriteTools, favoritesBarOpen, toggleFavorite, toggleFavoritesBar,
-  } = useDrawingStore();
+  } = useDrawingTools(useShallow((s) => ({
+    activeTool: s.activeTool, lastCursorMode: s.lastCursorMode, lastTrendTool: s.lastTrendTool, lastShapeTool: s.lastShapeTool,
+    lastAnnotationTool: s.lastAnnotationTool, lastPositionRangeTool: s.lastPositionRangeTool,
+    lastFibGannTool: s.lastFibGannTool, lastPatternCyclesTool: s.lastPatternCyclesTool, setTool: s.setTool,
+    keepToolActive: s.keepToolActive, drawingsLocked: s.drawingsLocked, drawingsHidden: s.drawingsHidden,
+    toggleKeepToolActive: s.toggleKeepToolActive, toggleDrawingsLocked: s.toggleDrawingsLocked, toggleDrawingsHidden: s.toggleDrawingsHidden,
+    favoriteTools: s.favoriteTools, favoritesBarOpen: s.favoritesBarOpen, toggleFavorite: s.toggleFavorite, toggleFavoritesBar: s.toggleFavoritesBar,
+  })));
+  const { drawings, selectedIds, deleteDrawings } = useActivePaneDrawings(useShallow((s) => ({
+    drawings: s.drawings, selectedIds: s.selectedIds, deleteDrawings: s.deleteDrawings,
+  })));
   const [cursorDropdownOpen, setCursorDropdownOpen] = useState(false);
   const [trendDropdownOpen, setTrendDropdownOpen] = useState(false);
   const [shapeDropdownOpen, setShapeDropdownOpen] = useState(false);
@@ -2023,7 +2034,7 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
               Remove Selected
             </button>
             <button
-              onClick={() => { clearAll(); setDeleteMenuOpen(false); }}
+              onClick={() => { clearAllPanes(); setDeleteMenuOpen(false); }}
               disabled={drawings.length === 0 || drawingsLocked}
               className={`
                 w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors

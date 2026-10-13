@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import type { IChartApi } from 'lightweight-charts';
 import { useMarketStore } from '../../store/marketStore';
-import { useDrawingStore } from '../../store/drawingStore';
+import { useDrawingTools } from '../../store/drawingStore';
+import { useActivePaneDrawings } from '../../store/drawingPanes';
 import { useChartStore } from '../../store/chartStore';
 import { useAuthStore } from '../../store/authStore';
 import { captureChartSnapshot, canvasToBlob, downloadCanvas } from '../../utils/chartSnapshot';
@@ -230,10 +231,12 @@ export function Toolbar({ chartRef, chartAreaRef }: ToolbarProps) {
   const setSettingsOpen = useChartStore((s) => s.setSettingsOpen);
   const [calcOpen, setCalcOpen] = useState(false);
   const [alertsOpen, setAlertsOpen] = useState(false);
-  const canUndo = useDrawingStore((s) => s.history.length > 0 && !s.drawingsLocked);
-  const canRedo = useDrawingStore((s) => s.redoStack.length > 0 && !s.drawingsLocked);
-  const undo = useDrawingStore((s) => s.undo);
-  const redo = useDrawingStore((s) => s.redo);
+  // Undo/redo act on the active pane's history.
+  const drawingsLocked = useDrawingTools((s) => s.drawingsLocked);
+  const canUndo = useActivePaneDrawings((s) => s.history.length > 0) && !drawingsLocked;
+  const canRedo = useActivePaneDrawings((s) => s.redoStack.length > 0) && !drawingsLocked;
+  const undo = useActivePaneDrawings((s) => s.undo);
+  const redo = useActivePaneDrawings((s) => s.redo);
 
   return (
     <header className="flex items-center justify-between px-4 py-1 bg-[var(--bg-panel)] border-b border-[var(--border-color)] select-none">

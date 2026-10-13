@@ -1,6 +1,9 @@
 import { useEffect, useRef, useCallback, useState, memo } from 'react';
 import type { IChartApi, ISeriesApi } from 'lightweight-charts';
-import { useDrawingStore, newDrawingId, CURSOR_MODES, type Drawing, type DrawingTool, type FibExtend, type PatternType, type PatternDrawing } from '../../store/drawingStore';
+import { useShallow } from 'zustand/react/shallow';
+import { useDrawingTools, newDrawingId, CURSOR_MODES, type Drawing, type DrawingTool, type FibExtend, type PatternType, type PatternDrawing } from '../../store/drawingStore';
+import { usePaneDrawings, drawingsStorageKey, type DrawingPane } from '../../store/drawingPanes';
+import { usePane } from './DrawingPaneContext';
 import { useMarketStore } from '../../store/marketStore';
 import { useCandleStyleStore } from '../../store/candleStyleStore';
 import { toChartTimeSeconds, getChartTzOffsetSeconds } from '../../utils/chartTime';
@@ -460,19 +463,24 @@ function yToPrice(series: ISeriesApi<'Candlestick'>, y: number): number | null {
 const PASTE_OFFSET_BARS = 5;
 const PASTE_OFFSET_PX = 20;
 
-/** Paste the drawing clipboard with a visible offset — shared by Ctrl/Cmd+V and the context menu. */
-export function pasteDrawings(series: ISeriesApi<'Candlestick'> | null): void {
-  const store = useDrawingStore.getState();
-  if (!store.clipboard.length || store.drawingsLocked) return;
+// Each mounted DrawingCanvas registers its pane's price series here, so
+// pasteDrawings can size the paste offset in that pane's pixels.
+const paneSeries = new Map<string, () => ISeriesApi<'Candlestick'> | null>();
+
+/** Paste the drawing clipboard into `pane` with a visible offset — shared by Ctrl/Cmd+V and the context menu. */
+export function pasteDrawings(pane: DrawingPane): void {
+  const { clipboard, drawingsLocked } = useDrawingTools.getState();
+  if (!clipboard?.items.length || drawingsLocked) return;
+  const series = paneSeries.get(pane.id)?.() ?? null;
   const dt = (estimateBarIntervalSec(useMarketStore.getState().candles) ?? 60) * PASTE_OFFSET_BARS;
   let dPrice = 0;
-  const anchor = firstPriceAnchor(store.clipboard[0]);
+  const anchor = firstPriceAnchor(clipboard.items[0]);
   if (series && anchor != null) {
     const y = priceToY(series, anchor);
     const shifted = y == null ? null : yToPrice(series, y - PASTE_OFFSET_PX);
     if (shifted != null) dPrice = shifted - anchor;
   }
-  store.pasteClipboard(dt, dPrice);
+  pane.store.getState().pasteClipboard(dt, dPrice);
 }
 
 function xToTime(chart: IChartApi, x: number): number | null {
@@ -4983,11 +4991,22 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
     points: { x: number; y: number }[];
   }>({ active: false, tool: null, points: [] });
 
+  const pane = usePane();
+  const paneStore = pane.store;
   const {
-    activeTool, drawings, selectedIds, magnetEnabled, lastCursorMode,
-    keepToolActive, drawingsLocked, drawingsHidden,
-    addDrawing, updateDrawing, deleteDrawing, deleteDrawings, copySelected, selectDrawing, toggleSelection, setTool, undo, redo,
-  } = useDrawingStore();
+    activeTool, magnetEnabled, lastCursorMode, keepToolActive, drawingsLocked, drawingsHidden, setTool,
+  } = useDrawingTools(useShallow((s) => ({
+    activeTool: s.activeTool, magnetEnabled: s.magnetEnabled, lastCursorMode: s.lastCursorMode,
+    keepToolActive: s.keepToolActive, drawingsLocked: s.drawingsLocked, drawingsHidden: s.drawingsHidden, setTool: s.setTool,
+  })));
+  const {
+    drawings, selectedIds,
+    addDrawing, updateDrawing, deleteDrawing, deleteDrawings, copySelected, selectDrawing, toggleSelection, undo, redo,
+  } = usePaneDrawings(useShallow((s) => ({
+    drawings: s.drawings, selectedIds: s.selectedIds,
+    addDrawing: s.addDrawing, updateDrawing: s.updateDrawing, deleteDrawing: s.deleteDrawing, deleteDrawings: s.deleteDrawings,
+    copySelected: s.copySelected, selectDrawing: s.selectDrawing, toggleSelection: s.toggleSelection, undo: s.undo, redo: s.redo,
+  })));
   const mousePosRef = useRef<{ x: number; y: number; inside: boolean }>({ x: 0, y: 0, inside: false });
   const hoverPriceRef = useRef<number | null>(null);
 
@@ -5125,8 +5144,14 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
   drawingsHiddenRef.current = drawingsHidden;
   lastCursorModeRef.current = lastCursorMode;
 
+  // Lets pasteDrawings (Ctrl+V, context menu) offset pastes in this pane's pixels.
+  useEffect(() => {
+    paneSeries.set(pane.id, () => sharedSeriesRef.current);
+    return () => { paneSeries.delete(pane.id); };
+  }, [pane, sharedSeriesRef]);
+
   // ── localStorage persistence ──────────────────────────────────────────────
-  const storageKey = `dsa_drawings_${activeSymbol}_${activeInterval}`;
+  const storageKey = drawingsStorageKey(activeSymbol, activeInterval, pane.id);
   // Key whose saved drawings have been loaded into the store; save waits for it.
   const loadedKeyRef = useRef<string | null>(null);
   // On disk drawings are UTC epoch seconds ({ v: 2, drawings }); in the store
@@ -5148,7 +5173,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
       if (!flushEditRef.current()) return;
       if (loadedKeyRef.current !== key) return;
       try {
-        const utc = shiftDrawingTimes(persistableDrawings(useDrawingStore.getState().drawings), -offset);
+        const utc = shiftDrawingTimes(persistableDrawings(paneStore.getState().drawings), -offset);
         saveLocal(key, JSON.stringify({ v: 2, drawings: utc }));
       } catch { /* ignore */ }
     };
@@ -5171,9 +5196,9 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
         utc = (parsed as { drawings: Drawing[] }).drawings;
       }
       // No saved data / unknown format → [], so the previous key's drawings don't carry over.
-      useDrawingStore.getState().loadDrawings(shiftDrawingTimes(utc, currentOffset));
+      paneStore.getState().loadDrawings(shiftDrawingTimes(utc, currentOffset));
     } catch {
-      useDrawingStore.getState().loadDrawings([]); // corrupt data → clear, don't carry over
+      paneStore.getState().loadDrawings([]); // corrupt data → clear, don't carry over
     }
     loadedKeyRef.current = storageKey;
   }, [storageKey]);
@@ -5183,7 +5208,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
     // In the commit where the key changes, `drawings` is still the previous key's
     // render-time value (the load above just replaced the store) — skip; the
     // re-render triggered by loadDrawings saves the correct array.
-    if (drawings !== useDrawingStore.getState().drawings) return;
+    if (drawings !== paneStore.getState().drawings) return;
     try {
       const utc = shiftDrawingTimes(persistableDrawings(drawings), -currentOffset);
       saveLocal(storageKey, JSON.stringify({ v: 2, drawings: utc }));
@@ -5628,7 +5653,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
   const applyEdit = useCallback((ed: EditingNote) => {
     // Table cell: write just that cell; an empty cell never deletes the table.
     if (ed.cell != null) {
-      const d = useDrawingStore.getState().drawings.find((dr) => dr.id === ed.id);
+      const d = paneStore.getState().drawings.find((dr) => dr.id === ed.id);
       if (d?.type === 'table') {
         const cells = d.cells.slice();
         cells[ed.cell] = ed.value.trim();
@@ -6746,7 +6771,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
         const toolAtClick = activeToolRef.current;
         commitEditRef.current();
         // the commit may have deleted an empty drawing — don't hit-test a stale list
-        drawingsRef.current = useDrawingStore.getState().drawings;
+        drawingsRef.current = paneStore.getState().drawings;
         if (!(CURSOR_MODES as readonly DrawingTool[]).includes(toolAtClick)) {
           e.preventDefault();
           e.stopPropagation();
@@ -7298,7 +7323,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
           if (drawingsLockedRef.current || drawingsHiddenRef.current) continue;
           if (!hitTest(d, x, y, chart, series, candlesRef.current)) continue;
           selectDrawing(d.id);
-          useDrawingStore.getState().openDrawingSettings(d.id);
+          paneStore.getState().openDrawingSettings(d.id);
           return;
         }
         if (d.type !== 'text' && d.type !== 'signpost' && d.type !== 'note' &&
@@ -7351,7 +7376,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
       // The drawing settings modal is open: its keys stop at the dialog, but
       // focus can drop to <body> (e.g. after a portaled color popover closes),
       // and Delete/Ctrl+Z must not act on the chart underneath it then either.
-      if (useDrawingStore.getState().settingsDrawingId) return;
+      if (paneStore.getState().settingsDrawingId) return;
 
       if (e.key === 'Escape') {
         drawingRef.current.active = false;
@@ -7378,10 +7403,10 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
         e.preventDefault();
         copySelected();
       } else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && (e.key === 'v' || e.key === 'V')) {
-        if (!useDrawingStore.getState().clipboard.length || drawingsLockedRef.current) return;
+        if (!useDrawingTools.getState().clipboard?.items.length || drawingsLockedRef.current) return;
         if (drawingRef.current.active || freeformRef.current.active) return;
         e.preventDefault();
-        pasteDrawings(sharedSeriesRef.current);
+        pasteDrawings(pane);
       } else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && (e.key === 'z' || e.key === 'Z')) {
         // Mid-placement (multi-click shape or brush stroke in progress): treat
         // Ctrl+Z as a clean cancel of that in-progress shape, same as Escape,
@@ -7410,7 +7435,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [deleteDrawings, scheduleRender, undo, redo, selectDrawing, copySelected, sharedSeriesRef]);
+  }, [deleteDrawings, scheduleRender, undo, redo, selectDrawing, copySelected, pane]);
 
   // Trendline/hline/rectangle/fibonacci/eraser capture all events (chart
   // pan/zoom blocked — intentional while placing points or erasing).

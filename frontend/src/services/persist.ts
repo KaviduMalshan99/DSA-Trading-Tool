@@ -15,7 +15,12 @@ export const SYNC_KEYS: readonly string[] = [
   'dsa-fav-indicators',
   'dsa-position-calc',
   'dsa-alerts',
+  'dsa-drawing-templates',
 ];
+// Drawings keys: dsa_drawings_<symbol>_<interval> for the main chart, plus
+// _<paneId> for sub-panel panes (drawingsStorageKey in store/drawingPanes.ts).
+// Pane ids are <= 8 lowercase letters/digits with no underscore, so the pane
+// suffix matches the final [A-Za-z0-9]{1,8} group and symbol_interval the first.
 export const SYNC_KEY_PATTERN = /^dsa_drawings_[A-Za-z0-9._-]{1,40}_[A-Za-z0-9]{1,8}$/;
 
 export function isSyncedKey(key: string): boolean {

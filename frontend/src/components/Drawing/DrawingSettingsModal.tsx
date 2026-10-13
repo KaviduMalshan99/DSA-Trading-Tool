@@ -2,8 +2,9 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type { ISeriesApi } from 'lightweight-charts';
 import {
-  useDrawingStore, type Drawing, type PatternDrawing, type LabelHAlign, type LabelVAlign, type LabelStyle,
+  type Drawing, type PatternDrawing, type LabelHAlign, type LabelVAlign, type LabelStyle,
 } from '../../store/drawingStore';
+import { usePaneDrawings } from '../../store/drawingPanes';
 import { Modal } from '../UI/Modal';
 import {
   isLabelDrawing, labelColorOf, LABEL_DEFAULT_SIZE, LABEL_FONT_SIZES,
@@ -339,8 +340,8 @@ function CoordinatesTab({ d, decimals, patch }: { d: LabelDrawing; decimals: num
 }
 
 function DrawingSettingsModal({ drawing, decimals }: { drawing: LabelDrawing; decimals: number }) {
-  const updateDrawing = useDrawingStore((s) => s.updateDrawing);
-  const closeDrawingSettings = useDrawingStore((s) => s.closeDrawingSettings);
+  const updateDrawing = usePaneDrawings((s) => s.updateDrawing);
+  const closeDrawingSettings = usePaneDrawings((s) => s.closeDrawingSettings);
   const [tab, setTab] = useState<Tab>('Style');
 
   const patch = (p: Partial<Drawing>) => updateDrawing(drawing.id, p);
@@ -422,13 +423,13 @@ function priceDecimals(series: ISeriesApi<'Candlestick'> | null, d: LabelDrawing
   return fibPriceDecimals(pf, sample);
 }
 
-/** Mounts the settings modal for useDrawingStore's settingsDrawingId (opened
+/** Mounts the settings modal for the pane's settingsDrawingId (opened
  * from the style toolbar's gear or by double-clicking the drawing). Portaled
  * to <body> so it sits above the chart chrome and outside the chart area. */
 export function DrawingSettingsHost({ sharedSeriesRef }: { sharedSeriesRef: React.RefObject<ISeriesApi<'Candlestick'> | null> }) {
-  const id = useDrawingStore((s) => s.settingsDrawingId);
-  const drawing = useDrawingStore((s) => (s.settingsDrawingId ? s.drawings.find((d) => d.id === s.settingsDrawingId) : undefined));
-  const closeDrawingSettings = useDrawingStore((s) => s.closeDrawingSettings);
+  const id = usePaneDrawings((s) => s.settingsDrawingId);
+  const drawing = usePaneDrawings((s) => (s.settingsDrawingId ? s.drawings.find((d) => d.id === s.settingsDrawingId) : undefined));
+  const closeDrawingSettings = usePaneDrawings((s) => s.closeDrawingSettings);
 
   // The drawing vanished (undo, delete, symbol switch) — drop the modal.
   useEffect(() => {
