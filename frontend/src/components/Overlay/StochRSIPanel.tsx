@@ -3,7 +3,7 @@
  * 14,14,3,3) in its own chart below the main
  * chart, the second single-slot sub-panel indicator (indicatorStore.activeSubPanel).
  *
- * A copy of RSIPanel's pattern (chart instance, index-based one-way sync,
+ * A copy of RSIPanel's pattern (chart instance, index-based two-way sync,
  * 0-100 pinned scale, axis-width match, replay filter) with two line series,
  * %K and %D, computed client-side by utils/klineAnalytics.computeStochRSI.
  */
@@ -11,7 +11,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   createChart, LineStyle,
-  type IChartApi, type IPriceLine, type ISeriesApi, type LineWidth, type LogicalRange,
+  type IChartApi, type IPriceLine, type ISeriesApi, type LineWidth,
 } from 'lightweight-charts';
 import { useMarketStore } from '../../store/marketStore';
 import { useReplayStore } from '../../store/replayStore';
@@ -20,6 +20,8 @@ import { useIndicatorConfigStore, type LineStyle as LineStyleCfg } from '../../s
 import { toChartTime } from '../../utils/chartTime';
 import { computeStochRSI, type RSIPoint } from '../../utils/klineAnalytics';
 import { subChartThemeOptions } from './DeltaPanel';
+import { linkSubPanel, SUB_PANEL_INTERACTION } from './subPanelSync';
+import { PriceScaleButtons } from '../Chart/PriceScaleButtons';
 import { AXIS_MIN_WIDTH, refLineColors } from './RSIPanel';
 
 interface StochRSIPanelProps {
@@ -38,6 +40,8 @@ export function StochRSIPanel({ sharedChartRef }: StochRSIPanelProps) {
   const bandLinesRef = useRef<IPriceLine[]>([]);   // 80 / 20
   const midLineRef   = useRef<IPriceLine | null>(null);  // 50
 
+  // Gates the auto-scale button, which needs the chart to exist on mount.
+  const [chartReady, setChartReady] = useState(false);
   const [current, setCurrent] = useState<{ k: number; d: number | null } | null>(null);
 
   const candles          = useMarketStore((s) => s.candles);
@@ -78,9 +82,8 @@ export function StochRSIPanel({ sharedChartRef }: StochRSIPanelProps) {
         timeVisible: true,
         secondsVisible: false,
       },
-      // One-way sync (see below) — user drag/zoom here would desync the panel.
-      handleScroll: false,
-      handleScale: false,
+      // Scrolls/zooms like the main chart; subPanelSync links the two ranges.
+      ...SUB_PANEL_INTERACTION,
       width:  containerRef.current.clientWidth,
       height: containerRef.current.clientHeight,
     });
@@ -124,20 +127,11 @@ export function StochRSIPanel({ sharedChartRef }: StochRSIPanelProps) {
     dSeriesRef.current = dSeries;
     refSeriesRef.current = refSeries;
 
-    // One-directional sync by logical (bar index) range, as in RSIPanel: the
+    // Two-way sync by logical (bar index) range, as in RSIPanel: the
     // data effect pads both series to the candle count, so index N is the same
     // bar on both charts.
-    const mainChart = sharedChartRef.current;
-
-    const onMainRange = (range: LogicalRange | null) => {
-      if (!range) return;
-      chart.timeScale().setVisibleLogicalRange(range);
-      matchAxisWidth();
-    };
-
-    if (mainChart) {
-      mainChart.timeScale().subscribeVisibleLogicalRangeChange(onMainRange);
-    }
+    const unlink = linkSubPanel(sharedChartRef, chart, containerRef.current, matchAxisWidth);
+    setChartReady(true);
 
     const observer = new ResizeObserver(() => {
       if (!containerRef.current) return;
@@ -150,11 +144,8 @@ export function StochRSIPanel({ sharedChartRef }: StochRSIPanelProps) {
 
     return () => {
       observer.disconnect();
-      // If TradingChart unmounted first its chart.remove() already disposed
-      // the main chart — don't touch it (same guard as RSIPanel).
-      if (mainChart && sharedChartRef.current === mainChart) {
-        mainChart.timeScale().unsubscribeVisibleLogicalRangeChange(onMainRange);
-      }
+      unlink();
+      setChartReady(false);
       chart.remove();
       chartRef.current   = null;
       kSeriesRef.current = null;
@@ -257,6 +248,9 @@ export function StochRSIPanel({ sharedChartRef }: StochRSIPanelProps) {
       </div>
 
       <div ref={containerRef} className="w-full h-full" />
+
+      {/* "A" (auto-scale) in the price-axis × time-axis corner, as on the main chart. */}
+      {chartReady && <PriceScaleButtons chartRef={chartRef} showLog={false} />}
     </div>
   );
 }

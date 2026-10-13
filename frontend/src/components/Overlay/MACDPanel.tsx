@@ -3,7 +3,7 @@
  * own chart below the main chart, the third
  * single-slot sub-panel indicator (indicatorStore.activeSubPanel).
  *
- * Same shell as RSIPanel/StochRSIPanel (chart instance, index-based one-way
+ * Same shell as RSIPanel/StochRSIPanel (chart instance, index-based two-way
  * sync, axis-width match, replay filter), but unbounded rather than 0-100:
  * a per-bar colored histogram plus MACD and signal lines on one normally
  * autoscaled right scale, around a single zero line. Computed client-side by
@@ -13,7 +13,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   createChart, LineStyle,
-  type AutoscaleInfo, type IChartApi, type IPriceLine, type ISeriesApi, type LineWidth, type LogicalRange,
+  type AutoscaleInfo, type IChartApi, type IPriceLine, type ISeriesApi, type LineWidth,
 } from 'lightweight-charts';
 import { useMarketStore } from '../../store/marketStore';
 import { useReplayStore } from '../../store/replayStore';
@@ -23,6 +23,8 @@ import { toChartTime } from '../../utils/chartTime';
 import { decimalsForPrice } from '../../utils/priceFormat';
 import { computeMACD, type EMAPoint } from '../../utils/klineAnalytics';
 import { subChartThemeOptions } from './DeltaPanel';
+import { linkSubPanel, SUB_PANEL_INTERACTION } from './subPanelSync';
+import { PriceScaleButtons } from '../Chart/PriceScaleButtons';
 import { AXIS_MIN_WIDTH, refLineColors } from './RSIPanel';
 
 // Histogram: strong color while the bar grows away from zero, pale while it
@@ -48,6 +50,8 @@ export function MACDPanel({ sharedChartRef }: MACDPanelProps) {
   // sized off their own magnitude (not price), and only re-applied on change.
   const appliedDecimalsRef = useRef<number | null>(null);
 
+  // Gates the auto-scale button, which needs the chart to exist on mount.
+  const [chartReady, setChartReady] = useState(false);
   const [current, setCurrent] = useState<
     { macd: number; signal: number | null; hist: number | null; decimals: number } | null
   >(null);
@@ -90,9 +94,8 @@ export function MACDPanel({ sharedChartRef }: MACDPanelProps) {
         timeVisible: true,
         secondsVisible: false,
       },
-      // One-way sync (see below) — user drag/zoom here would desync the panel.
-      handleScroll: false,
-      handleScale: false,
+      // Scrolls/zooms like the main chart; subPanelSync links the two ranges.
+      ...SUB_PANEL_INTERACTION,
       width:  containerRef.current.clientWidth,
       height: containerRef.current.clientHeight,
     });
@@ -154,20 +157,11 @@ export function MACDPanel({ sharedChartRef }: MACDPanelProps) {
     macdSeriesRef.current = macdSeries;
     sigSeriesRef.current  = sigSeries;
 
-    // One-directional sync by logical (bar index) range, as in RSIPanel: the
+    // Two-way sync by logical (bar index) range, as in RSIPanel: the
     // data effect pads every series to the candle count, so index N is the
     // same bar on both charts.
-    const mainChart = sharedChartRef.current;
-
-    const onMainRange = (range: LogicalRange | null) => {
-      if (!range) return;
-      chart.timeScale().setVisibleLogicalRange(range);
-      matchAxisWidth();
-    };
-
-    if (mainChart) {
-      mainChart.timeScale().subscribeVisibleLogicalRangeChange(onMainRange);
-    }
+    const unlink = linkSubPanel(sharedChartRef, chart, containerRef.current, matchAxisWidth);
+    setChartReady(true);
 
     const observer = new ResizeObserver(() => {
       if (!containerRef.current) return;
@@ -180,11 +174,8 @@ export function MACDPanel({ sharedChartRef }: MACDPanelProps) {
 
     return () => {
       observer.disconnect();
-      // If TradingChart unmounted first its chart.remove() already disposed
-      // the main chart — don't touch it (same guard as RSIPanel).
-      if (mainChart && sharedChartRef.current === mainChart) {
-        mainChart.timeScale().unsubscribeVisibleLogicalRangeChange(onMainRange);
-      }
+      unlink();
+      setChartReady(false);
       chart.remove();
       chartRef.current      = null;
       histSeriesRef.current = null;
@@ -328,6 +319,9 @@ export function MACDPanel({ sharedChartRef }: MACDPanelProps) {
       </div>
 
       <div ref={containerRef} className="w-full h-full" />
+
+      {/* "A" (auto-scale) in the price-axis × time-axis corner, as on the main chart. */}
+      {chartReady && <PriceScaleButtons chartRef={chartRef} showLog={false} />}
     </div>
   );
 }

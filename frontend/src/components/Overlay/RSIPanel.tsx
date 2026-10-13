@@ -3,7 +3,7 @@
  * its moving average, in its own chart below the main chart, the
  * first of the single-slot sub-panel indicators (indicatorStore.activeSubPanel).
  *
- * Same chart-instance + one-way sync pattern as DeltaPanel, but no WebSocket:
+ * Same chart-instance pattern as DeltaPanel (two-way synced, see subPanelSync), but no WebSocket:
  * like EMAOverlay, the RSI is computed client-side from marketStore's candles
  * (utils/klineAnalytics.computeRSI), so it recomputes whenever they change and
  * follows replay's cursor for free.
@@ -12,7 +12,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   createChart, LineStyle,
-  type IChartApi, type IPriceLine, type ISeriesApi, type LineWidth, type LogicalRange,
+  type IChartApi, type IPriceLine, type ISeriesApi, type LineWidth,
 } from 'lightweight-charts';
 import { useMarketStore } from '../../store/marketStore';
 import { useReplayStore } from '../../store/replayStore';
@@ -22,6 +22,8 @@ import { toChartTime } from '../../utils/chartTime';
 import { computeRSI, computeRSIMA, type RSIPoint } from '../../utils/klineAnalytics';
 import type { Candle } from '../../types/market';
 import { subChartThemeOptions } from './DeltaPanel';
+import { linkSubPanel, SUB_PANEL_INTERACTION } from './subPanelSync';
+import { PriceScaleButtons } from '../Chart/PriceScaleButtons';
 
 // Fills are faint enough to read on both themes, so they stay constant.
 const FILL_OB   = 'rgba(38,166,154,0.25)';   // RSI beyond 70 / 30
@@ -80,6 +82,8 @@ export function RSIPanel({ sharedChartRef }: RSIPanelProps) {
   const bandLinesRef = useRef<IPriceLine[]>([]);   // 70 / 30
   const midLineRef   = useRef<IPriceLine | null>(null);  // 50
 
+  // Gates the auto-scale button, which needs the chart to exist on mount.
+  const [chartReady, setChartReady] = useState(false);
   const [current, setCurrent]     = useState<number | null>(null);
   const [currentMA, setCurrentMA] = useState<number | null>(null);
 
@@ -123,10 +127,8 @@ export function RSIPanel({ sharedChartRef }: RSIPanelProps) {
         timeVisible: true,
         secondsVisible: false,
       },
-      // Sync is one-way (see below), so letting the user drag/zoom this panel
-      // would just knock it out of step with the main chart until it next moved.
-      handleScroll: false,
-      handleScale: false,
+      // Scrolls/zooms like the main chart; subPanelSync links the two ranges.
+      ...SUB_PANEL_INTERACTION,
       width:  containerRef.current.clientWidth,
       height: containerRef.current.clientHeight,
     });
@@ -197,23 +199,14 @@ export function RSIPanel({ sharedChartRef }: RSIPanelProps) {
     obFillRef.current = obFill;
     osFillRef.current = osFill;
 
-    // One-directional sync, same reasoning as DeltaPanel's (a two-way sync
-    // feeds back on itself). Unlike DeltaPanel this syncs by *logical* (bar
+    // Two-way sync (subPanelSync guards the feedback loop that keeps
+    // DeltaPanel one-way). Unlike DeltaPanel this syncs by *logical* (bar
     // index) range: the RSI is computed from the very same candles the main
     // chart holds, and the data effect pads the warm-up with whitespace, so
     // index N is the same bar on both charts. That also carries over the
     // main chart's right-edge offset, which a time range can't express.
-    const mainChart = sharedChartRef.current;
-
-    const onMainRange = (range: LogicalRange | null) => {
-      if (!range) return;
-      chart.timeScale().setVisibleLogicalRange(range);
-      matchAxisWidth();
-    };
-
-    if (mainChart) {
-      mainChart.timeScale().subscribeVisibleLogicalRangeChange(onMainRange);
-    }
+    const unlink = linkSubPanel(sharedChartRef, chart, containerRef.current, matchAxisWidth);
+    setChartReady(true);
 
     const observer = new ResizeObserver(() => {
       if (!containerRef.current) return;
@@ -226,11 +219,8 @@ export function RSIPanel({ sharedChartRef }: RSIPanelProps) {
 
     return () => {
       observer.disconnect();
-      // If TradingChart unmounted first its chart.remove() already disposed
-      // the main chart — don't touch it (same guard as EMAOverlay).
-      if (mainChart && sharedChartRef.current === mainChart) {
-        mainChart.timeScale().unsubscribeVisibleLogicalRangeChange(onMainRange);
-      }
+      unlink();
+      setChartReady(false);
       chart.remove();  // disposes every series on this chart
       chartRef.current  = null;
       seriesRef.current = null;
@@ -328,6 +318,9 @@ export function RSIPanel({ sharedChartRef }: RSIPanelProps) {
       </div>
 
       <div ref={containerRef} className="w-full h-full" />
+
+      {/* "A" (auto-scale) in the price-axis × time-axis corner, as on the main chart. */}
+      {chartReady && <PriceScaleButtons chartRef={chartRef} showLog={false} />}
     </div>
   );
 }

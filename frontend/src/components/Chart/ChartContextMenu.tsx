@@ -7,7 +7,8 @@ import { useIndicatorStore } from '../../store/indicatorStore';
 import { useMarketStore } from '../../store/marketStore';
 import { useReplayStore } from '../../store/replayStore';
 import { pasteDrawings } from '../Drawing/DrawingCanvas';
-import { nudgeRedraw } from './PriceScaleButtons';
+import { getActiveSubPanelChart } from '../Overlay/subPanelSync';
+import { notifyPriceScaleReset, nudgeRedraw } from './PriceScaleButtons';
 
 interface ChartContextMenuProps {
   sharedChartRef: React.RefObject<IChartApi | null>;
@@ -26,11 +27,13 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 /**
  * TradingView "Reset chart view": auto-scale the price axis and reframe the
  * time axis exactly as a fresh load does. View-only — no store writes.
- * Sub-panels follow via their logical-range subscription.
+ * Sub-panels follow via their logical-range subscription; the active one's
+ * price scale goes back to auto-scale too.
  */
 function resetChartView(chart: IChartApi | null) {
   if (!chart) return;
   chart.priceScale('right').applyOptions({ autoScale: true });
+  getActiveSubPanelChart()?.priceScale('right').applyOptions({ autoScale: true });
   // In replay the series holds only the bars up to the cursor (see ReplayEngine).
   const { isActive, cursorTime } = useReplayStore.getState();
   const candles = useMarketStore.getState().candles;
@@ -44,6 +47,9 @@ function resetChartView(chart: IChartApi | null) {
     });
   }
   nudgeRedraw(chart);
+  // The sub-panel's range may not change (e.g. a second reset), so refresh
+  // the "A" buttons directly rather than waiting on a range event.
+  notifyPriceScaleReset();
 }
 
 const isTypingTarget = (t: EventTarget | null) =>

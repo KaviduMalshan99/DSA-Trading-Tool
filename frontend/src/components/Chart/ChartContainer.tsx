@@ -165,7 +165,7 @@ export function ChartContainer({ sharedChartRef, sharedSeriesRef, chartAreaRef }
         {/* "A" (auto-scale) / "L" (log) buttons in the price-axis × time-axis
             corner — after DrawingCanvas and z-60 so they stay clickable while
             a drawing tool is active. */}
-        <PriceScaleButtons sharedChartRef={sharedChartRef} />
+        <PriceScaleButtons chartRef={sharedChartRef} />
 
         {/* Floating style toolbar for the selected drawing (TradingView-style) */}
         <DrawingStyleToolbar
