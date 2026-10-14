@@ -66,7 +66,7 @@ export function ChartContainer({ sharedChartRef, sharedSeriesRef, chartAreaRef }
           resets the view to the latest candles (historical reload). */}
       <div key={timezone} ref={wrapperRef} className="flex flex-col flex-1 overflow-hidden">
       {/* Main candlestick area — takes whatever height the bottom panels leave */}
-      <div ref={chartAreaRef} className="relative bg-[var(--bg-app)]" style={{ flex: '1 1 0%', minHeight: 0 }}>
+      <div ref={chartAreaRef} data-drawing-pane="main" className="relative bg-[var(--bg-app)]" style={{ flex: '1 1 0%', minHeight: 0 }}>
         <TradingChart
           sharedChartRef={sharedChartRef}
           sharedSeriesRef={sharedSeriesRef}
@@ -157,12 +157,9 @@ export function ChartContainer({ sharedChartRef, sharedSeriesRef, chartAreaRef }
           />
         )}
 
-        <DrawingPaneProvider paneId="main" kind="price">
+        <DrawingPaneProvider paneId="main" kind="price" chartRef={sharedChartRef} seriesRef={sharedSeriesRef}>
           {/* Drawing canvas — always on top */}
-          <DrawingCanvas
-            sharedChartRef={sharedChartRef}
-            sharedSeriesRef={sharedSeriesRef}
-          />
+          <DrawingCanvas />
 
           {/* "A" (auto-scale) / "L" (log) buttons in the price-axis × time-axis
               corner — after DrawingCanvas and z-60 so they stay clickable while
@@ -170,10 +167,7 @@ export function ChartContainer({ sharedChartRef, sharedSeriesRef, chartAreaRef }
           <PriceScaleButtons chartRef={sharedChartRef} />
 
           {/* Floating style toolbar for the selected drawing (TradingView-style) */}
-          <DrawingStyleToolbar
-            sharedChartRef={sharedChartRef}
-            sharedSeriesRef={sharedSeriesRef}
-          />
+          <DrawingStyleToolbar />
         </DrawingPaneProvider>
 
         {/* Floating, draggable strip of starred tools — viewport-fixed, so it
@@ -189,8 +183,9 @@ export function ChartContainer({ sharedChartRef, sharedSeriesRef, chartAreaRef }
         {visibleOverlays.has('scanner') && <ClusterScanner />}
 
         {/* Right-click menu (Copy/Paste, Remove tools/indicators, Reset chart, Settings) —
-            listens for contextmenu on this div, renders portalled to body. */}
-        <ChartContextMenu sharedChartRef={sharedChartRef} chartAreaRef={chartAreaRef} />
+            listens for contextmenu on the chart column (main chart area + sub-panel
+            slot) and opens over any drawing pane in it; renders portalled to body. */}
+        <ChartContextMenu sharedChartRef={sharedChartRef} containerRef={wrapperRef} />
       </div>
 
       {/* Indicator sub-panel (RSI / Stoch RSI / MACD) with its resize divider —

@@ -1,9 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { type IChartApi } from 'lightweight-charts';
+import { useStore } from 'zustand';
 import { useChartStore } from '../../store/chartStore';
 import { useDrawingTools } from '../../store/drawingStore';
-import { clearAllPanes, getActivePane, useActivePane, useActivePaneDrawings, useTotalDrawingCount } from '../../store/drawingPanes';
+import { activatePane, getPane, mainPane } from '../../store/drawingPanes';
 import { useIndicatorStore } from '../../store/indicatorStore';
 import { useMarketStore } from '../../store/marketStore';
 import { useReplayStore } from '../../store/replayStore';
@@ -13,7 +14,9 @@ import { notifyPriceScaleReset, nudgeRedraw } from './PriceScaleButtons';
 
 interface ChartContextMenuProps {
   sharedChartRef: React.RefObject<IChartApi | null>;
-  chartAreaRef: React.RefObject<HTMLDivElement>;
+  /** Chart column holding the main chart area and the sub-panel slot; each
+   * drawing pane's root inside it carries data-drawing-pane={paneId}. */
+  containerRef: React.RefObject<HTMLDivElement>;
 }
 
 // Same default view TradingChart uses on symbol load.
@@ -57,23 +60,25 @@ const isTypingTarget = (t: EventTarget | null) =>
   (t.isContentEditable || t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT');
 
 /**
- * TradingView-style right-click menu for the chart area. One menu everywhere
- * (over candles, drawings or empty space); the drawing text editor keeps the
- * browser's native menu so copy/paste still works there.
+ * TradingView-style right-click menu for the drawing panes (main chart area,
+ * and sub-panels once they host drawings). One menu everywhere in a pane
+ * (over candles, drawings or empty space); outside every pane, and in the
+ * drawing text editor, the browser's native menu shows instead.
  */
-export function ChartContextMenu({ sharedChartRef, chartAreaRef }: ChartContextMenuProps) {
-  const [anchor, setAnchor] = useState<{ x: number; y: number } | null>(null);
+export function ChartContextMenu({ sharedChartRef, containerRef }: ChartContextMenuProps) {
+  const [anchor, setAnchor] = useState<{ x: number; y: number; paneId: string } | null>(null);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  // Remove-all clears every mounted pane, so the count spans them all.
-  const drawingCount = useTotalDrawingCount();
+  // Copy/paste/remove-tools act on the pane that was right-clicked.
+  const pane = (anchor && getPane(anchor.paneId)) || mainPane;
+  const drawingCount = useStore(pane.store, (s) => s.drawings.length);
+  const selectedCount = useStore(pane.store, (s) => s.selectedIds.length);
+  const copySelected = useStore(pane.store, (s) => s.copySelected);
+  const clearAll = useStore(pane.store, (s) => s.clearAll);
   const drawingsLocked = useDrawingTools((s) => s.drawingsLocked);
-  const selectedCount = useActivePaneDrawings((s) => s.selectedIds.length);
-  const activePaneKind = useActivePane().kind;
   // Paste only into a pane of the kind the clipboard was copied from.
-  const canPaste = useDrawingTools((s) => !!s.clipboard?.items.length && s.clipboard.sourceKind === activePaneKind);
-  const copySelected = useActivePaneDrawings((s) => s.copySelected);
+  const canPaste = useDrawingTools((s) => !!s.clipboard?.items.length && s.clipboard.sourceKind === pane.kind);
   const indicatorCount = useIndicatorStore((s) => s.activeIndicators.size + (s.activeSubPanel ? 1 : 0));
   const clearAllIndicators = useIndicatorStore((s) => s.clearAllIndicators);
   const setSettingsOpen = useChartStore((s) => s.setSettingsOpen);
@@ -83,19 +88,22 @@ export function ChartContextMenu({ sharedChartRef, chartAreaRef }: ChartContextM
     setPos(null);
   };
 
-  // Open on right-click anywhere in the chart area.
+  // Open on right-click anywhere inside a drawing pane.
   useEffect(() => {
-    const area = chartAreaRef.current;
+    const area = containerRef.current;
     if (!area) return;
     const onContextMenu = (e: MouseEvent) => {
-      if (e.target instanceof Element && e.target.closest('[data-drawing-overlay]')) return;
+      if (!(e.target instanceof Element) || e.target.closest('[data-drawing-overlay]')) return;
+      const paneId = e.target.closest<HTMLElement>('[data-drawing-pane]')?.dataset.drawingPane;
+      if (!paneId || !getPane(paneId)) return; // not a pane (divider, plain sub-panel): native menu
       e.preventDefault();
+      activatePane(paneId);
       setPos(null);
-      setAnchor({ x: e.clientX, y: e.clientY });
+      setAnchor({ x: e.clientX, y: e.clientY, paneId });
     };
     area.addEventListener('contextmenu', onContextMenu);
     return () => area.removeEventListener('contextmenu', onContextMenu);
-  }, [chartAreaRef]);
+  }, [containerRef]);
 
   // Alt+R — same as the menu's "Reset chart". e.code, since Alt changes e.key on macOS.
   useEffect(() => {
@@ -159,13 +167,13 @@ export function ChartContextMenu({ sharedChartRef, chartAreaRef }: ChartContextM
       key: 'paste',
       label: 'Paste',
       disabled: !canPaste || drawingsLocked,
-      run: () => pasteDrawings(getActivePane()),
+      run: () => pasteDrawings(pane),
     },
     {
       key: 'tools',
       label: `Remove ${plural(drawingCount, 'tool')}`,
       disabled: drawingCount === 0 || drawingsLocked,
-      run: clearAllPanes,
+      run: clearAll,
     },
     {
       key: 'indicators',

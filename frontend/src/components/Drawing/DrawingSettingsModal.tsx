@@ -1,10 +1,9 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import type { ISeriesApi } from 'lightweight-charts';
 import {
   type Drawing, type PatternDrawing, type LabelHAlign, type LabelVAlign, type LabelStyle,
 } from '../../store/drawingStore';
-import { usePaneDrawings } from '../../store/drawingPanes';
+import { usePane, usePaneDrawings, type DrawingSeries } from '../../store/drawingPanes';
 import { Modal } from '../UI/Modal';
 import {
   isLabelDrawing, labelColorOf, LABEL_DEFAULT_SIZE, LABEL_FONT_SIZES,
@@ -416,7 +415,7 @@ function DrawingSettingsModal({ drawing, decimals }: { drawing: LabelDrawing; de
   );
 }
 
-function priceDecimals(series: ISeriesApi<'Candlestick'> | null, d: LabelDrawing): number {
+function priceDecimals(series: DrawingSeries | null, d: LabelDrawing): number {
   let pf: { precision?: number; minMove?: number } | undefined;
   try { pf = series?.options().priceFormat as { precision?: number; minMove?: number } | undefined; } catch { pf = undefined; }
   const sample = coordRows(d).find((r) => r.price != null)?.price ?? 0;
@@ -426,7 +425,8 @@ function priceDecimals(series: ISeriesApi<'Candlestick'> | null, d: LabelDrawing
 /** Mounts the settings modal for the pane's settingsDrawingId (opened
  * from the style toolbar's gear or by double-clicking the drawing). Portaled
  * to <body> so it sits above the chart chrome and outside the chart area. */
-export function DrawingSettingsHost({ sharedSeriesRef }: { sharedSeriesRef: React.RefObject<ISeriesApi<'Candlestick'> | null> }) {
+export function DrawingSettingsHost() {
+  const { seriesRef } = usePane();
   const id = usePaneDrawings((s) => s.settingsDrawingId);
   const drawing = usePaneDrawings((s) => (s.settingsDrawingId ? s.drawings.find((d) => d.id === s.settingsDrawingId) : undefined));
   const closeDrawingSettings = usePaneDrawings((s) => s.closeDrawingSettings);
@@ -438,7 +438,7 @@ export function DrawingSettingsHost({ sharedSeriesRef }: { sharedSeriesRef: Reac
 
   if (!id || !drawing || !isLabelDrawing(drawing)) return null;
   return createPortal(
-    <DrawingSettingsModal key={id} drawing={drawing} decimals={priceDecimals(sharedSeriesRef.current, drawing)} />,
+    <DrawingSettingsModal key={id} drawing={drawing} decimals={priceDecimals(seriesRef.current, drawing)} />,
     document.body,
   );
 }

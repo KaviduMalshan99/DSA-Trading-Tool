@@ -1,10 +1,10 @@
 import { useEffect, useRef, useCallback, useState, memo } from 'react';
-import type { IChartApi, ISeriesApi } from 'lightweight-charts';
+import type { IChartApi } from 'lightweight-charts';
 import { useShallow } from 'zustand/react/shallow';
 import { useDrawingTools, newDrawingId, CURSOR_MODES, type Drawing, type DrawingTool, type FibExtend, type PatternType, type PatternDrawing } from '../../store/drawingStore';
 import {
   usePaneDrawings, drawingsStorageKey, activatePane, anySettingsOpen, beginGesture, endGesture, getActivePane,
-  getGesturePaneId, registerPaneHandlers, type DrawingPane,
+  getGesturePaneId, registerPaneHandlers, type DrawingPane, type DrawingSeries,
 } from '../../store/drawingPanes';
 import { usePane } from './DrawingPaneContext';
 import { useMarketStore } from '../../store/marketStore';
@@ -213,7 +213,7 @@ function fibLabelX(
 }
 
 // Price precision for fib labels: the series' price format when available.
-function seriesFibDecimals(series: ISeriesApi<'Candlestick'>, samplePrice: number): number {
+function seriesFibDecimals(series: DrawingSeries, samplePrice: number): number {
   let pf: { precision?: number; minMove?: number } | undefined;
   try { pf = series.options().priceFormat as { precision?: number; minMove?: number }; } catch { pf = undefined; }
   return fibPriceDecimals(pf, samplePrice);
@@ -224,7 +224,7 @@ function seriesFibDecimals(series: ISeriesApi<'Candlestick'>, samplePrice: numbe
 function drawFibBands(
   ctx: CanvasRenderingContext2D,
   pts: FibLevelPoint[],
-  series: ISeriesApi<'Candlestick'>,
+  series: DrawingSeries,
   spanLeft: number,
   spanRight: number,
   opacityPct: number,
@@ -366,11 +366,6 @@ function drawGannGridLine(
   }
 }
 
-interface Props {
-  sharedChartRef:  React.RefObject<IChartApi | null>;
-  sharedSeriesRef: React.RefObject<ISeriesApi<'Candlestick'> | null>;
-}
-
 // ── coordinate helpers ────────────────────────────────────────────────────────
 
 type LWLogical = import('lightweight-charts').Logical;
@@ -379,6 +374,10 @@ type LWLogical = import('lightweight-charts').Logical;
 // component alongside candlesRef) purely so timeToX/xToTime below can
 // extrapolate without every one of their ~70 call sites having to thread a
 // `candles` argument through.
+// One copy is safe to share across panes: every mounted DrawingCanvas reads
+// the same symbol's candles from useMarketStore, and the sub-panel charts'
+// logical bar indices line up with the main chart's (their warm-up bars are
+// padded with whitespace), so extrapolating from bar index works in any pane.
 let latestCandlesForExtrapolation: Candle[] = [];
 
 // Bar spacing in seconds, inferred from the last two loaded candles.
@@ -401,7 +400,7 @@ export function estimateBarIntervalSec(candles: Candle[]): number | null {
 function defaultPositionBox(
   tool: 'longPosition' | 'shortPosition',
   entryPrice: number, entryTime: number, entryY: number,
-  series: ISeriesApi<'Candlestick'>,
+  series: DrawingSeries,
   candles: Candle[],
 ): { entryPrice: number; targetPrice: number; stopPrice: number; time1: number; time2: number } | null {
   const barSec = estimateBarIntervalSec(candles) ?? 60;
@@ -415,7 +414,7 @@ function defaultPositionBox(
   return { entryPrice, targetPrice, stopPrice, time1: entryTime, time2 };
 }
 
-export function priceToY(series: ISeriesApi<'Candlestick'>, price: number): number | null {
+export function priceToY(series: DrawingSeries, price: number): number | null {
   const c = series.priceToCoordinate(price);
   return c == null ? null : (c as unknown as number);
 }
@@ -456,7 +455,7 @@ function hexToRgba(hex: string, opacityPct: number): string {
   return `rgba(${r}, ${g}, ${b}, ${Math.max(0, Math.min(100, opacityPct)) / 100})`;
 }
 
-function yToPrice(series: ISeriesApi<'Candlestick'>, y: number): number | null {
+function yToPrice(series: DrawingSeries, y: number): number | null {
   const p = series.coordinateToPrice(y);
   return p == null ? null : (p as unknown as number);
 }
@@ -468,7 +467,7 @@ const PASTE_OFFSET_PX = 20;
 
 // Each mounted DrawingCanvas registers its pane's price series here, so
 // pasteDrawings can size the paste offset in that pane's pixels.
-const paneSeries = new Map<string, () => ISeriesApi<'Candlestick'> | null>();
+const paneSeries = new Map<string, () => DrawingSeries | null>();
 
 /** Paste the drawing clipboard into `pane` with a visible offset — shared by Ctrl/Cmd+V and the context menu. */
 export function pasteDrawings(pane: DrawingPane): void {
@@ -805,7 +804,7 @@ function renderDrawing(
   H: number,
   d: Drawing,
   chart: IChartApi,
-  series: ISeriesApi<'Candlestick'>,
+  series: DrawingSeries,
   candles: Candle[],
   selected: boolean,
   eraserHover = false,
@@ -3761,7 +3760,7 @@ function renderDrawing(
 // label sits on top; never part of hitTest, so selection is unchanged.
 function renderDrawingLabel(
   ctx: CanvasRenderingContext2D, W: number, H: number, d: Drawing,
-  chart: IChartApi, series: ISeriesApi<'Candlestick'>, candles: Candle[],
+  chart: IChartApi, series: DrawingSeries, candles: Candle[],
   chartBg: string, eraserHover: boolean,
 ) {
   if (!isLabelDrawing(d) || !(d.labelText ?? '').trim()) return;
@@ -3875,7 +3874,7 @@ function readChartBg(): string {
 // the shape stay anchored correctly across pan/zoom.)
 export function computeParallelOffset(
   price1: number, time1: number, price2: number, time2: number, price3: number, time3: number,
-  chart: IChartApi, series: ISeriesApi<'Candlestick'>,
+  chart: IChartApi, series: DrawingSeries,
 ): { x1: number; y1: number; x2: number; y2: number; y1b: number; y2b: number } | null {
   const x1 = timeToX(chart, time1);
   const y1 = priceToY(series, price1);
@@ -3894,7 +3893,7 @@ export function computeParallelOffset(
 function getChannelLines(
   d: Extract<Drawing, { type: 'channel' }>,
   chart: IChartApi,
-  series: ISeriesApi<'Candlestick'>,
+  series: DrawingSeries,
 ): { x1: number; y1: number; x2: number; y2: number; y1b: number; y2b: number } | null {
   return computeParallelOffset(d.price1, d.time1, d.price2, d.time2, d.price3, d.time3, chart, series);
 }
@@ -3906,7 +3905,7 @@ function getChannelLines(
 export function getRotatedRectCorners(
   d: Extract<Drawing, { type: 'rotatedRectangle' }>,
   chart: IChartApi,
-  series: ISeriesApi<'Candlestick'>,
+  series: DrawingSeries,
 ): [Pt, Pt, Pt, Pt] | null {
   if (d.geometry === 'perp') {
     const x1 = timeToX(chart, d.time1), y1 = priceToY(series, d.price1);
@@ -3966,7 +3965,7 @@ function circleHandles(x1: number, y1: number, x2: number, y2: number): { center
 function getFlatChannelLines(
   d: Extract<Drawing, { type: 'flatChannel' }>,
   chart: IChartApi,
-  series: ISeriesApi<'Candlestick'>,
+  series: DrawingSeries,
 ): { x1: number; y1: number; x2: number; y2: number; y1b: number; y2b: number } | null {
   const x1 = timeToX(chart, d.time1);
   const x2 = timeToX(chart, d.time2);
@@ -4024,7 +4023,7 @@ function pointInPolygon(mx: number, my: number, pts: { x: number; y: number }[])
 function hitHarmonicExtras(
   d: PatternDrawing,
   mx: number, my: number, TOL: number,
-  chart: IChartApi, series: ISeriesApi<'Candlestick'>,
+  chart: IChartApi, series: DrawingSeries,
 ): boolean {
   const sp = d.points.map((p) => {
     const x = timeToX(chart, p.time), y = priceToY(series, p.price);
@@ -4056,7 +4055,7 @@ function distToSegment(px: number, py: number, ax: number, ay: number, bx: numbe
 // baseline+offset shape, so they share one screen-space projection helper.
 function get3PointScreen(
   price1: number, time1: number, price2: number, time2: number, price3: number, time3: number,
-  chart: IChartApi, series: ISeriesApi<'Candlestick'>,
+  chart: IChartApi, series: DrawingSeries,
 ): { x1: number; y1: number; x2: number; y2: number; x3: number; y3: number } | null {
   const x1 = timeToX(chart, time1), y1 = priceToY(series, price1);
   const x2 = timeToX(chart, time2), y2 = priceToY(series, price2);
@@ -4140,7 +4139,7 @@ function persistableDrawings(drawings: Drawing[]): Drawing[] {
 // Arc/Curve placement: ds.x3/y3 is the on-curve point H the user clicked (or
 // is hovering); returns the stored control point C = 2H − (P1 + P2) / 2.
 function arcControlFromOnCurve(
-  chart: IChartApi, series: ISeriesApi<'Candlestick'>,
+  chart: IChartApi, series: DrawingSeries,
   ds: { x1: number; y1: number; x2: number; y2: number; x3: number; y3: number },
 ): { price: number; time: number } | null {
   const c = quadControlFromOnCurve({ x: ds.x1, y: ds.y1 }, { x: ds.x3, y: ds.y3 }, { x: ds.x2, y: ds.y2 });
@@ -4203,7 +4202,7 @@ function hitFibLevels(
   xRight: number,
   mx: number,
   my: number,
-  series: ISeriesApi<'Candlestick'>,
+  series: DrawingSeries,
   TOL: number,
 ): boolean {
   const ext = extend ?? 'none';
@@ -4227,7 +4226,7 @@ function hitTest(
   mx: number,
   my: number,
   chart: IChartApi,
-  series: ISeriesApi<'Candlestick'>,
+  series: DrawingSeries,
   candles: Candle[],
 ): boolean {
   const TOL = 8;
@@ -4907,7 +4906,7 @@ function computeMagnetSnap(
   x: number,
   y: number,
   chart: IChartApi,
-  series: ISeriesApi<'Candlestick'>,
+  series: DrawingSeries,
   candles: Candle[],
 ): MagnetSnap | null {
   if (candles.length === 0) return null;
@@ -4961,7 +4960,7 @@ function getNearestCandleTime(
 
 // ── main component ────────────────────────────────────────────────────────────
 
-export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, sharedSeriesRef }: Props) {
+export const DrawingCanvas = memo(function DrawingCanvas() {
   const canvasRef    = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const rafRef       = useRef(0);
@@ -4997,6 +4996,8 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
 
   const pane = usePane();
   const paneStore = pane.store;
+  // The chart/series this pane's drawings are plotted against.
+  const { chartRef: sharedChartRef, seriesRef: sharedSeriesRef } = pane;
   const {
     activeTool, magnetEnabled, lastCursorMode, keepToolActive, drawingsLocked, drawingsHidden, setTool,
   } = useDrawingTools(useShallow((s) => ({
@@ -5039,16 +5040,23 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
     price1: number; time1: number; price2: number; time2: number;
   } | null>(null);
 
+  // The element wrapping this pane's chart area (main chart area or a sub-panel
+  // container) — the scope for cursors and "is this event over the chart" checks.
+  const paneRoot = useCallback((): HTMLElement | null => {
+    const el = containerRef.current;
+    return el?.closest<HTMLElement>(`[data-drawing-pane="${pane.id}"]`) ?? el?.parentElement ?? null;
+  }, [pane.id]);
+
   const applyCursorValue = useCallback((cursor: string) => {
     const doc = containerRef.current?.ownerDocument;
-    const target = containerRef.current?.parentElement as HTMLElement | null;
+    const target = paneRoot();
     // Scope the cursor to the chart area. Body only carries a drag cursor while
     // a drag is active (so it persists if the pointer leaves the chart); 'none'
     // must never reach body or the pointer vanishes app-wide.
     if (doc?.body) doc.body.style.cursor = dragRef.current?.active && cursor !== 'none' ? cursor : '';
     if (target) target.style.cursor = cursor;
     if (canvasRef.current) canvasRef.current.style.cursor = cursor;
-  }, []);
+  }, [paneRoot]);
 
   const applyCursor = useCallback((tool: DrawingTool) => {
     applyCursorValue(CURSOR_STYLE[tool] ?? (isCrosshairDrawingTool(tool) ? 'none' : 'default'));
@@ -5775,11 +5783,11 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
     scheduleRender();
     return () => {
       const doc = containerRef.current?.ownerDocument;
-      const target = containerRef.current?.parentElement as HTMLElement | null;
+      const target = paneRoot();
       if (doc?.body) doc.body.style.cursor = '';
       if (target) target.style.cursor = '';
     };
-  }, [activeTool, applyCursor, scheduleRender, commitEdit]);
+  }, [activeTool, applyCursor, scheduleRender, commitEdit, paneRoot]);
 
   // ── mouse event handlers (drawing tools + eraser — canvas captures events) ─
   const getCoords = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -6275,10 +6283,11 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
       e.target instanceof Element && e.target.closest('[data-drawing-overlay]') != null;
     // Pixel bounds alone aren't enough: a top-bar dropdown (Timeframe/Indicators)
     // or modal can be drawn over the canvas rect while not being part of the chart.
-    // The chart area wrapper (this overlay's parent) excludes those, so require the
-    // event's actual target to live inside it before treating it as "over the chart".
+    // The pane root (main chart area or sub-panel container) excludes those, so
+    // require the event's actual target to live inside it before treating it as
+    // "over the chart".
     const isOverChart = (e: MouseEvent) => {
-      const chartArea = containerRef.current?.parentElement;
+      const chartArea = paneRoot();
       return chartArea != null && e.target instanceof Node && chartArea.contains(e.target);
     };
 
@@ -7405,7 +7414,7 @@ export const DrawingCanvas = memo(function DrawingCanvas({ sharedChartRef, share
       window.removeEventListener('mouseup', onWinUp);
       window.removeEventListener('dblclick', onWinDblClick);
     };
-  }, [scheduleRender, selectDrawing, toggleSelection, updateDrawing, applyCursor, applyCursorValue, finalizeFreeform, setEditing, pane]);
+  }, [scheduleRender, selectDrawing, toggleSelection, updateDrawing, applyCursor, applyCursorValue, finalizeFreeform, setEditing, pane, paneRoot]);
 
   // ── keyboard: Delete / Escape ─────────────────────────────────────────────
   useEffect(() => {

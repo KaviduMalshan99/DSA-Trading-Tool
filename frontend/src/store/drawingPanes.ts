@@ -1,8 +1,9 @@
-import { createContext, useCallback, useContext, useSyncExternalStore } from 'react';
+import { createContext, useCallback, useContext, useSyncExternalStore, type RefObject } from 'react';
+import type { IChartApi, ISeriesApi, SeriesType } from 'lightweight-charts';
 import { useStore } from 'zustand';
 import {
   createDrawingPaneStore, useDrawingTools,
-  type DrawingPaneState, type DrawingPaneStore, type PaneKind,
+  type DrawingPaneState, type DrawingPaneStore, type DrawingTool, type PaneKind,
 } from './drawingStore';
 
 // Every chart pane that hosts drawings ('main' now; 'rsi', 'macd', 'stochrsi'
@@ -18,8 +19,18 @@ export interface DrawingPane {
 
 const panes = new Map<string, DrawingPane>();
 
+// The only series methods the drawing system calls. Main passes its candlestick
+// series; oscillator panes pass their indicator line/histogram series.
+export type DrawingSeries = Pick<ISeriesApi<SeriesType>, 'priceToCoordinate' | 'coordinateToPrice' | 'options'>;
+
+/** A pane plus the chart/series its drawings are plotted against. */
+export interface PaneContextValue extends DrawingPane {
+  chartRef: RefObject<IChartApi | null>;
+  seriesRef: RefObject<DrawingSeries | null>;
+}
+
 // Provided by DrawingPaneProvider (components/Drawing/DrawingPaneContext.tsx).
-export const DrawingPaneContext = createContext<DrawingPane | null>(null);
+export const DrawingPaneContext = createContext<PaneContextValue | null>(null);
 
 export const MAIN_PANE_ID = 'main';
 
@@ -153,7 +164,7 @@ export function useActivePane(): DrawingPane {
 }
 
 /** Throws outside a DrawingPaneProvider. */
-export function usePane(): DrawingPane {
+export function usePane(): PaneContextValue {
   const pane = useContext(DrawingPaneContext);
   if (!pane) throw new Error('usePane() must be used inside a <DrawingPaneProvider>');
   return pane;
@@ -174,4 +185,23 @@ export function useActivePaneDrawings<T>(selector: (s: DrawingPaneState) => T): 
 export function drawingsStorageKey(symbol: string, interval: string, paneId: string): string {
   const base = `dsa_drawings_${symbol}_${interval}`;
   return paneId === MAIN_PANE_ID ? base : `${base}_${paneId}`;
+}
+
+// ── tool capability ─────────────────────────────────────────────────────────
+// Tools that only make sense against candle prices: they read OHLC/volume,
+// size a trade in price units, or label a price. 'magnet' is magnet snapping
+// (snaps to candle OHLC), not a tool, but is gated the same way.
+const PRICE_ONLY_TOOLS = new Set<DrawingTool | 'magnet'>([
+  'longPosition', 'shortPosition', 'positionForecast', 'anchoredVwap', 'regression',
+  'barsPattern', 'ghostFeed', 'priceNote', 'priceLabel', 'magnet',
+]);
+
+/** Whether `tool` (or 'magnet' snapping) can be used on a pane of `kind`. */
+export function isToolAllowed(kind: PaneKind, tool: DrawingTool | 'magnet'): boolean {
+  return kind === 'price' || !PRICE_ONLY_TOOLS.has(tool);
+}
+
+/** isToolAllowed for the enclosing pane. */
+export function useToolAllowed(tool: DrawingTool | 'magnet'): boolean {
+  return isToolAllowed(usePane().kind, tool);
 }

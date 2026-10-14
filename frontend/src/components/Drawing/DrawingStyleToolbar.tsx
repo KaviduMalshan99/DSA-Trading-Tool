@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState, memo } from 'react';
-import type { IChartApi, ISeriesApi } from 'lightweight-charts';
 import {
   useDrawingTools, resizeTableCells, TABLE_MAX_DIM, type Drawing, type PositionDrawing,
 } from '../../store/drawingStore';
@@ -84,24 +83,19 @@ const STYLE_TOOLBAR_TYPES = [
   'disjointChannel', ...CHANNEL_TYPES, 'regression',
 ] as const;
 
-interface Props {
-  sharedChartRef:  React.RefObject<IChartApi | null>;
-  sharedSeriesRef: React.RefObject<ISeriesApi<'Candlestick'> | null>;
-}
-
 // The settings modal host lives beside the toolbar (not inside it) so it stays
 // mounted while the toolbar itself is hidden (e.g. its anchor scrolled off-screen).
-export const DrawingStyleToolbar = memo(function DrawingStyleToolbar({ sharedChartRef, sharedSeriesRef }: Props) {
+export const DrawingStyleToolbar = memo(function DrawingStyleToolbar() {
   return (
     <>
-      <StyleToolbar sharedChartRef={sharedChartRef} sharedSeriesRef={sharedSeriesRef} />
-      <DrawingSettingsHost sharedSeriesRef={sharedSeriesRef} />
+      <StyleToolbar />
+      <DrawingSettingsHost />
     </>
   );
 });
 
-function StyleToolbar({ sharedChartRef, sharedSeriesRef }: Props) {
-  const paneStore = usePane().store;
+function StyleToolbar() {
+  const { store: paneStore, chartRef: sharedChartRef, seriesRef: sharedSeriesRef } = usePane();
   const { drawings, selectedIds, updateDrawing, deleteDrawing, openDrawingSettings } = usePaneDrawings(useShallow((s) => ({
     drawings: s.drawings, selectedIds: s.selectedIds, updateDrawing: s.updateDrawing, deleteDrawing: s.deleteDrawing,
     openDrawingSettings: s.openDrawingSettings,
