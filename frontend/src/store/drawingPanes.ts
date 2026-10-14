@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useSyncExternalStore, type RefObject } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useSyncExternalStore, type RefObject } from 'react';
 import type { IChartApi, ISeriesApi, SeriesType } from 'lightweight-charts';
 import { useStore } from 'zustand';
 import {
@@ -6,8 +6,8 @@ import {
   type DrawingPaneState, type DrawingPaneStore, type DrawingTool, type PaneKind,
 } from './drawingStore';
 
-// Every chart pane that hosts drawings ('main' now; 'rsi', 'macd', 'stochrsi'
-// sub panels later) gets its own drawing store. Pane ids are at most 8
+// Every chart pane that hosts drawings ('main', plus the 'rsi', 'stochrsi' and
+// 'macd' indicator sub-panels) gets its own drawing store. Pane ids are at most 8
 // lowercase letters/digits with no underscore, so a pane's storage key still
 // matches the sync allow-list (see drawingsStorageKey and SYNC_KEY_PATTERN in
 // services/persist.ts).
@@ -27,6 +27,11 @@ export type DrawingSeries = Pick<ISeriesApi<SeriesType>, 'priceToCoordinate' | '
 export interface PaneContextValue extends DrawingPane {
   chartRef: RefObject<IChartApi | null>;
   seriesRef: RefObject<DrawingSeries | null>;
+  // Chart whose visible logical range this pane's chart mirrors (sub-panels:
+  // the main chart, via subPanelSync). DrawingCanvas won't place a point
+  // until the two ranges match, so a click right after the panel opens can't
+  // land on a bar from the panel's not-yet-synced default view.
+  timeSourceRef?: RefObject<IChartApi | null>;
 }
 
 // Provided by DrawingPaneProvider (components/Drawing/DrawingPaneContext.tsx).
@@ -52,6 +57,11 @@ export function registerPane(paneId: string, kind: PaneKind): DrawingPane {
 
 export function getPane(paneId: string): DrawingPane | undefined {
   return panes.get(paneId);
+}
+
+/** Whether `paneId`'s DrawingCanvas is mounted (main always is). */
+export function isPaneMounted(paneId: string): boolean {
+  return paneId === MAIN_PANE_ID || handlers.has(paneId);
 }
 
 /** Every registered pane, main first. */
@@ -99,7 +109,7 @@ export function registerPaneHandlers(paneId: string, h: PaneHandlers): () => voi
 
 /** Every pane whose DrawingCanvas is mounted (main always included), main first. */
 export function getMountedPanes(): DrawingPane[] {
-  return getPanes().filter((p) => p.id === MAIN_PANE_ID || handlers.has(p.id));
+  return getPanes().filter((p) => isPaneMounted(p.id));
 }
 
 /** Makes `paneId` the active pane (last pointerdown/contextmenu inside it).
@@ -163,6 +173,72 @@ export function useActivePane(): DrawingPane {
   return panes.get(activePaneId) ?? mainPane;
 }
 
+// ── price-scale repaints ────────────────────────────────────────────────────
+// Dragging a pane's price axis, its "A" button and Reset chart rescale prices
+// without moving the time scale, so no range event fires and drawings/style
+// toolbars subscribed to range + crosshair would sit still. usePaneRepaint
+// covers that: it calls back every frame while a pointer is pressed inside
+// the pane (axis drag, axis double-click) and for a few frames after a
+// release, a wheel, or requestPaneRepaint. Each frame's work is a canvas
+// redraw (rAF-coalesced) or a position recompute, so this stays cheap.
+const repaintListeners = new Set<{ paneId: string; cb: () => void }>();
+
+/** Asks the pane's drawings to re-map prices (all panes if `paneId` is omitted). */
+export function requestPaneRepaint(paneId?: string): void {
+  for (const l of repaintListeners) if (paneId == null || l.paneId === paneId) l.cb();
+}
+
+// Frames kept repainting after a release / wheel / request — the chart can
+// apply an auto-scale change a frame after the event that caused it.
+const REPAINT_TAIL_FRAMES = 3;
+
+/** Calls `onFrame` on every frame the pane's price scale may be changing. */
+export function usePaneRepaint(paneId: string, onFrame: () => void): void {
+  const cbRef = useRef(onFrame);
+  cbRef.current = onFrame;
+  useEffect(() => {
+    const root = document.querySelector<HTMLElement>(`[data-drawing-pane="${paneId}"]`);
+    let pressed = false, tail = 0, raf = 0;
+    const tick = () => {
+      raf = 0;
+      cbRef.current();
+      if (pressed || --tail > 0) raf = requestAnimationFrame(tick);
+    };
+    const kick = (frames: number) => {
+      tail = Math.max(tail, frames);
+      if (!raf) raf = requestAnimationFrame(tick);
+    };
+    const onDown = () => { pressed = true; kick(1); };
+    const onUp = () => { if (!pressed) return; pressed = false; kick(REPAINT_TAIL_FRAMES); };
+    const onWheel = () => kick(REPAINT_TAIL_FRAMES);
+    const listener = { paneId, cb: () => kick(REPAINT_TAIL_FRAMES) };
+    repaintListeners.add(listener);
+    root?.addEventListener('pointerdown', onDown, true);
+    root?.addEventListener('wheel', onWheel, { capture: true, passive: true });
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+    return () => {
+      cancelAnimationFrame(raf);
+      repaintListeners.delete(listener);
+      root?.removeEventListener('pointerdown', onDown, true);
+      root?.removeEventListener('wheel', onWheel, true);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+    };
+  }, [paneId]);
+}
+
+/** Ends any open settings session in `pane` without keeping its edits (the
+ * drawing goes back to its pre-modal state). Returns whether one was open. */
+export function cancelPaneSettings(pane: DrawingPane): boolean {
+  const s = pane.store.getState();
+  let cancelled = false;
+  if (s.settingsDrawingId != null) { s.closeDrawingSettings(false); cancelled = true; }
+  const fibId = pane.store.getState().settingsSessionId;
+  if (fibId != null) { pane.store.getState().endSettingsSession(fibId, false); cancelled = true; }
+  return cancelled;
+}
+
 /** Throws outside a DrawingPaneProvider. */
 export function usePane(): PaneContextValue {
   const pane = useContext(DrawingPaneContext);
@@ -188,6 +264,13 @@ export function drawingsStorageKey(symbol: string, interval: string, paneId: str
 }
 
 // ── tool capability ─────────────────────────────────────────────────────────
+/** Every pane kind except the candle chart's is an indicator (oscillator) pane. */
+export function isOscillatorKind(kind: PaneKind): boolean {
+  return kind !== 'price';
+}
+
+export const TOOL_NOT_ALLOWED_TITLE = 'Not available on indicator panels';
+
 // Tools that only make sense against candle prices: they read OHLC/volume,
 // size a trade in price units, or label a price. 'magnet' is magnet snapping
 // (snaps to candle OHLC), not a tool, but is gated the same way.
@@ -198,10 +281,16 @@ const PRICE_ONLY_TOOLS = new Set<DrawingTool | 'magnet'>([
 
 /** Whether `tool` (or 'magnet' snapping) can be used on a pane of `kind`. */
 export function isToolAllowed(kind: PaneKind, tool: DrawingTool | 'magnet'): boolean {
-  return kind === 'price' || !PRICE_ONLY_TOOLS.has(tool);
+  return !isOscillatorKind(kind) || !PRICE_ONLY_TOOLS.has(tool);
 }
 
 /** isToolAllowed for the enclosing pane. */
 export function useToolAllowed(tool: DrawingTool | 'magnet'): boolean {
   return isToolAllowed(usePane().kind, tool);
+}
+
+/** isToolAllowed for the active pane — for the drawing toolbar and favorites bar. */
+export function useActivePaneToolAllowed(): (tool: DrawingTool | 'magnet') => boolean {
+  const kind = useActivePane().kind;
+  return useCallback((tool: DrawingTool | 'magnet') => isToolAllowed(kind, tool), [kind]);
 }

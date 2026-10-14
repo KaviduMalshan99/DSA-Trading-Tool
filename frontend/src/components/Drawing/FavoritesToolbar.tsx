@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, memo } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { useDrawingTools } from '../../store/drawingStore';
+import { useActivePaneToolAllowed, TOOL_NOT_ALLOWED_TITLE } from '../../store/drawingPanes';
 import { ALL_TOOL_ICON, ALL_TOOL_LABEL } from './DrawingToolbar';
 
 function GripIcon() {
@@ -37,6 +38,8 @@ export const FavoritesToolbar = memo(function FavoritesToolbar() {
     setFavoritesBarPos: s.setFavoritesBarPos, toggleFavoritesBar: s.toggleFavoritesBar,
     activeTool: s.activeTool, setTool: s.setTool,
   })));
+  // Candle-only tools are greyed out while an indicator panel is the active pane.
+  const toolAllowed = useActivePaneToolAllowed();
   const [dragPos, setDragPos] = useState(favoritesBarPos ?? DEFAULT_POS);
   const draggingRef = useRef(false);
   const offsetRef = useRef({ dx: 0, dy: 0 });
@@ -99,21 +102,28 @@ export const FavoritesToolbar = memo(function FavoritesToolbar() {
 
       <div className="w-px h-5 bg-[var(--border-color-soft)] mx-0.5" />
 
-      {favoriteTools.map((tool) => (
-        <button
-          key={tool}
-          title={ALL_TOOL_LABEL[tool] ?? tool}
-          onClick={() => setTool(tool)}
-          className={`
-            w-9 h-9 flex items-center justify-center rounded transition-colors [&_svg]:w-5 [&_svg]:h-5
-            ${activeTool === tool
-              ? 'bg-[var(--accent)] text-white'
-              : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'}
-          `}
-        >
-          {ALL_TOOL_ICON[tool]}
-        </button>
-      ))}
+      {favoriteTools.map((tool) => {
+        const allowed = toolAllowed(tool);
+        return (
+          <button
+            key={tool}
+            title={allowed ? ALL_TOOL_LABEL[tool] ?? tool : TOOL_NOT_ALLOWED_TITLE}
+            aria-disabled={!allowed || undefined}
+            onClick={allowed ? () => setTool(tool) : undefined}
+            className={`
+              w-9 h-9 flex items-center justify-center rounded transition-colors [&_svg]:w-5 [&_svg]:h-5
+              ${activeTool === tool
+                ? 'bg-[var(--accent)] text-white'
+                : allowed
+                  ? 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'
+                  : 'text-[var(--text-muted)]'}
+              ${allowed ? '' : 'opacity-40 cursor-not-allowed'}
+            `}
+          >
+            {ALL_TOOL_ICON[tool]}
+          </button>
+        );
+      })}
 
       <div className="w-px h-5 bg-[var(--border-color-soft)] mx-0.5" />
 

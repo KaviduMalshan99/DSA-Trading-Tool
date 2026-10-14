@@ -22,7 +22,9 @@ import {
   type CyclesTool,
   type DrawingTool,
 } from '../../store/drawingStore';
-import { clearAllPanes, useActivePaneDrawings, useTotalDrawingCount } from '../../store/drawingPanes';
+import {
+  clearAllPanes, useActivePaneDrawings, useActivePaneToolAllowed, useTotalDrawingCount, TOOL_NOT_ALLOWED_TITLE,
+} from '../../store/drawingPanes';
 import { useShallow } from 'zustand/react/shallow';
 
 interface ToolBtn {
@@ -1312,6 +1314,8 @@ export const ALL_TOOL_LABEL: Partial<Record<DrawingTool, string>> = {
 // & measurement) — a star toggles the tool in/out of the Favorites toolbar,
 // kept as a separate button (not nested in the row's own button) so clicking
 // it doesn't also select the tool.
+// Greyed out (unselectable, explanatory tooltip) when the active pane is an
+// indicator panel and the tool only works on candle prices; the star stays live.
 function FavoritableMenuItem({
   tool, label, icon, active, favorite, onToggleFavorite, onSelect,
 }: {
@@ -1323,12 +1327,16 @@ function FavoritableMenuItem({
   onToggleFavorite: () => void;
   onSelect: () => void;
 }) {
+  const allowed = useActivePaneToolAllowed()(tool);
   return (
-    <div key={tool} className="w-full flex items-center gap-1 pl-3 pr-1 group/item hover:bg-[var(--accent)]">
+    <div key={tool} className={`w-full flex items-center gap-1 pl-3 pr-1 group/item ${allowed ? 'hover:bg-[var(--accent)]' : ''}`}>
       <button
-        title={label}
-        onClick={onSelect}
-        className={`flex-1 flex items-center gap-2 py-2 text-sm text-left transition-colors group-hover/item:text-white ${active ? 'text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}
+        title={allowed ? label : TOOL_NOT_ALLOWED_TITLE}
+        aria-disabled={!allowed || undefined}
+        onClick={allowed ? onSelect : undefined}
+        className={`flex-1 flex items-center gap-2 py-2 text-sm text-left transition-colors ${allowed
+          ? `group-hover/item:text-white ${active ? 'text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`
+          : 'opacity-40 cursor-not-allowed text-[var(--text-muted)]'}`}
       >
         <span className="flex-shrink-0">{icon}</span>
         <span className="flex-1">{label}</span>
@@ -1417,6 +1425,28 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
   const isFibGannGroupActive = isFibGroupActive || isGannGroupActive;
   const isPatternCyclesGroupActive = isPatternGroupActive || isCyclesGroupActive;
 
+  // Tools that only work on candle prices are greyed out (not selectable)
+  // while an indicator panel is the active pane.
+  const toolAllowed = useActivePaneToolAllowed();
+  const toolButtonProps = (tool: DrawingTool, title: string, active: boolean, size: string, select: () => void) => {
+    const allowed = toolAllowed(tool);
+    return {
+      title: allowed ? title : TOOL_NOT_ALLOWED_TITLE,
+      'aria-disabled': !allowed || undefined,
+      onClick: allowed ? select : undefined,
+      className: `
+        relative ${size} flex items-center justify-center rounded transition-colors [&_svg]:w-5 [&_svg]:h-5
+        ${active ? 'bg-[var(--accent)] text-white' : allowed
+          ? 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'
+          : 'text-[var(--text-muted)]'}
+        ${allowed ? '' : 'opacity-40 cursor-not-allowed'}
+      `,
+    };
+  };
+  // A group's main button selects the group's last-used tool and closes its flyout.
+  const groupButtonProps = (tool: DrawingTool, title: string, active: boolean, closeFlyout: () => void) =>
+    toolButtonProps(tool, title, active, 'w-9 h-9', () => { setTool(tool); closeFlyout(); });
+
   useEffect(() => {
     if (!cursorDropdownOpen && !trendDropdownOpen && !shapeDropdownOpen && !annotationDropdownOpen &&
         !positionRangeDropdownOpen && !fibGannDropdownOpen && !patternCyclesDropdownOpen && !deleteMenuOpen) return;
@@ -1439,16 +1469,7 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
     <div className="flex flex-col items-center gap-1 py-2 px-1 bg-[var(--bg-panel)] border-r border-[var(--border-color-soft)] select-none"
          style={{ width: 48 }}>
       <div className="relative group" ref={cursorGroupRef}>
-        <button
-          title="Cursor"
-          onClick={() => { setTool(lastCursorMode); setCursorDropdownOpen(false); }}
-          className={`
-            relative w-9 h-9 flex items-center justify-center rounded transition-colors [&_svg]:w-5 [&_svg]:h-5
-            ${isCursorGroupActive
-              ? 'bg-[var(--accent)] text-white'
-              : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'}
-          `}
-        >
+        <button {...groupButtonProps(lastCursorMode, 'Cursor', isCursorGroupActive, () => setCursorDropdownOpen(false))}>
           {CURSOR_ICON[lastCursorMode]}
         </button>
         <button
@@ -1490,16 +1511,7 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
       </div>
 
       <div className="relative group" ref={trendGroupRef}>
-        <button
-          title="Trend Line tools"
-          onClick={() => { setTool(lastTrendTool); setTrendDropdownOpen(false); }}
-          className={`
-            relative w-9 h-9 flex items-center justify-center rounded transition-colors [&_svg]:w-5 [&_svg]:h-5
-            ${isTrendGroupActive
-              ? 'bg-[var(--accent)] text-white'
-              : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'}
-          `}
-        >
+        <button {...groupButtonProps(lastTrendTool, 'Trend Line tools', isTrendGroupActive, () => setTrendDropdownOpen(false))}>
           {TREND_ICON[lastTrendTool]}
         </button>
         <button
@@ -1555,16 +1567,7 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
       </div>
 
       <div className="relative group" ref={shapeGroupRef}>
-        <button
-          title="Shape tools"
-          onClick={() => { setTool(lastShapeTool); setShapeDropdownOpen(false); }}
-          className={`
-            relative w-9 h-9 flex items-center justify-center rounded transition-colors [&_svg]:w-5 [&_svg]:h-5
-            ${isShapeGroupActive
-              ? 'bg-[var(--accent)] text-white'
-              : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'}
-          `}
-        >
+        <button {...groupButtonProps(lastShapeTool, 'Shape tools', isShapeGroupActive, () => setShapeDropdownOpen(false))}>
           {SHAPE_ICON[lastShapeTool]}
         </button>
         <button
@@ -1635,16 +1638,7 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
       </div>
 
       <div className="relative group" ref={annotationGroupRef}>
-        <button
-          title="Annotation tools"
-          onClick={() => { setTool(lastAnnotationTool); setAnnotationDropdownOpen(false); }}
-          className={`
-            relative w-9 h-9 flex items-center justify-center rounded transition-colors [&_svg]:w-5 [&_svg]:h-5
-            ${isAnnotationGroupActive
-              ? 'bg-[var(--accent)] text-white'
-              : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'}
-          `}
-        >
+        <button {...groupButtonProps(lastAnnotationTool, 'Annotation tools', isAnnotationGroupActive, () => setAnnotationDropdownOpen(false))}>
           {ANNOTATION_ICON[lastAnnotationTool]}
         </button>
         <button
@@ -1702,16 +1696,7 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
       <div className="w-6 border-t border-[var(--border-color-soft)] my-1" />
 
       <div className="relative group" ref={fibGannGroupRef}>
-        <button
-          title="Gann & Fibonacci"
-          onClick={() => { setTool(lastFibGannTool); setFibGannDropdownOpen(false); }}
-          className={`
-            relative w-9 h-9 flex items-center justify-center rounded transition-colors [&_svg]:w-5 [&_svg]:h-5
-            ${isFibGannGroupActive
-              ? 'bg-[var(--accent)] text-white'
-              : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'}
-          `}
-        >
+        <button {...groupButtonProps(lastFibGannTool, 'Gann & Fibonacci', isFibGannGroupActive, () => setFibGannDropdownOpen(false))}>
           {ALL_TOOL_ICON[lastFibGannTool]}
         </button>
         <button
@@ -1767,16 +1752,7 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
       </div>
 
       <div className="relative group" ref={patternCyclesGroupRef}>
-        <button
-          title="Patterns"
-          onClick={() => { setTool(lastPatternCyclesTool); setPatternCyclesDropdownOpen(false); }}
-          className={`
-            relative w-9 h-9 flex items-center justify-center rounded transition-colors [&_svg]:w-5 [&_svg]:h-5
-            ${isPatternCyclesGroupActive
-              ? 'bg-[var(--accent)] text-white'
-              : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'}
-          `}
-        >
+        <button {...groupButtonProps(lastPatternCyclesTool, 'Patterns', isPatternCyclesGroupActive, () => setPatternCyclesDropdownOpen(false))}>
           {ALL_TOOL_ICON[lastPatternCyclesTool]}
         </button>
         <button
@@ -1832,16 +1808,7 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
       </div>
 
       <div className="relative group" ref={positionRangeGroupRef}>
-        <button
-          title="Prediction & measurement tools"
-          onClick={() => { setTool(lastPositionRangeTool); setPositionRangeDropdownOpen(false); }}
-          className={`
-            relative w-9 h-9 flex items-center justify-center rounded transition-colors [&_svg]:w-5 [&_svg]:h-5
-            ${isPositionRangeGroupActive
-              ? 'bg-[var(--accent)] text-white'
-              : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'}
-          `}
-        >
+        <button {...groupButtonProps(lastPositionRangeTool, 'Prediction & measurement tools', isPositionRangeGroupActive, () => setPositionRangeDropdownOpen(false))}>
           {POSITION_RANGE_ICON[lastPositionRangeTool]}
         </button>
         <button
@@ -1920,17 +1887,7 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
       <div className="w-6 border-t border-[var(--border-color-soft)] my-1" />
 
       {MEASURE_TOOLS.map(({ tool, label, icon }) => (
-        <button
-          key={tool}
-          title={label}
-          onClick={() => setTool(tool)}
-          className={`
-            w-9 h-9 flex items-center justify-center rounded transition-colors [&_svg]:w-5 [&_svg]:h-5
-            ${activeTool === tool
-              ? 'bg-[var(--accent)] text-white'
-              : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'}
-          `}
-        >
+        <button key={tool} {...toolButtonProps(tool, label, activeTool === tool, 'w-9 h-9', () => setTool(tool))}>
           {icon}
         </button>
       ))}

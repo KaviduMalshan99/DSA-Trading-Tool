@@ -10,6 +10,7 @@ import { setSeriesData, updateSeriesBar } from '../../utils/chartSeriesFeed';
 import { decimalsForPrice, formatPrice } from '../../utils/priceFormat';
 import type { Candle } from '../../types/market';
 import { CoinIcon } from '../UI/CoinIcon';
+import { getExchange } from '../../utils/exchange';
 
 function chartThemeOptions(theme: Theme) {
   const grid = theme === 'dark' ? '#161b22' : '#e0e3eb';
@@ -426,6 +427,8 @@ export function TradingChart({ sharedChartRef, sharedSeriesRef, sharedLineSeries
     };
   }, [activeSymbol, activeInterval, setCandles, appendCandle, prependCandles]);
 
+  const exchange = getExchange(activeSymbol);
+
   return (
     <div className="relative w-full h-full z-10">
       <div className="absolute top-2 left-3 z-10 flex items-center gap-3 pointer-events-none select-none">
@@ -436,6 +439,7 @@ export function TradingChart({ sharedChartRef, sharedSeriesRef, sharedLineSeries
           </span>
         </span>
         <span className="text-[var(--text-muted)] text-xs">{activeInterval}</span>
+        {exchange && <span className="text-[var(--text-muted)] text-xs">{exchange}</span>}
         {currentPrice !== null && (
           <span className="text-[#26a641] text-sm font-mono font-bold">
             {formatPrice(currentPrice)}

@@ -21,7 +21,7 @@ import { toChartTime } from '../../utils/chartTime';
 import { computeStochRSI, type RSIPoint } from '../../utils/klineAnalytics';
 import { subChartThemeOptions } from './DeltaPanel';
 import { linkSubPanel, SUB_PANEL_INTERACTION } from './subPanelSync';
-import { PriceScaleButtons } from '../Chart/PriceScaleButtons';
+import { SubPanelDrawingPane } from './SubPanelDrawingPane';
 import { AXIS_MIN_WIDTH, refLineColors } from './RSIPanel';
 
 interface StochRSIPanelProps {
@@ -40,7 +40,7 @@ export function StochRSIPanel({ sharedChartRef }: StochRSIPanelProps) {
   const bandLinesRef = useRef<IPriceLine[]>([]);   // 80 / 20
   const midLineRef   = useRef<IPriceLine | null>(null);  // 50
 
-  // Gates the auto-scale button, which needs the chart to exist on mount.
+  // Gates the drawing pane and auto-scale button, which need the chart to exist on mount.
   const [chartReady, setChartReady] = useState(false);
   const [current, setCurrent] = useState<{ k: number; d: number | null } | null>(null);
 
@@ -226,7 +226,7 @@ export function StochRSIPanel({ sharedChartRef }: StochRSIPanelProps) {
   const showD = current !== null && current.d !== null && dLine.visible;
 
   return (
-    <div className="relative w-full h-full">
+    <div className="relative w-full h-full" data-drawing-pane="stochrsi">
       {/* Stat overlay */}
       <div className="absolute top-1 left-3 z-10 flex items-center gap-1.5 pointer-events-none select-none text-xs font-mono">
         <span className="text-[var(--text-muted)] font-sans">
@@ -249,8 +249,10 @@ export function StochRSIPanel({ sharedChartRef }: StochRSIPanelProps) {
 
       <div ref={containerRef} className="w-full h-full" />
 
-      {/* "A" (auto-scale) in the price-axis × time-axis corner, as on the main chart. */}
-      {chartReady && <PriceScaleButtons chartRef={chartRef} showLog={false} />}
+      {/* Drawings + "A" (auto-scale) button + style toolbar. */}
+      {chartReady && (
+        <SubPanelDrawingPane paneId="stochrsi" kind="stochrsi" chartRef={chartRef} seriesRef={refSeriesRef} sharedChartRef={sharedChartRef} />
+      )}
     </div>
   );
 }

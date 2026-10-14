@@ -24,7 +24,7 @@ import { decimalsForPrice } from '../../utils/priceFormat';
 import { computeMACD, type EMAPoint } from '../../utils/klineAnalytics';
 import { subChartThemeOptions } from './DeltaPanel';
 import { linkSubPanel, SUB_PANEL_INTERACTION } from './subPanelSync';
-import { PriceScaleButtons } from '../Chart/PriceScaleButtons';
+import { SubPanelDrawingPane } from './SubPanelDrawingPane';
 import { AXIS_MIN_WIDTH, refLineColors } from './RSIPanel';
 
 // Histogram: strong color while the bar grows away from zero, pale while it
@@ -50,7 +50,7 @@ export function MACDPanel({ sharedChartRef }: MACDPanelProps) {
   // sized off their own magnitude (not price), and only re-applied on change.
   const appliedDecimalsRef = useRef<number | null>(null);
 
-  // Gates the auto-scale button, which needs the chart to exist on mount.
+  // Gates the drawing pane and auto-scale button, which need the chart to exist on mount.
   const [chartReady, setChartReady] = useState(false);
   const [current, setCurrent] = useState<
     { macd: number; signal: number | null; hist: number | null; decimals: number } | null
@@ -285,7 +285,7 @@ export function MACDPanel({ sharedChartRef }: MACDPanelProps) {
   const [macdLine, sigLine] = cfg.lines;
 
   return (
-    <div className="relative w-full h-full">
+    <div className="relative w-full h-full" data-drawing-pane="macd">
       {/* Stat overlay */}
       <div className="absolute top-1 left-3 z-10 flex items-center gap-1.5 pointer-events-none select-none text-xs font-mono">
         <span className="text-[var(--text-muted)] font-sans">
@@ -320,8 +320,10 @@ export function MACDPanel({ sharedChartRef }: MACDPanelProps) {
 
       <div ref={containerRef} className="w-full h-full" />
 
-      {/* "A" (auto-scale) in the price-axis × time-axis corner, as on the main chart. */}
-      {chartReady && <PriceScaleButtons chartRef={chartRef} showLog={false} />}
+      {/* Drawings + "A" (auto-scale) button + style toolbar. */}
+      {chartReady && (
+        <SubPanelDrawingPane paneId="macd" kind="macd" chartRef={chartRef} seriesRef={histSeriesRef} sharedChartRef={sharedChartRef} />
+      )}
     </div>
   );
 }

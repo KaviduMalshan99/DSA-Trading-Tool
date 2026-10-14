@@ -23,7 +23,7 @@ import { computeRSI, computeRSIMA, type RSIPoint } from '../../utils/klineAnalyt
 import type { Candle } from '../../types/market';
 import { subChartThemeOptions } from './DeltaPanel';
 import { linkSubPanel, SUB_PANEL_INTERACTION } from './subPanelSync';
-import { PriceScaleButtons } from '../Chart/PriceScaleButtons';
+import { SubPanelDrawingPane } from './SubPanelDrawingPane';
 
 // Fills are faint enough to read on both themes, so they stay constant.
 const FILL_OB   = 'rgba(38,166,154,0.25)';   // RSI beyond 70 / 30
@@ -82,7 +82,7 @@ export function RSIPanel({ sharedChartRef }: RSIPanelProps) {
   const bandLinesRef = useRef<IPriceLine[]>([]);   // 70 / 30
   const midLineRef   = useRef<IPriceLine | null>(null);  // 50
 
-  // Gates the auto-scale button, which needs the chart to exist on mount.
+  // Gates the drawing pane and auto-scale button, which need the chart to exist on mount.
   const [chartReady, setChartReady] = useState(false);
   const [current, setCurrent]     = useState<number | null>(null);
   const [currentMA, setCurrentMA] = useState<number | null>(null);
@@ -300,7 +300,7 @@ export function RSIPanel({ sharedChartRef }: RSIPanelProps) {
   const [rsiLine, maLine] = cfg.lines;
 
   return (
-    <div className="relative w-full h-full">
+    <div className="relative w-full h-full" data-drawing-pane="rsi">
       {/* Stat overlay */}
       <div className="absolute top-1 left-3 z-10 flex items-center gap-1.5 pointer-events-none select-none text-xs font-mono">
         <span className="text-[var(--text-muted)] font-sans">RSI {cfg.period}</span>
@@ -319,8 +319,10 @@ export function RSIPanel({ sharedChartRef }: RSIPanelProps) {
 
       <div ref={containerRef} className="w-full h-full" />
 
-      {/* "A" (auto-scale) in the price-axis × time-axis corner, as on the main chart. */}
-      {chartReady && <PriceScaleButtons chartRef={chartRef} showLog={false} />}
+      {/* Drawings + "A" (auto-scale) button + style toolbar. */}
+      {chartReady && (
+        <SubPanelDrawingPane paneId="rsi" kind="rsi" chartRef={chartRef} seriesRef={bandRef} sharedChartRef={sharedChartRef} />
+      )}
     </div>
   );
 }

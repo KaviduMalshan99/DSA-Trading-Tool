@@ -5,6 +5,7 @@ import { api } from '../../services/api';
 import type { MarketType } from '../../types/market';
 import { CoinIcon } from '../UI/CoinIcon';
 import { CoinTagFlag } from './CoinTagFlag';
+import { getExchange } from '../../utils/exchange';
 
 const MARKETS: MarketType[] = ['crypto', 'forex', 'stocks'];
 const SEARCH_DEBOUNCE_MS = 300;
@@ -100,6 +101,7 @@ export function SymbolList() {
             )}
             {list.map((sym) => {
               const inWatchlist = watchlist.includes(sym);
+              const exchange = getExchange(sym);
               return (
                 <div
                   key={sym}
@@ -110,7 +112,7 @@ export function SymbolList() {
                       : 'text-[var(--text-secondary)] hover:bg-[var(--bg-panel)] border-transparent'
                   }`}
                 >
-                  <span className="flex items-center gap-2">{!isSearching && <CoinTagFlag symbol={sym} />}<CoinIcon symbol={sym} size={18} /><span>{sym}</span></span>
+                  <span className="flex items-center gap-2">{!isSearching && <CoinTagFlag symbol={sym} />}<CoinIcon symbol={sym} size={18} /><span>{sym}</span>{exchange && <span className="text-[10px] font-sans text-[var(--text-muted)]">{exchange}</span>}</span>
                   {isSearching && (
                     <button
                       onClick={(e) => { e.stopPropagation(); if (!inWatchlist) addSymbol(sym); }}

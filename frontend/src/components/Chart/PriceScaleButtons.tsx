@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { type IChartApi } from 'lightweight-charts';
 import { useChartStore } from '../../store/chartStore';
+import { requestPaneRepaint } from '../../store/drawingPanes';
 
 interface PriceScaleButtonsProps {
   /** The chart whose right price scale these buttons drive (main chart or a sub-panel). */
@@ -18,6 +19,9 @@ const FALLBACK_SIZE = { width: 72, height: 26 };
 const autoListeners = new Set<() => void>();
 export function notifyPriceScaleReset() {
   autoListeners.forEach((fn) => fn());
+  // A sub-panel's range may not move on reset, so its drawings get no range
+  // event — have every pane re-map its drawings' prices directly.
+  requestPaneRepaint();
 }
 
 /** No-op logical-range change so canvas overlays/drawings re-map prices. */
@@ -100,6 +104,9 @@ export function PriceScaleButtons({ chartRef, showLog = true }: PriceScaleButton
     const ps = chart.priceScale('right');
     ps.applyOptions({ autoScale: !ps.options().autoScale });
     nudgeRedraw(chart);
+    // The nudge's range event can be swallowed (sub-panel sync drops echoes),
+    // so also repaint drawings for the price-only change. Cheap; all panes.
+    requestPaneRepaint();
     setAuto(ps.options().autoScale);
   };
 

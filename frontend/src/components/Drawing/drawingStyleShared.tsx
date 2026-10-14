@@ -59,7 +59,7 @@ const POPOVER_GAP = 4;     // same offset as the old mt-1 under the swatch
 const VIEWPORT_MARGIN = 8;
 
 // `align` picks which anchor edge the popover hangs from by default: 'left'
-// (color swatches) or 'right' (width/dash dropdowns, matching their old
+// (color swatches) or 'right' (width/dash/size dropdowns, matching their old
 // `right-0` placement). Either flips to the other edge when it would overflow.
 export function useAnchoredPopover(align: 'left' | 'right' = 'left') {
   const [open, setOpen] = useState(false);
@@ -286,27 +286,22 @@ export function ColorOpacityButton({
 const MARKER_SIZES = [12, 16, 20, 26, 32];
 
 export function MiniSizePicker({ size, onChange }: { size: number; onChange: (s: number) => void }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
-    document.addEventListener('mousedown', onDown);
-    return () => document.removeEventListener('mousedown', onDown);
-  }, [open]);
+  const { open, setOpen, anchorRef, popRef, popStyle } = useAnchoredPopover('right');
 
   return (
-    <div className="relative" ref={ref}>
+    <div className="relative" ref={anchorRef}>
       <button
         onClick={() => setOpen((v) => !v)}
         className="w-9 h-6 flex items-center justify-center rounded hover:bg-[var(--bg-hover-alt)] text-xs text-[var(--text-secondary)]"
       >
         {size}px
       </button>
-      {open && (
+      {open && createPortal(
         <div
-          className="absolute top-full right-0 mt-1 py-1"
-          style={{ background: 'var(--bg-panel-alt)', borderRadius: 6, boxShadow: '0 4px 12px rgba(0,0,0,0.45)', width: 72, zIndex: 90 }}
+          ref={popRef}
+          data-drawing-overlay={COLOR_POPOVER_OVERLAY}
+          className="py-1 select-none"
+          style={{ ...popStyle, background: 'var(--bg-panel-alt)', borderRadius: 6, boxShadow: '0 4px 12px rgba(0,0,0,0.45)', width: 72 }}
         >
           {MARKER_SIZES.map((s) => (
             <button
@@ -317,7 +312,8 @@ export function MiniSizePicker({ size, onChange }: { size: number; onChange: (s:
               {s}px
             </button>
           ))}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

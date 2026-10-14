@@ -9,16 +9,18 @@ export { usePane } from '../../store/drawingPanes';
  * modals) to one pane's drawing store and the chart/series it plots against;
  * read it with usePane(). The element wrapping the pane's chart area must
  * carry data-drawing-pane={paneId} (DrawingCanvas bounds-checks against it). */
-export function DrawingPaneProvider({ paneId, kind, chartRef, seriesRef, children }: {
+export function DrawingPaneProvider({ paneId, kind, chartRef, seriesRef, timeSourceRef, children }: {
   paneId: string;
   kind: PaneKind;
   chartRef: RefObject<IChartApi | null>;
   seriesRef: RefObject<DrawingSeries | null>;
+  /** Sub-panels: the main chart, whose visible range this pane's chart mirrors. */
+  timeSourceRef?: RefObject<IChartApi | null>;
   children: ReactNode;
 }) {
   const value = useMemo(
-    () => ({ ...registerPane(paneId, kind), chartRef, seriesRef }),
-    [paneId, kind, chartRef, seriesRef],
+    () => ({ ...registerPane(paneId, kind), chartRef, seriesRef, timeSourceRef }),
+    [paneId, kind, chartRef, seriesRef, timeSourceRef],
   );
   return <DrawingPaneContext.Provider value={value}>{children}</DrawingPaneContext.Provider>;
 }

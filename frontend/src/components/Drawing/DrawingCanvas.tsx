@@ -4,8 +4,11 @@ import { useShallow } from 'zustand/react/shallow';
 import { useDrawingTools, newDrawingId, CURSOR_MODES, type Drawing, type DrawingTool, type FibExtend, type PatternType, type PatternDrawing } from '../../store/drawingStore';
 import {
   usePaneDrawings, drawingsStorageKey, activatePane, anySettingsOpen, beginGesture, endGesture, getActivePane,
-  getGesturePaneId, registerPaneHandlers, type DrawingPane, type DrawingSeries,
+  getGesturePaneId, registerPaneHandlers, isToolAllowed, usePaneRepaint, cancelPaneSettings,
+  type DrawingPane, type DrawingSeries,
 } from '../../store/drawingPanes';
+import { useToastStore } from '../../store/toastStore';
+import { ALL_TOOL_LABEL } from './DrawingToolbar';
 import { usePane } from './DrawingPaneContext';
 import { useMarketStore } from '../../store/marketStore';
 import { useCandleStyleStore } from '../../store/candleStyleStore';
@@ -459,6 +462,10 @@ function yToPrice(series: DrawingSeries, y: number): number | null {
   const p = series.coordinateToPrice(y);
   return p == null ? null : (p as unknown as number);
 }
+
+// How far (in bars) a sub-panel's visible logical range may differ from the
+// main chart's and still count as synced (see ensureTimeAligned).
+const RANGE_ALIGN_EPSILON = 1e-3;
 
 // Copy/paste offset per paste step: 5 bars right and ~20px up, sized in pixels
 // at the current scale (priceToY/yToPrice follow log mode) so it's always visible.
@@ -5150,7 +5157,8 @@ export const DrawingCanvas = memo(function DrawingCanvas() {
   selectedIdsRef.current    = selectedIds;
   candlesRef.current        = candles;
   latestCandlesForExtrapolation = candles;
-  magnetEnabledRef.current  = magnetEnabled;
+  // Magnet snaps to candle OHLC, which means nothing on an indicator's scale.
+  magnetEnabledRef.current  = magnetEnabled && isToolAllowed(pane.kind, 'magnet');
   keepToolActiveRef.current = keepToolActive;
   drawingsLockedRef.current = drawingsLocked;
   drawingsHiddenRef.current = drawingsHidden;
@@ -5173,16 +5181,21 @@ export const DrawingCanvas = memo(function DrawingCanvas() {
   const currentOffset = getChartTzOffsetSeconds();
 
   // An inline text edit still open when the symbol/interval changes (or this
-  // subtree unmounts, e.g. the timezone remount) is committed here, onto the
-  // OLD key. Ordering: on a key change React runs every effect cleanup of this
-  // component before any effect body, so this cleanup (closing over the old
-  // key/offset) runs before the load effect below swaps in the new key's
-  // drawings. The save effect can't persist the commit — by its next run the
-  // store already holds the new key — so the old key is written directly here.
+  // subtree unmounts: the timezone remount, or a sub-panel being switched or
+  // closed) is committed here, onto the OLD key; an open settings modal is
+  // cancelled, rolling its live-preview edits back. Ordering: on a key change
+  // React runs every effect cleanup of this component before any effect body,
+  // so this cleanup (closing over the old key/offset) runs before the load
+  // effect below swaps in the new key's drawings. The save effect can't
+  // persist either change — by its next run the store already holds the new
+  // key — so the old key is written directly here.
   useEffect(() => {
     const key = storageKey, offset = currentOffset;
     return () => {
-      if (!flushEditRef.current()) return;
+      const flushed = flushEditRef.current();
+      // Not short-circuited: both must run.
+      const cancelled = cancelPaneSettings(pane);
+      if (!flushed && !cancelled) return;
       if (loadedKeyRef.current !== key) return;
       try {
         const utc = shiftDrawingTimes(persistableDrawings(paneStore.getState().drawings), -offset);
@@ -5754,6 +5767,9 @@ export const DrawingCanvas = memo(function DrawingCanvas() {
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Price-only rescales (axis drag, "A", Reset chart) fire no range event.
+  usePaneRepaint(pane.id, scheduleRender);
+
   useEffect(() => { scheduleRender(); }, [drawings, selectedIds, candles, drawingsHidden, drawingsLocked, scheduleRender]);
 
   // ── resize canvas ─────────────────────────────────────────────────────────
@@ -5828,12 +5844,41 @@ export const DrawingCanvas = memo(function DrawingCanvas() {
     scheduleRender();
   }, [sharedChartRef, sharedSeriesRef, addDrawing, selectDrawing, scheduleRender, setTool]);
 
+  // Sub-panels: true once this pane's chart shows the same bars as the chart it
+  // mirrors (timeSourceRef), re-syncing it first if not. Before the panel's
+  // first data/range sync lands its time scale is still a default view, and a
+  // point placed then would be stored on the wrong bar.
+  const ensureTimeAligned = (chart: IChartApi): boolean => {
+    const source = pane.timeSourceRef?.current;
+    if (!source || source === chart) return true;
+    const want = source.timeScale().getVisibleLogicalRange();
+    if (!want) return false;
+    const aligned = () => {
+      const r = chart.timeScale().getVisibleLogicalRange();
+      return !!r && Math.abs(r.from - want.from) < RANGE_ALIGN_EPSILON && Math.abs(r.to - want.to) < RANGE_ALIGN_EPSILON;
+    };
+    if (aligned()) return true;
+    chart.timeScale().setVisibleLogicalRange(want);
+    return aligned();
+  };
+
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (e.button !== 0) return; // right/middle click never draws, drags or deselects
     const tool = activeToolRef.current;
     const chart  = sharedChartRef.current;
     const series = sharedSeriesRef.current;
     if (!chart || !series) return;
+
+    // A candle-only tool (picked while another pane was active) clicked into
+    // an indicator pane: place nothing, drop back to the cursor and say why.
+    if (!isToolAllowed(pane.kind, tool)) {
+      e.preventDefault();
+      cancelPlacement();
+      setTool(lastCursorModeRef.current);
+      useToastStore.getState().addToast(`${ALL_TOOL_LABEL[tool] ?? 'This tool'} isn't available on indicator panels`, 'info');
+      return;
+    }
+    if (!ensureTimeAligned(chart)) { e.preventDefault(); return; }
 
     // Suppress the browser's default mousedown focusing steps: since <canvas>
     // isn't focusable, that default action would otherwise blur (steal focus

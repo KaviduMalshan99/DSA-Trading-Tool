@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useMarketStore } from '../../store/marketStore';
 import { formatPrice } from '../../utils/priceFormat';
 import { CoinIcon } from '../UI/CoinIcon';
+import { getExchange } from '../../utils/exchange';
 
 interface Ticker24hr {
   lastPrice: string;
@@ -47,12 +48,14 @@ export function MarketInfo() {
   const fmt = formatPrice;
 
   const displayPrice = price;
+  const exchange = getExchange(activeSymbol);
 
   return (
     <div className="p-3 border-b border-[var(--border-color)] bg-[var(--bg-app)]">
       <div className="flex items-center gap-2 text-xs text-[var(--text-muted)] uppercase tracking-wider mb-1">
         <CoinIcon symbol={activeSymbol} size={20} />
         <span>{activeSymbol}</span>
+        {exchange && <span className="text-[10px]">· {exchange}</span>}
       </div>
 
       {loading ? (

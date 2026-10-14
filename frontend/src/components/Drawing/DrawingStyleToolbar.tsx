@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useRef, useState, memo } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, memo } from 'react';
 import {
   useDrawingTools, resizeTableCells, TABLE_MAX_DIM, type Drawing, type PositionDrawing,
 } from '../../store/drawingStore';
-import { usePane, usePaneDrawings } from '../../store/drawingPanes';
+import { usePane, usePaneDrawings, usePaneRepaint } from '../../store/drawingPanes';
 import { useShallow } from 'zustand/react/shallow';
 import { useMarketStore } from '../../store/marketStore';
 import { priceToY, timeToX, computeParallelOffset, computeRegression, getRotatedRectCorners } from './DrawingCanvas';
@@ -17,6 +17,9 @@ import {
 } from './drawingStyleShared';
 
 type MenuKind = 'color' | 'width' | 'dash' | 'settings' | 'fill' | null;
+
+// Minimum gap between the floating toolbar and its pane's edges.
+const TOOLBAR_EDGE_GAP = 4;
 
 // PositionDrawing's discriminant is a two-literal union ('longPosition' |
 // 'shortPosition') on a single interface, which TS's control-flow narrowing
@@ -95,7 +98,7 @@ export const DrawingStyleToolbar = memo(function DrawingStyleToolbar() {
 });
 
 function StyleToolbar() {
-  const { store: paneStore, chartRef: sharedChartRef, seriesRef: sharedSeriesRef } = usePane();
+  const { id: paneId, store: paneStore, chartRef: sharedChartRef, seriesRef: sharedSeriesRef } = usePane();
   const { drawings, selectedIds, updateDrawing, deleteDrawing, openDrawingSettings } = usePaneDrawings(useShallow((s) => ({
     drawings: s.drawings, selectedIds: s.selectedIds, updateDrawing: s.updateDrawing, deleteDrawing: s.deleteDrawing,
     openDrawingSettings: s.openDrawingSettings,
@@ -103,7 +106,12 @@ function StyleToolbar() {
   const { drawingsHidden, drawingsLocked } = useDrawingTools(useShallow((s) => ({ drawingsHidden: s.drawingsHidden, drawingsLocked: s.drawingsLocked })));
   // Toolbar only targets a single selection; hidden for 0 or 2+.
   const selectedId = selectedIds.length === 1 ? selectedIds[0] : null;
-  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  const [pos, setPosState] = useState<{ x: number; y: number } | null>(null);
+  // recompute also runs every frame of a price-axis drag (usePaneRepaint), so
+  // an unchanged position must not re-render.
+  const setPos = useCallback((p: { x: number; y: number } | null) => {
+    setPosState((prev) => (prev && p && prev.x === p.x && prev.y === p.y ? prev : p));
+  }, []);
   const [openMenu, setOpenMenu] = useState<MenuKind>(null);
   const toolbarRef = useRef<HTMLDivElement>(null);
 
@@ -302,7 +310,7 @@ function StyleToolbar() {
     }
 
     setPos(null);
-  }, [selected, candles, sharedChartRef, sharedSeriesRef]);
+  }, [selected, candles, sharedChartRef, sharedSeriesRef, setPos]);
 
   useEffect(() => {
     recompute();
@@ -316,6 +324,26 @@ function StyleToolbar() {
       chart.unsubscribeCrosshairMove(cb);
     };
   }, [recompute, sharedChartRef]);
+
+  // Price-only rescales (axis drag, "A", Reset chart) fire no range event.
+  usePaneRepaint(paneId, recompute);
+
+  // Keep the whole toolbar inside the pane (a short sub-panel would otherwise
+  // clip it at the bottom or sides). The toolbar is centred on pos.x via
+  // translateX(-50%); its offsetParent is the pane root. Runs after every
+  // render, before paint, overriding the left/top from toolbarStyle.
+  useLayoutEffect(() => {
+    const el = toolbarRef.current;
+    const root = el?.offsetParent as HTMLElement | null | undefined;
+    if (!el || !root || !pos) return;
+    const w = el.offsetWidth, h = el.offsetHeight;
+    const W = root.clientWidth, H = root.clientHeight;
+    const half = w / 2 + TOOLBAR_EDGE_GAP;
+    const left = Math.max(half, Math.min(pos.x, W - half));
+    const top = Math.max(TOOLBAR_EDGE_GAP, Math.min(pos.y, H - h - TOOLBAR_EDGE_GAP));
+    el.style.left = `${left}px`;
+    el.style.top = `${top}px`;
+  });
 
   useEffect(() => { setOpenMenu(null); }, [selectedId]);
 

@@ -1024,9 +1024,10 @@ export type Drawing =
   | SineLineDrawing;
 
 // What a drawing pane plots against: the candle price scale ('price', the
-// main chart) or an indicator's value scale ('oscillator', RSI/MACD/… sub
-// panels). Drawings only paste into a pane of the kind they were copied from.
-export type PaneKind = 'price' | 'oscillator';
+// main chart) or one indicator sub-panel's value scale. Every non-'price' kind
+// is an oscillator (see isToolAllowed). Drawings only paste into a pane of the
+// kind they were copied from — RSI to RSI, never RSI to MACD.
+export type PaneKind = 'price' | 'rsi' | 'stochrsi' | 'macd';
 
 // Deep copies taken by Copy (Ctrl/Cmd+C); session-only, never persisted.
 export interface DrawingClipboard {
@@ -1084,7 +1085,7 @@ interface DrawingToolsState {
   // (use the caller's default position).
   favoritesBarPos: { x: number; y: number } | null;
   // Pane the top toolbar's undo/redo, the context menu and other pane-less
-  // UI act on (see getActivePane in drawingPanes.ts). Always 'main' for now.
+  // UI act on (see getActivePane in drawingPanes.ts): the last pane clicked.
   activePaneId: string;
   clipboard: DrawingClipboard | null;
   // Pastes since the last Copy — scales the paste offset.
