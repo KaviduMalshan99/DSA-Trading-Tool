@@ -38,6 +38,9 @@ export const UserIcon = ({ size }: { size?: number }) => (
 export const ShieldIcon = ({ size }: { size?: number }) => (
   <StrokeIcon size={size}><path d="M12 3 4 6v6c0 5 3.4 8.3 8 9 4.6-.7 8-4 8-9V6l-8-3z" /><path d="m9 12 2 2 4-4" /></StrokeIcon>
 );
+export const CardIcon = ({ size }: { size?: number }) => (
+  <StrokeIcon size={size}><rect x="2" y="5" width="20" height="14" rx="2" /><path d="M2 10h20M6 15h4" /></StrokeIcon>
+);
 export const SettingsIcon = ({ size }: { size?: number }) => (
   <StrokeIcon size={size}>
     <path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0" />

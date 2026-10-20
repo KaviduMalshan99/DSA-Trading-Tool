@@ -13,6 +13,7 @@ import { AlertsEngine } from './components/UI/AlertsEngine';
 import { ToastStack } from './components/UI/ToastStack';
 import { AuthModal } from './components/Auth/AuthModal';
 import { ProfileModal } from './components/Auth/ProfileModal';
+import { SubscriptionBanner } from './components/Subscription/SubscriptionBanner';
 import { useChartStore } from './store/chartStore';
 import { useAuthStore, takeSessionExpiredNotice } from './store/authStore';
 import { start as startSync } from './services/sync';
@@ -67,6 +68,7 @@ export default function App() {
 
   return (
     <div className="flex flex-col h-screen bg-[var(--bg-app)] text-[var(--text-primary)] overflow-hidden">
+      <SubscriptionBanner />
       <Toolbar chartRef={sharedChartRef} chartAreaRef={chartAreaRef} />
       <div className="flex flex-1 overflow-hidden">
         <main className="flex-1 overflow-hidden">

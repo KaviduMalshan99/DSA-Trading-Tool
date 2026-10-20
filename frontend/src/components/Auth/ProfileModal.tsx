@@ -7,9 +7,10 @@ import { useToastStore } from '../../store/toastStore';
 import { api, ApiError, googleStartUrl, type AuthUser, type ProfilePatch } from '../../services/api';
 import { COUNTRIES, countryByCode, type Country } from '../../data/countries';
 import { Modal, ModalCloseButton } from '../UI/Modal';
+import { SubscriptionPanel } from '../Subscription/SubscriptionPanel';
 import { Avatar, displayName } from './Avatar';
 import {
-  Banner, CheckIcon, FIELD_STYLES, FieldError, FieldLabel, GlobeIcon, GoogleGIcon, MailIcon, PasswordField,
+  Banner, CardIcon, CheckIcon, FIELD_STYLES, FieldError, FieldLabel, GlobeIcon, GoogleGIcon, MailIcon, PasswordField,
   PhoneIcon, ShieldIcon, Spinner, StrengthMeter, TextField, UserIcon, primaryButtonClass, secondaryButtonClass,
 } from './fields';
 
@@ -67,19 +68,35 @@ export function ProfileModal() {
 const TABS: { key: ProfileTab; label: string; icon: ReactNode }[] = [
   { key: 'profile', label: 'Profile', icon: <UserIcon size={16} /> },
   { key: 'security', label: 'Security', icon: <ShieldIcon size={16} /> },
+  { key: 'subscription', label: 'Subscription', icon: <CardIcon size={16} /> },
 ];
 
 function ProfileDialog({ user }: { user: AuthUser }) {
   const tab = useAuthStore((s) => s.profileTab);
   const openProfile = useAuthStore((s) => s.openProfile);
   const closeProfile = useAuthStore((s) => s.closeProfile);
+  const refreshMe = useAuthStore((s) => s.refreshMe);
   const uid = useId();
-  const tabRefs = useRef<Record<ProfileTab, HTMLButtonElement | null>>({ profile: null, security: null });
+  const tabRefs = useRef<Partial<Record<ProfileTab, HTMLButtonElement | null>>>({});
+
+  // Show current access dates whenever the Subscription tab is opened.
+  useEffect(() => {
+    if (tab === 'subscription') void refreshMe();
+  }, [tab, refreshMe]);
 
   const onTabKeyDown = (e: KeyboardEvent<HTMLButtonElement>) => {
-    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    const i = TABS.findIndex((t) => t.key === tab);
+    const n = TABS.length;
+    let j: number;
+    switch (e.key) {
+      case 'ArrowRight': j = (i + 1) % n; break;
+      case 'ArrowLeft': j = (i - 1 + n) % n; break;
+      case 'Home': j = 0; break;
+      case 'End': j = n - 1; break;
+      default: return;
+    }
     e.preventDefault();
-    const next: ProfileTab = tab === 'profile' ? 'security' : 'profile';
+    const next = TABS[j].key;
     openProfile(next);
     tabRefs.current[next]?.focus();
   };
@@ -123,12 +140,15 @@ function ProfileDialog({ user }: { user: AuthUser }) {
   return (
     <Modal title="Account" onClose={closeProfile} width={520} header={header}>
       <style>{FIELD_STYLES}</style>
-      {/* Both panels stay mounted so unsaved edits survive switching tabs. */}
+      {/* All panels stay mounted so unsaved edits survive switching tabs. */}
       <div id={`${uid}-panel-profile`} role="tabpanel" aria-labelledby={`${uid}-tab-profile`} hidden={tab !== 'profile'}>
         <ProfilePanel user={user} />
       </div>
       <div id={`${uid}-panel-security`} role="tabpanel" aria-labelledby={`${uid}-tab-security`} hidden={tab !== 'security'}>
         <SecurityPanel user={user} />
+      </div>
+      <div id={`${uid}-panel-subscription`} role="tabpanel" aria-labelledby={`${uid}-tab-subscription`} hidden={tab !== 'subscription'}>
+        <SubscriptionPanel user={user} />
       </div>
     </Modal>
   );

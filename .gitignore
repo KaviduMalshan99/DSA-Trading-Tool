@@ -44,3 +44,5 @@ frontend/.vite/
 .coverage
 htmlcov/
 .pytest_cache/
+
+.claude/

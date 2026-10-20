@@ -1,12 +1,13 @@
 import { create } from 'zustand';
-import { api, ApiError, registerSessionExpiredHandler, type AuthUser } from '../services/api';
+import { api, ApiError, registerSessionExpiredHandler, type AuthUser, type Plan } from '../services/api';
+import { accessUntil, daysLeftAt, nextBoundaryDelay, planAt, showBannerAt } from '../utils/subscription';
 
 // Deliberately NOT persisted: the session lives in an httpOnly cookie and
 // init() re-derives the user from /auth/me on every load.
 
 export type AuthStatus = 'checking' | 'authenticated' | 'anonymous';
 export type AuthModalMode = 'login' | 'signup';
-export type ProfileTab = 'profile' | 'security';
+export type ProfileTab = 'profile' | 'security' | 'subscription';
 
 /** sessionStorage flag: the session ended under us; the reloaded page asks to log in again. */
 const SESSION_EXPIRED_FLAG = 'dsa-session-expired';
@@ -20,6 +21,13 @@ interface AuthState {
   authModalError: string | null;
   profileOpen: boolean;
   profileTab: ProfileTab;
+  /** server_now minus Date.now() when the user was last fetched: corrects for a skewed local clock. */
+  clockOffset: number;
+  /**
+   * The server's clock as of the last tick (user fetched, or a day-count boundary
+   * passed). Entitlement selectors read this rather than Date.now(), so they stay pure.
+   */
+  serverNow: number;
 
   init: () => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
@@ -29,6 +37,10 @@ interface AuthState {
   logoutAll: () => Promise<void>;
   /** Replace the user after a profile/password update. */
   setUser: (user: AuthUser) => void;
+  /** Re-fetch /auth/me (plan, access dates). Concurrent calls share one request. */
+  refreshMe: () => Promise<void>;
+  /** Advance serverNow to the current (offset-corrected) time. */
+  tick: () => void;
   /** A request that needs a session got 401: the session expired or was revoked elsewhere. */
   handleSessionExpired: () => Promise<void>;
   openAuthModal: (mode: AuthModalMode, error?: string) => void;
@@ -80,6 +92,13 @@ export function takeSessionExpiredNotice(): boolean {
 // (sync GET + batch), and a deliberate logout's own 401s aren't an expiry.
 let expiring = false;
 
+let refreshing: Promise<void> | null = null;
+
+/** State for a freshly fetched user, re-measuring the clock offset from its server_now. */
+function withUser(user: AuthUser): Pick<AuthState, 'user' | 'clockOffset' | 'serverNow'> {
+  return { user, clockOffset: user.server_now - Date.now(), serverNow: user.server_now };
+}
+
 export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   status: 'checking',
@@ -88,13 +107,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   authModalError: null,
   profileOpen: false,
   profileTab: 'profile',
+  clockOffset: 0,
+  serverNow: Date.now(),
 
   init: async () => {
     if (initStarted) return;
     initStarted = true;
     try {
       const user = await api.authMe();
-      set({ user, status: 'authenticated' });
+      set({ ...withUser(user), status: 'authenticated' });
     } catch (err) {
       if (!(err instanceof ApiError && err.status === 401)) {
         console.error('[auth] session check failed', err);
@@ -105,12 +126,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   login: async (email, password) => {
     const { user } = await api.authLogin(email, password);
-    set({ user, status: 'authenticated' });
+    set({ ...withUser(user), status: 'authenticated' });
   },
 
   signup: async (email, password) => {
     const { user } = await api.authSignup(email, password);
-    set({ user, status: 'authenticated' });
+    set({ ...withUser(user), status: 'authenticated' });
   },
 
   logout: async () => {
@@ -150,7 +171,26 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     endLocalSession();
   },
 
-  setUser: (user) => set({ user }),
+  setUser: (user) => set(withUser(user)),
+
+  refreshMe: () => {
+    if (get().status !== 'authenticated') return Promise.resolve();
+    refreshing ??= (async () => {
+      try {
+        const user = await api.authMe();
+        // A logout may have finished while the request was in flight.
+        if (get().status === 'authenticated') set(withUser(user));
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 401) void get().handleSessionExpired();
+        else console.warn('[auth] refresh failed', err);
+      } finally {
+        refreshing = null;
+      }
+    })();
+    return refreshing;
+  },
+
+  tick: () => set({ serverNow: Date.now() + get().clockOffset }),
 
   handleSessionExpired: async () => {
     if (expiring || get().status !== 'authenticated') return;
@@ -159,7 +199,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     // on this device, which re-issues the cookie. Confirm the session is really gone.
     try {
       const user = await api.authMe();
-      set({ user });
+      set(withUser(user));
       expiring = false;
       return;
     } catch (err) {
@@ -183,3 +223,55 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 }));
 
 registerSessionExpiredHandler(() => { void useAuthStore.getState().handleSessionExpired(); });
+
+// ── Entitlement selectors ─────────────────────────────────────────────────────
+
+export const selectPlan = (s: AuthState): Plan | null => (s.user ? planAt(s.user, s.serverNow) : null);
+export const selectDaysLeft = (s: AuthState): number => (s.user ? daysLeftAt(s.user, s.serverNow) : 0);
+export const selectShowBanner = (s: AuthState): boolean =>
+  s.status === 'authenticated' && s.user !== null && showBannerAt(s.user, s.serverNow);
+
+// ── Expiry timer ──────────────────────────────────────────────────────────────
+// Ticks serverNow at the next point where the rounded-up day count changes
+// (nextBoundaryDelay), which includes the banner's start and the moment access
+// ends; at the end, /auth/me is re-fetched for the server's verdict (a payment
+// may have extended it). Timers run late in background tabs and across sleep,
+// so the user is also re-fetched when the tab becomes visible and every 10 min.
+
+const REFRESH_EVERY_MS = 10 * 60_000;
+
+let boundaryTimer: ReturnType<typeof setTimeout> | undefined;
+let refreshTimer: ReturnType<typeof setInterval> | undefined;
+
+function armBoundaryTimer(): void {
+  clearTimeout(boundaryTimer);
+  boundaryTimer = undefined;
+  const { user, status, clockOffset } = useAuthStore.getState();
+  if (status !== 'authenticated' || !user) return;
+  const left = accessUntil(user) - (Date.now() + clockOffset);
+  if (left <= 0) return;
+  boundaryTimer = setTimeout(() => {
+    boundaryTimer = undefined;
+    const state = useAuthStore.getState();
+    state.tick(); // re-arms through the subscription below
+    if (state.user && accessUntil(state.user) <= Date.now() + state.clockOffset) void state.refreshMe();
+  }, nextBoundaryDelay(left));
+}
+
+function onVisibilityChange(): void {
+  if (document.visibilityState === 'visible') void useAuthStore.getState().refreshMe();
+}
+
+function setRefreshLoop(on: boolean): void {
+  clearInterval(refreshTimer);
+  refreshTimer = undefined;
+  document.removeEventListener('visibilitychange', onVisibilityChange);
+  if (!on) return;
+  refreshTimer = setInterval(() => { void useAuthStore.getState().refreshMe(); }, REFRESH_EVERY_MS);
+  document.addEventListener('visibilitychange', onVisibilityChange);
+}
+
+useAuthStore.subscribe((s, prev) => {
+  if (s.status !== prev.status) setRefreshLoop(s.status === 'authenticated');
+  if (s.user !== prev.user || s.serverNow !== prev.serverNow || s.status !== prev.status) armBoundaryTimer();
+});

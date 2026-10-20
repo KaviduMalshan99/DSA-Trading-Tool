@@ -29,6 +29,7 @@ from app.core import google_oauth, rate_limit
 from app.core.config import settings
 from app.core.countries import COUNTRY_CODES
 from app.core.database import get_db
+from app.core.entitlement import Plan, access_until, plan
 from app.core.google_oauth import GoogleAuthError
 from app.core.security import (
     CurrentSession,
@@ -41,7 +42,7 @@ from app.core.security import (
     set_auth_cookie,
     verify_password,
 )
-from app.models.user import User
+from app.models.user import User, _now_ms
 
 logger = logging.getLogger(__name__)
 
@@ -98,11 +99,24 @@ class UserOut(BaseModel):
     created_at: int  # epoch ms
     has_password: bool
     google_linked: bool
+    # Subscription. Times are epoch ms; server_now lets the client count days
+    # without trusting its own clock. The rest mirror the env settings.
+    plan: Plan
+    access_until: int | None  # null: never had access
+    trial_ends_at: int | None
+    subscription_ends_at: int | None
+    server_now: int
+    price_lkr: str  # e.g. "1000.00"; a string so no float rounding
+    period_days: int
+    banner_days: int
+    max_prepaid_days: int
+    onepay_enabled: bool
 
     @classmethod
     def from_user(cls, user: User) -> "UserOut":
         # Built explicitly so the password hash and google_sub never leave the
         # server — only whether they are set.
+        now = _now_ms()
         return cls(
             id=user.id,
             email=user.email,
@@ -116,6 +130,16 @@ class UserOut(BaseModel):
             created_at=user.created_at,
             has_password=user.password_hash is not None,
             google_linked=user.google_sub is not None,
+            plan=plan(user, now),
+            access_until=access_until(user) or None,
+            trial_ends_at=user.trial_ends_at,
+            subscription_ends_at=user.subscription_ends_at,
+            server_now=now,
+            price_lkr=f"{settings.subscription_price_lkr:.2f}",
+            period_days=settings.subscription_days,
+            banner_days=settings.banner_days,
+            max_prepaid_days=settings.max_prepaid_days,
+            onepay_enabled=settings.onepay_enabled,
         )
 
 

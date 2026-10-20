@@ -3,7 +3,7 @@ import { useAuthStore } from '../../store/authStore';
 import { useChartStore } from '../../store/chartStore';
 import type { AuthUser } from '../../services/api';
 import { Avatar, displayName } from './Avatar';
-import { GoogleGIcon, LogoutIcon, MailIcon, SettingsIcon, ShieldIcon, UserIcon } from './fields';
+import { CardIcon, GoogleGIcon, LogoutIcon, MailIcon, SettingsIcon, ShieldIcon, UserIcon } from './fields';
 
 interface MenuItem {
   key: string;
@@ -30,6 +30,7 @@ export function AccountMenu({ user }: { user: AuthUser }) {
   const items: MenuItem[] = [
     { key: 'profile', label: 'Profile', icon: <UserIcon size={16} />, run: () => openProfile('profile') },
     { key: 'security', label: 'Security', icon: <ShieldIcon size={16} />, run: () => openProfile('security') },
+    { key: 'subscription', label: 'Subscription', icon: <CardIcon size={16} />, run: () => openProfile('subscription') },
     { key: 'settings', label: 'Settings', icon: <SettingsIcon size={16} />, run: () => useChartStore.getState().setSettingsOpen(true) },
     { key: 'logout', label: 'Log out', icon: <LogoutIcon size={16} />, run: () => { void logout(); }, danger: true, divider: true },
   ];

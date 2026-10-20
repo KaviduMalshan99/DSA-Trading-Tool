@@ -1,11 +1,18 @@
 import time
 
 from sqlalchemy import BigInteger, Boolean, Column, Integer, String
+from app.core.config import settings
 from app.core.database import Base
+
+DAY_MS = 86_400_000
 
 
 def _now_ms() -> int:
     return int(time.time() * 1000)
+
+
+def _trial_end() -> int:
+    return _now_ms() + settings.trial_days * DAY_MS
 
 
 class User(Base):
@@ -27,3 +34,8 @@ class User(Base):
     avatar_url = Column(String(500), nullable=True)  # from Google only; not user-editable
     # Bumped to revoke every outstanding session (JWT `ver` must match).
     token_version = Column(Integer, nullable=False, default=0, server_default="0")
+
+    # Subscription (migration 004), epoch ms; see app/core/entitlement.py.
+    # A model default, so both email signup and Google-create start the trial.
+    trial_ends_at = Column(BigInteger, nullable=True, default=_trial_end)
+    subscription_ends_at = Column(BigInteger, nullable=True)  # end of the latest paid period

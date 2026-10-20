@@ -40,7 +40,24 @@ export interface AuthUser {
   created_at: number;
   has_password: boolean;
   google_linked: boolean;
+  // Subscription. Times are epoch ms; day counts use server_now, not the local clock.
+  plan: Plan;
+  /** When access ends (later of trial and paid period); null if the user never had any. */
+  access_until: number | null;
+  trial_ends_at: number | null;
+  subscription_ends_at: number | null;
+  /** Server clock when this response was built. */
+  server_now: number;
+  /** Price per period, e.g. "1000.00". */
+  price_lkr: string;
+  period_days: number;
+  banner_days: number;
+  max_prepaid_days: number;
+  /** OnePay checkout is configured on the server. */
+  onepay_enabled: boolean;
 }
+
+export type Plan = 'trial' | 'active' | 'expired';
 
 /** Matches backend ProfileUpdateIn: only present fields change; null clears. */
 export type ProfilePatch = Partial<Pick<AuthUser, 'first_name' | 'last_name' | 'phone' | 'country'>>;
