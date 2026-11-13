@@ -1,11 +1,14 @@
 // Coin identity helpers: derive a base asset from a trading pair, resolve its
 // logo URL, and pick a stable fallback color.
 
+import { rawSymbol } from './symbol';
+
 const QUOTE_SUFFIXES = ['USDT', 'FDUSD', 'USDC', 'BUSD', 'TUSD', 'BTC', 'ETH', 'BNB']
   .sort((a, b) => b.length - a.length);
 
-/** "PEPEUSDT" → "PEPE". Returns the full pair if stripping would leave nothing. */
-export function baseAsset(pair: string): string {
+/** "PEPEUSDT" / "PEPEUSDT.P" → "PEPE". Returns the full pair if stripping would leave nothing. */
+export function baseAsset(symbol: string): string {
+  const pair = rawSymbol(symbol);
   const upper = pair.toUpperCase();
   for (const quote of QUOTE_SUFFIXES) {
     if (upper.endsWith(quote)) {

@@ -1,11 +1,12 @@
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { useMarketStore } from '../../store/marketStore';
-import { useWatchlistStore } from '../../store/watchlistStore';
+import { TAG_COLORS, useWatchlistStore } from '../../store/watchlistStore';
 import { api } from '../../services/api';
 import type { MarketType } from '../../types/market';
 import { CoinIcon } from '../UI/CoinIcon';
 import { CoinTagFlag } from './CoinTagFlag';
 import { getExchange } from '../../utils/exchange';
+import { isPerp } from '../../utils/symbol';
 
 const MARKETS: MarketType[] = ['crypto', 'forex', 'stocks'];
 const SEARCH_DEBOUNCE_MS = 300;
@@ -28,7 +29,7 @@ function CheckIcon() {
 
 export function SymbolList() {
   const { activeSymbol, activeMarket, setActiveSymbol, setMarket } = useMarketStore();
-  const { symbols: watchlist, addSymbol } = useWatchlistStore();
+  const { symbols: watchlist, tagColors, addSymbol } = useWatchlistStore();
   const [search, setSearch] = useState('');
   const [results, setResults] = useState<string[]>([]);
   const [searching, setSearching] = useState(false);
@@ -49,8 +50,9 @@ export function SymbolList() {
     const timer = setTimeout(async () => {
       try {
         const { results: found } = await api.searchSymbols(query, activeMarket);
-        // Keep results consistent with the rest of the app, which only deals in USDT pairs.
-        const filtered = found.filter((s) => s.endsWith('USDT'));
+        // Keep results consistent with the rest of the app, which only deals in
+        // USDT pairs — spot (BTCUSDT) and USD-M perpetuals (BTCUSDT.P).
+        const filtered = found.filter((s) => s.endsWith('USDT') || s.endsWith('USDT.P'));
         if (!cancelled) setResults(filtered);
       } catch {
         if (!cancelled) setResults([]);
@@ -61,7 +63,23 @@ export function SymbolList() {
     return () => { cancelled = true; clearTimeout(timer); };
   }, [query, activeMarket]);
 
-  const list = isSearching ? results : watchlist;
+  // Display-only ordering: tagged coins first, grouped by colour in TAG_COLORS
+  // order, then untagged. The stable sort keeps the saved watchlist order inside
+  // each group; the stored array itself is never reordered.
+  const { sortedWatchlist, taggedCount } = useMemo(() => {
+    const rank = (sym: string) => {
+      const c = tagColors[sym];
+      if (!c) return Number.MAX_SAFE_INTEGER;
+      const i = TAG_COLORS.indexOf(c);
+      return i === -1 ? TAG_COLORS.length : i; // unknown/legacy colour: still tagged, after known ones
+    };
+    const sorted = [...watchlist].sort((a, b) => rank(a) - rank(b));
+    return { sortedWatchlist: sorted, taggedCount: sorted.filter((s) => tagColors[s]).length };
+  }, [watchlist, tagColors]);
+
+  const list = isSearching ? results : sortedWatchlist;
+  // Index of the first untagged row, when a divider should sit above it.
+  const dividerAt = !isSearching && taggedCount > 0 && taggedCount < list.length ? taggedCount : -1;
 
   return (
     <div className="flex flex-col h-full bg-[var(--bg-app)] border-r border-[var(--border-color)]">
@@ -99,33 +117,58 @@ export function SymbolList() {
             {isSearching && !searching && list.length === 0 && (
               <div className="px-3 py-2 text-xs text-[var(--text-muted)]">No matches</div>
             )}
-            {list.map((sym) => {
+            {list.map((sym, idx) => {
               const inWatchlist = watchlist.includes(sym);
-              const exchange = getExchange(sym);
+              // Search results are all Binance, so the exchange label is noise
+              // there; watchlist rows keep it.
+              const exchange = isSearching ? null : getExchange(sym);
               return (
-                <div
-                  key={sym}
-                  onClick={() => setActiveSymbol(sym)}
-                  className={`group w-full flex items-center justify-between gap-2 px-3 py-2 text-sm font-mono transition-colors border-l-2 cursor-pointer ${
-                    activeSymbol === sym
-                      ? 'bg-blue-600/20 text-blue-300 border-blue-500'
-                      : 'text-[var(--text-secondary)] hover:bg-[var(--bg-panel)] border-transparent'
-                  }`}
-                >
-                  <span className="flex items-center gap-2">{!isSearching && <CoinTagFlag symbol={sym} />}<CoinIcon symbol={sym} size={18} /><span>{sym}</span>{exchange && <span className="text-[10px] font-sans text-[var(--text-muted)]">{exchange}</span>}</span>
-                  {isSearching && (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); if (!inWatchlist) addSymbol(sym); }}
-                      disabled={inWatchlist}
-                      title={inWatchlist ? 'Already in watchlist' : 'Add to watchlist'}
-                      className={`w-5 h-5 flex items-center justify-center rounded-full flex-shrink-0 ${
-                        inWatchlist ? 'text-emerald-500' : 'text-[var(--text-muted)] hover:text-white hover:bg-blue-600'
-                      }`}
-                    >
-                      {inWatchlist ? <CheckIcon /> : <PlusIcon />}
-                    </button>
+                <Fragment key={sym}>
+                  {idx === dividerAt && (
+                    <div role="separator" className="mx-3 border-t border-[var(--border-color)]" />
                   )}
-                </div>
+                  <div
+                    onClick={() => setActiveSymbol(sym)}
+                    className={`group w-full min-w-0 flex items-center gap-2 px-3 py-2 text-sm font-mono transition-colors border-l-2 cursor-pointer ${
+                      activeSymbol === sym
+                        ? 'bg-blue-600/20 text-blue-300 border-blue-500'
+                        : 'text-[var(--text-secondary)] hover:bg-[var(--bg-panel)] border-transparent'
+                    }`}
+                  >
+                    {/* Only the symbol text may shrink (ellipsis + full name in the
+                        tooltip); flag, icon, exchange (watchlist only), PERP badge and the "+" button
+                        keep their size so they always stay inside the sidebar. */}
+                    <span className="flex flex-1 min-w-0 items-center gap-1.5">
+                      {!isSearching && <CoinTagFlag symbol={sym} />}
+                      <CoinIcon symbol={sym} size={18} />
+                      <span className="min-w-0 truncate" title={sym}>{sym}</span>
+                      {exchange && (
+                        <span className="flex-shrink-0 text-[10px] font-sans text-[var(--text-muted)]">{exchange}</span>
+                      )}
+                      {isSearching && isPerp(sym) && (
+                        <span
+                          className="flex-shrink-0 px-1.5 py-px rounded-full text-[9px] font-sans font-medium leading-tight"
+                          style={{ color: 'var(--accent)', background: 'rgba(33,150,243,0.12)' }}
+                          title="USD-M perpetual futures"
+                        >
+                          PERP
+                        </span>
+                      )}
+                    </span>
+                    {isSearching && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); if (!inWatchlist) addSymbol(sym); }}
+                        disabled={inWatchlist}
+                        title={inWatchlist ? 'Already in watchlist' : 'Add to watchlist'}
+                        className={`w-5 h-5 flex items-center justify-center rounded-full flex-shrink-0 ${
+                          inWatchlist ? 'text-emerald-500' : 'text-[var(--text-muted)] hover:text-white hover:bg-blue-600'
+                        }`}
+                      >
+                        {inWatchlist ? <CheckIcon /> : <PlusIcon />}
+                      </button>
+                    )}
+                  </div>
+                </Fragment>
               );
             })}
           </div>

@@ -12,8 +12,8 @@ export function decimalsForPrice(price: number): number {
   return Math.max(2, -Math.floor(Math.log10(abs)) + 2);
 }
 
-export function formatPrice(price: number): string {
-  const decimals = decimalsForPrice(price);
+/** `decimals` overrides the magnitude-based default (used for a perp's tick decimals). */
+export function formatPrice(price: number, decimals: number = decimalsForPrice(price)): string {
   return price.toLocaleString('en-US', {
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals,

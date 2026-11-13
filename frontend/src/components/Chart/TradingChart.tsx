@@ -8,6 +8,7 @@ import { useThemeStore, type Theme } from '../../store/themeStore';
 import { useChartSync } from '../../hooks/useChartSync';
 import { setSeriesData, updateSeriesBar } from '../../utils/chartSeriesFeed';
 import { decimalsForPrice, formatPrice } from '../../utils/priceFormat';
+import { usePerpTick } from '../../utils/symbol';
 import type { Candle } from '../../types/market';
 import { CoinIcon } from '../UI/CoinIcon';
 import { getExchange } from '../../utils/exchange';
@@ -91,7 +92,7 @@ export function TradingChart({ sharedChartRef, sharedSeriesRef, sharedLineSeries
   // right-axis/crosshair labels size to the symbol's own price (BTC ~2
   // decimals, PEPE ~8) instead of lightweight-charts' fixed 2-decimal
   // default, without calling applyOptions on every single tick.
-  const appliedDecimalsRef = useRef<number | null>(null);
+  const appliedDecimalsRef = useRef<string | null>(null);
 
   const { activeSymbol, activeInterval, setCandles, appendCandle, prependCandles } = useMarketStore();
   const { onRangeChange, onCrosshairMove } = useChartSync();
@@ -101,6 +102,8 @@ export function TradingChart({ sharedChartRef, sharedSeriesRef, sharedLineSeries
   const theme = useThemeStore((s) => s.theme);
   const replayActive = useReplayStore((s) => s.isActive);
   const replayCursorTime = useReplayStore((s) => s.cursorTime);
+  // Perpetuals display at their tick's decimals (BTCUSDT.P → 0.1); null for spot.
+  const perpTick = usePerpTick(activeSymbol);
 
   // While in replay, pin the legend price to the cursor bar's close instead
   // of whatever the live feed is doing in the background.
@@ -115,13 +118,15 @@ export function TradingChart({ sharedChartRef, sharedSeriesRef, sharedLineSeries
   // 2-decimal default, which rounds sub-cent coins to "0.00".
   useEffect(() => {
     if (currentPrice === null || !seriesRef.current) return;
-    const decimals = decimalsForPrice(currentPrice);
-    if (decimals === appliedDecimalsRef.current) return;
-    appliedDecimalsRef.current = decimals;
+    const decimals = perpTick ? perpTick.decimals : decimalsForPrice(currentPrice);
+    const minMove = perpTick ? perpTick.minMove : Math.pow(10, -decimals);
+    const key = `${decimals}:${minMove}`;
+    if (key === appliedDecimalsRef.current) return;
+    appliedDecimalsRef.current = key;
     seriesRef.current.applyOptions({
-      priceFormat: { type: 'price', precision: decimals, minMove: Math.pow(10, -decimals) },
+      priceFormat: { type: 'price', precision: decimals, minMove },
     });
-  }, [currentPrice]);
+  }, [currentPrice, perpTick]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -438,7 +443,7 @@ export function TradingChart({ sharedChartRef, sharedSeriesRef, sharedLineSeries
         {exchange && <span className="text-[var(--text-muted)] text-xs">{exchange}</span>}
         {currentPrice !== null && (
           <span className="text-[#26a641] text-sm font-mono font-bold">
-            {formatPrice(currentPrice)}
+            {perpTick ? formatPrice(currentPrice, perpTick.decimals) : formatPrice(currentPrice)}
           </span>
         )}
         <span

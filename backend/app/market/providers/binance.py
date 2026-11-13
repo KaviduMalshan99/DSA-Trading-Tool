@@ -70,10 +70,6 @@ class BinanceProvider(BaseProvider):
                 )
 
     async def get_symbols(self) -> list[str]:
-        import aiohttp
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                "https://api.binance.com/api/v3/exchangeInfo"
-            ) as resp:
-                data = await resp.json()
-                return [s["symbol"] for s in data["symbols"] if s["status"] == "TRADING"]
+        # Spot only; shares the 1-hour exchangeInfo cache with search and the candle stream.
+        from app.market.binance_markets import get_symbols
+        return list(await get_symbols("spot"))

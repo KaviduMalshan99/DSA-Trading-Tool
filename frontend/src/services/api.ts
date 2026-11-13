@@ -139,7 +139,12 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 
 export const api = {
   searchSymbols: (q: string, market: MarketType = 'crypto') =>
-    request<{ results: string[] }>(`/symbols/search?q=${q}&market=${market}`),
+    request<{ results: string[] }>(`/symbols/search?q=${encodeURIComponent(q)}&market=${market}`),
+
+  symbolInfo: (symbol: string) =>
+    request<{ symbol: string; market: 'spot' | 'perp'; tick_size: string }>(
+      `/symbols/info/${encodeURIComponent(symbol)}`,
+    ),
 
   // ── Auth (session lives in an httpOnly cookie; nothing is stored client-side) ──
   authSignup: (email: string, password: string) =>

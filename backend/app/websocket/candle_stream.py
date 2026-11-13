@@ -4,27 +4,25 @@ import aiohttp
 import websockets
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-router = APIRouter()
+from app.market.binance_markets import INTERVALS, KLINES_URL, WS_BASE, Market, display_symbol, parse_symbol
 
-_BINANCE_REST = "https://api.binance.com"
-_BINANCE_WS = "wss://stream.binance.com:9443/ws"
+router = APIRouter()
 
 
 async def _fetch_klines(
-    symbol: str, interval: str, limit: int = 1000, end_time: int | None = None
+    market: Market, raw: str, display: str, interval: str, limit: int = 1000, end_time: int | None = None
 ) -> list[dict]:
-    url = f"{_BINANCE_REST}/api/v3/klines"
-    params = {"symbol": symbol.upper(), "interval": interval, "limit": limit}
+    params = {"symbol": raw, "interval": interval, "limit": limit}
     if end_time is not None:
         params["endTime"] = end_time
     timeout = aiohttp.ClientTimeout(total=10)
     async with aiohttp.ClientSession(timeout=timeout) as session:
-        async with session.get(url, params=params) as resp:
+        async with session.get(KLINES_URL[market], params=params) as resp:
             resp.raise_for_status()
             rows = await resp.json()
     return [
         {
-            "symbol": symbol.upper(),
+            "symbol": display,
             "t": row[0],
             "o": float(row[1]),
             "h": float(row[2]),
@@ -41,26 +39,40 @@ async def _fetch_klines(
 async def candle_stream(ws: WebSocket, symbol: str, interval: str):
     await ws.accept()
 
-    # Fetch last 1000 candles (Binance's max per request) and send immediately
     try:
-        historical = await _fetch_klines(symbol, interval, 1000)
+        market, raw = parse_symbol(symbol)
+    except ValueError:
+        await ws.send_json({"type": "error", "message": "invalid symbol"})
+        await ws.close(code=1008)
+        return
+    if interval not in INTERVALS[market]:
+        await ws.send_json({"type": "error", "message": "invalid interval"})
+        await ws.close(code=1008)
+        return
+    # Candle payloads carry the display symbol (BTCUSDT.P) so the frontend's
+    # symbol matching is the same for both markets.
+    display = display_symbol(market, raw)
+
+    # Fetch last 1000 candles (Binance's max per request on both markets) and send immediately
+    try:
+        historical = await _fetch_klines(market, raw, display, interval, 1000)
         await ws.send_json({"type": "historical", "candles": historical})
     except Exception as exc:
         await ws.send_json({"type": "error", "message": str(exc)})
         await ws.close(code=1011)
         return
 
-    binance_url = f"{_BINANCE_WS}/{symbol.lower()}@kline_{interval}"
+    binance_url = f"{WS_BASE[market]}/{raw.lower()}@kline_{interval}"
 
     async def relay_live():
         """Forward live Binance kline updates to the client until disconnected."""
         async with websockets.connect(binance_url) as bws:
-            async for raw in bws:
-                k = json.loads(raw)["k"]
+            async for raw_msg in bws:
+                k = json.loads(raw_msg)["k"]
                 await ws.send_json({
                     "type": "update",
                     "candle": {
-                        "symbol": symbol.upper(),
+                        "symbol": display,
                         "t": k["t"],
                         "o": float(k["o"]),
                         "h": float(k["h"]),
@@ -81,7 +93,7 @@ async def candle_stream(ws: WebSocket, symbol: str, interval: str):
             if not isinstance(before, (int, float)):
                 continue
             try:
-                older = await _fetch_klines(symbol, interval, 1000, end_time=int(before) - 1)
+                older = await _fetch_klines(market, raw, display, interval, 1000, end_time=int(before) - 1)
             except Exception:
                 older = []
             await ws.send_json({"type": "historical_prepend", "candles": older})

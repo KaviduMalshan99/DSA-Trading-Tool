@@ -3,6 +3,7 @@ import { useMarketStore } from '../../store/marketStore';
 import { formatPrice } from '../../utils/priceFormat';
 import { CoinIcon } from '../UI/CoinIcon';
 import { getExchange } from '../../utils/exchange';
+import { ticker24hUrl, usePerpTick } from '../../utils/symbol';
 
 interface Ticker24hr {
   lastPrice: string;
@@ -17,16 +18,17 @@ export function MarketInfo() {
   const { activeSymbol } = useMarketStore();
   const [ticker, setTicker] = useState<Ticker24hr | null>(null);
   const [loading, setLoading] = useState(true);
+  const perpTick = usePerpTick(activeSymbol);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
+    setTicker(null);
 
     async function fetchTicker() {
       try {
-        const res = await fetch(
-          `https://api.binance.com/api/v3/ticker/24hr?symbol=${activeSymbol}`
-        );
+        // Spot → api.binance.com, BTCUSDT.P → fapi.binance.com (both allow browser CORS).
+        const res = await fetch(ticker24hUrl(activeSymbol));
         if (!res.ok) return;
         const data = await res.json() as Ticker24hr;
         if (!cancelled) { setTicker(data); setLoading(false); }
@@ -45,7 +47,7 @@ export function MarketInfo() {
   const low        = ticker ? parseFloat(ticker.lowPrice)          : null;
   const isPositive = changePct !== null && changePct >= 0;
 
-  const fmt = formatPrice;
+  const fmt = (v: number) => (perpTick ? formatPrice(v, perpTick.decimals) : formatPrice(v));
 
   const displayPrice = price;
   const exchange = getExchange(activeSymbol);
