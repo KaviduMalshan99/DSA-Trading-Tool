@@ -1,8 +1,8 @@
 /**
  * EMAOverlay — four exponential moving averages (20/50/100/200) drawn as real
- * lightweight-charts line series, modelled on VWAPOverlay.
+ * lightweight-charts line series on the shared main chart.
  *
- * Unlike VWAP there's no backend endpoint: every EMA is computed client-side
+ * There's no backend endpoint: every EMA is computed client-side
  * from marketStore's candles (utils/klineAnalytics.computeEMA), so there's no
  * fetch or poll — the lines simply recompute whenever the candles change.
  *
@@ -57,7 +57,7 @@ export function EMAOverlay({ sharedChartRef }: EMAOverlayProps) {
     seriesRef.current = series;
 
     return () => {
-      // Same guard as VWAPOverlay: if TradingChart unmounted first its
+      // Guard: if TradingChart unmounted first its
       // chart.remove() already disposed these, and removeSeries would throw.
       if (sharedChartRef.current === chart) series.forEach((s) => chart.removeSeries(s));
       seriesRef.current = [];
@@ -106,9 +106,9 @@ export function EMAOverlay({ sharedChartRef }: EMAOverlayProps) {
     .filter((r) => r.visible && r.value != null);
   if (rows.length === 0) return null;
 
-  // Offset below VWAPOverlay's legend row (top-8) so the two never overlap.
+  // top-8 sits directly under the symbol/price legend row (top-2) in TradingChart.
   return (
-    <div className="absolute top-14 left-3 z-10 flex flex-col gap-0.5 pointer-events-none select-none text-xs font-mono">
+    <div className="absolute top-8 left-3 z-10 flex flex-col gap-0.5 pointer-events-none select-none text-xs font-mono">
       {rows.map(({ i, period, color, value }) => (
         <div key={i} className="flex items-center gap-1.5">
           <span className="w-3 h-0.5 rounded" style={{ background: color }} />

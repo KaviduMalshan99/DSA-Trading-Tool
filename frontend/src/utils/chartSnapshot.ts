@@ -2,7 +2,7 @@ import type { IChartApi } from 'lightweight-charts';
 
 /**
  * Composites lightweight-charts' own screenshot (candles/grid/axes) with every
- * overlay <canvas> layered on top of it (footprint, heatmap, SMC, drawings, ...)
+ * overlay <canvas> layered on top of it (drawings, ...)
  * into a single flattened canvas. The chart's own canvas lives inside the
  * element marked `data-tv-chart-root` and is skipped so it isn't drawn twice.
  */

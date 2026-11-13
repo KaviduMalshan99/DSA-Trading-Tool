@@ -2,9 +2,7 @@ import { create } from 'zustand';
 import { saveLocal } from '../services/persist';
 
 /**
- * Student-facing chart indicators (Indicators dropdown). Deliberately separate
- * from chartStore's visibleOverlays: those are the pro order-flow overlays,
- * gated by config/topBarVisibility.ts, while indicators are always available.
+ * Chart indicators (Indicators dropdown) drawn on the main chart.
  */
 export type IndicatorType = 'ema' | 'bollinger';
 

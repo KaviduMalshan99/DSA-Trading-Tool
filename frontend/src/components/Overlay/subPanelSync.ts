@@ -3,9 +3,8 @@
  * sub-panel (RSI / Stoch RSI / MACD), so the panel scrolls and zooms like the
  * main chart and dragging it pans the main chart too.
  *
- * DeltaPanel stays one-way for the reason documented there: lightweight-charts
- * applies setVisibleLogicalRange on its next animation frame and fires the
- * range-change event then (or synchronously, from inside a later
+ * Two-way sync needs care: lightweight-charts applies setVisibleLogicalRange
+ * on its next animation frame and fires the range-change event then (or synchronously, from inside a later
  * getVisibleLogicalRange), so a same-tick flag alone can't catch the echo.
  * This link uses three layers:
  *  1. `syncing` — a shared re-entrancy flag set around every programmatic

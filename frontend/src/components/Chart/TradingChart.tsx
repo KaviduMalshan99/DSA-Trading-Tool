@@ -45,14 +45,13 @@ const TRANSPARENT = 'rgba(0,0,0,0)';
 // set visible:false (it must stay in autoscale and keep priceToCoordinate
 // working for every overlay) — it's made transparent instead. Line mode hides
 // body/borders/wicks and the candle's own price label (the line series shows
-// its own); footprint only dims body/borders so its per-level text reads.
-// Line mode wins wherever the two overlap.
-function candleSeriesOptions(style: CandleStyle, footprint: boolean, line: boolean) {
-  const hideBody = line || footprint || !style.bodyVisible;
+// its own).
+function candleSeriesOptions(style: CandleStyle, line: boolean) {
+  const hideBody = line || !style.bodyVisible;
   return {
     upColor:          hideBody ? TRANSPARENT : style.upColor,
     downColor:        hideBody ? TRANSPARENT : style.downColor,
-    borderVisible:    line || footprint ? false : style.bordersVisible,
+    borderVisible:    line ? false : style.bordersVisible,
     borderUpColor:    style.borderUpColor,
     borderDownColor:  style.borderDownColor,
     wickVisible:      line ? false : style.wickVisible,
@@ -66,7 +65,7 @@ function candleSeriesOptions(style: CandleStyle, footprint: boolean, line: boole
 interface TradingChartProps {
   /** Lifted ref so ChartContainer can share it with sibling panels for time-scale sync. */
   sharedChartRef?: React.MutableRefObject<IChartApi | null>;
-  /** Lifted ref so FootprintCanvas can call priceToCoordinate on the candlestick series. */
+  /** Lifted ref so overlays and drawings can call priceToCoordinate on the candlestick series. */
   sharedSeriesRef?: React.MutableRefObject<ISeriesApi<'Candlestick'> | null>;
   /** Lifted ref to the additive close-price line series (shown in 'line' chart mode). */
   sharedLineSeriesRef?: React.MutableRefObject<ISeriesApi<'Line'> | null>;
@@ -96,7 +95,6 @@ export function TradingChart({ sharedChartRef, sharedSeriesRef, sharedLineSeries
 
   const { activeSymbol, activeInterval, setCandles, appendCandle, prependCandles } = useMarketStore();
   const { onRangeChange, onCrosshairMove } = useChartSync();
-  const visibleOverlays = useChartStore((s) => s.visibleOverlays);
   const chartType = useChartStore((s) => s.chartType);
   const logScale = useChartStore((s) => s.logScale);
   const candleStyle = useCandleStyleStore();
@@ -157,9 +155,9 @@ export function TradingChart({ sharedChartRef, sharedSeriesRef, sharedLineSeries
     });
 
     const style = useCandleStyleStore.getState();
-    const { visibleOverlays: overlaysNow, chartType: typeNow } = useChartStore.getState();
+    const { chartType: typeNow } = useChartStore.getState();
     const series = chart.addCandlestickSeries(
-      candleSeriesOptions(style, overlaysNow.has('footprint'), typeNow === 'line'),
+      candleSeriesOptions(style, typeNow === 'line'),
     );
     // Additive close-price view for 'line' mode — added after the candles so
     // it draws on top; fed alongside them via utils/chartSeriesFeed.
@@ -269,18 +267,16 @@ export function TradingChart({ sharedChartRef, sharedSeriesRef, sharedLineSeries
     }
   }, [logScale]);
 
-  // Apply user-configured candle colors; dim body/borders (not wicks) when the
-  // footprint overlay is active so its per-price-level text reads clearly; in
-  // 'line' chart mode make the candles fully transparent and show the line.
+  // Apply user-configured candle colors; in 'line' chart mode make the candles
+  // fully transparent and show the line.
   useEffect(() => {
     if (!seriesRef.current) return;
     const line = chartType === 'line';
     seriesRef.current.applyOptions(
-      candleSeriesOptions(candleStyle, visibleOverlays.has('footprint'), line),
+      candleSeriesOptions(candleStyle, line),
     );
     lineSeriesRef.current?.applyOptions({ visible: line });
   }, [
-    visibleOverlays,
     chartType,
     candleStyle.upColor, candleStyle.downColor,
     candleStyle.borderUpColor, candleStyle.borderDownColor,

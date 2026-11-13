@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMarketStore } from '../../store/marketStore';
-import { useAlertsStore, type Alert, type AlertType, type AlertSideFilter, type LevelKind, type NewAlertInput } from '../../store/alertsStore';
+import { useAlertsStore, type Alert } from '../../store/alertsStore';
 import { formatPrice } from '../../utils/priceFormat';
 import { formatChartClock } from '../../utils/chartTime';
 
@@ -8,41 +8,8 @@ interface Props {
   onClose: () => void;
 }
 
-const TYPE_OPTIONS: { value: AlertType; label: string }[] = [
-  { value: 'price', label: 'Price' },
-  { value: 'whale', label: 'Whale' },
-  { value: 'absorption', label: 'Absorption' },
-  { value: 'delta', label: 'Delta' },
-  { value: 'level', label: 'Level' },
-];
-
-const SIDE_OPTIONS: { value: AlertSideFilter; label: string }[] = [
-  { value: 'any', label: 'Any' },
-  { value: 'buy', label: 'Buy' },
-  { value: 'sell', label: 'Sell' },
-];
-
-const LEVEL_OPTIONS: { value: LevelKind; label: string }[] = [
-  { value: 'pdh', label: 'PDH' },
-  { value: 'pdl', label: 'PDL' },
-  { value: 'daily_open', label: 'Daily Open' },
-];
-
 function describeAlert(alert: Alert): string {
-  switch (alert.type) {
-    case 'price':
-      return `Price ${alert.direction} ${formatPrice(alert.targetPrice)}`;
-    case 'whale':
-      return `Whale ${alert.side === 'any' ? '' : `${alert.side} `}≥ ${
-        alert.minNotional >= 1_000_000 ? `$${(alert.minNotional / 1_000_000).toFixed(2)}M` : `$${(alert.minNotional / 1_000).toFixed(0)}K`
-      }`;
-    case 'absorption':
-      return `${alert.side === 'any' ? 'Any' : alert.side === 'buy' ? 'Buy' : 'Sell'} absorption`;
-    case 'delta':
-      return `Large ${alert.side === 'any' ? '' : `${alert.side} `}delta swing`;
-    case 'level':
-      return `Touch ${alert.level === 'pdh' ? 'PDH' : alert.level === 'pdl' ? 'PDL' : 'Daily Open'}`;
-  }
+  return `Price ${alert.direction} ${formatPrice(alert.targetPrice)}`;
 }
 
 function Segmented<T extends string>({
@@ -73,32 +40,14 @@ export function AlertsManager({ onClose }: Props) {
 
   const { alerts, addAlert, removeAlert, toggleAlert, soundEnabled, setSoundEnabled } = useAlertsStore();
 
-  const [type, setType] = useState<AlertType>('price');
   const [direction, setDirection] = useState<'above' | 'below'>('above');
   const [targetPrice, setTargetPrice] = useState('');
-  const [minNotional, setMinNotional] = useState('500000');
-  const [side, setSide] = useState<AlertSideFilter>('any');
-  const [level, setLevel] = useState<LevelKind>('pdh');
   const [rearm, setRearm] = useState(false);
 
   const handleAdd = () => {
-    let input: NewAlertInput;
-    if (type === 'price') {
-      const price = parseFloat(targetPrice);
-      if (!Number.isFinite(price) || price <= 0) return;
-      input = { type: 'price', direction, targetPrice: price, rearm };
-    } else if (type === 'whale') {
-      const notional = parseFloat(minNotional);
-      if (!Number.isFinite(notional) || notional <= 0) return;
-      input = { type: 'whale', minNotional: notional, side, rearm };
-    } else if (type === 'absorption') {
-      input = { type: 'absorption', side, rearm };
-    } else if (type === 'delta') {
-      input = { type: 'delta', side, rearm };
-    } else {
-      input = { type: 'level', level, rearm };
-    }
-    addAlert(activeSymbol, input);
+    const price = parseFloat(targetPrice);
+    if (!Number.isFinite(price) || price <= 0) return;
+    addAlert(activeSymbol, { type: 'price', direction, targetPrice: price, rearm });
     setTargetPrice('');
   };
 
@@ -123,46 +72,18 @@ export function AlertsManager({ onClose }: Props) {
             New alert · {activeSymbol}{currentPrice !== null && <span className="normal-case"> · now {formatPrice(currentPrice)}</span>}
           </div>
 
-          <div className="mb-3">
-            <Segmented options={TYPE_OPTIONS} value={type} onChange={setType} />
-          </div>
-
           <div className="flex flex-col gap-2 mb-3">
-            {type === 'price' && (
-              <div className="grid grid-cols-2 gap-2">
-                <Segmented options={[{ value: 'above', label: 'Above' }, { value: 'below', label: 'Below' }]} value={direction} onChange={setDirection} />
-                <input
-                  type="number"
-                  value={targetPrice}
-                  onChange={(e) => setTargetPrice(e.target.value)}
-                  placeholder="Target price"
-                  className="px-2 py-1.5 rounded text-sm font-mono text-[var(--text-primary)] outline-none"
-                  style={{ background: 'var(--bg-app)', border: '1px solid var(--border-color)' }}
-                />
-              </div>
-            )}
-
-            {type === 'whale' && (
-              <div className="grid grid-cols-2 gap-2">
-                <input
-                  type="number"
-                  value={minNotional}
-                  onChange={(e) => setMinNotional(e.target.value)}
-                  placeholder="Min notional ($)"
-                  className="px-2 py-1.5 rounded text-sm font-mono text-[var(--text-primary)] outline-none"
-                  style={{ background: 'var(--bg-app)', border: '1px solid var(--border-color)' }}
-                />
-                <Segmented options={SIDE_OPTIONS} value={side} onChange={setSide} />
-              </div>
-            )}
-
-            {(type === 'absorption' || type === 'delta') && (
-              <Segmented options={SIDE_OPTIONS} value={side} onChange={setSide} />
-            )}
-
-            {type === 'level' && (
-              <Segmented options={LEVEL_OPTIONS} value={level} onChange={setLevel} />
-            )}
+            <div className="grid grid-cols-2 gap-2">
+              <Segmented options={[{ value: 'above', label: 'Above' }, { value: 'below', label: 'Below' }]} value={direction} onChange={setDirection} />
+              <input
+                type="number"
+                value={targetPrice}
+                onChange={(e) => setTargetPrice(e.target.value)}
+                placeholder="Target price"
+                className="px-2 py-1.5 rounded text-sm font-mono text-[var(--text-primary)] outline-none"
+                style={{ background: 'var(--bg-app)', border: '1px solid var(--border-color)' }}
+              />
+            </div>
 
             <label className="flex items-center gap-2 text-xs text-[var(--text-secondary)] cursor-pointer">
               <input type="checkbox" checked={rearm} onChange={(e) => setRearm(e.target.checked)} />

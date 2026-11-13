@@ -15,7 +15,7 @@
  *     visible logical range, exactly like TradingChart's own scroll-back
  *     prepend does, so pan/zoom doesn't jump).
  *
- * Mounted once in ChartContainer, always-on (not gated by visibleOverlays),
+ * Mounted once in ChartContainer, always-on (not gated by any toggle),
  * right after TradingChart so sharedChartRef/sharedSeriesRef are already
  * populated by the time its effects run (same ordering other overlays rely on).
  */

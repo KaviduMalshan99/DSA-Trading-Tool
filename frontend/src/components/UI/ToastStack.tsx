@@ -53,10 +53,8 @@ function ToastRow({ id, message, side }: { id: string; message: string; side: To
 
 /**
  * App-level toast stack for fired alerts and app feedback. Fixed to the viewport (not the
- * chart area) at top-center, deliberately distinct from the four docked
- * chart-area panels (Context top-right, Execution top-left, Checklist
- * bottom-right, Scanner bottom-left) which all live inside the chart area
- * and never reach up here.
+ * chart area) at top-center, so it never covers anything docked inside the
+ * chart area.
  */
 export function ToastStack() {
   const toasts = useToastStore((s) => s.toasts);

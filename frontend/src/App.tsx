@@ -6,18 +6,13 @@ import { SymbolList } from './components/Sidebar/SymbolList';
 import { MarketInfo } from './components/Sidebar/MarketInfo';
 import { SidebarRail } from './components/Sidebar/SidebarRail';
 import { ChartContainer } from './components/Chart/ChartContainer';
-import { WhaleTicker } from './components/Overlay/WhaleTicker';
-import { DOMPanel } from './components/Overlay/DOMPanel';
-import { TapePanel } from './components/Overlay/TapePanel';
 import { AlertsEngine } from './components/UI/AlertsEngine';
 import { ToastStack } from './components/UI/ToastStack';
 import { AuthModal } from './components/Auth/AuthModal';
 import { ProfileModal } from './components/Auth/ProfileModal';
 import { SubscriptionBanner } from './components/Subscription/SubscriptionBanner';
-import { useChartStore } from './store/chartStore';
 import { useAuthStore, takeSessionExpiredNotice } from './store/authStore';
 import { start as startSync } from './services/sync';
-import { SHOW_DOM_PANEL, SHOW_TAPE_PANEL } from './config/topBarVisibility';
 
 const AUTH_ERROR_MESSAGES: Record<string, string> = {
   cancelled: 'Google sign-in was cancelled.',
@@ -34,10 +29,7 @@ function authErrorMessage(code: string): string {
 }
 
 export default function App() {
-  const whaleActive = useChartStore((s) => s.visibleOverlays.has('whaleMarkers'));
   const [watchlistOpen, setWatchlistOpen] = useState(false);
-  const [domOpen, setDomOpen] = useState(false);
-  const [tapeOpen, setTapeOpen] = useState(false);
 
   // Lifted so the header's snapshot button can reach the live chart + its overlays.
   const sharedChartRef  = useRef<IChartApi | null>(null);
@@ -81,30 +73,15 @@ export default function App() {
         {watchlistOpen && (
           <aside className="w-52 flex flex-col flex-shrink-0">
             <MarketInfo />
-            {/* overflow-hidden + min-h-0 constrains SymbolList so WhaleTicker fits below */}
+            {/* overflow-hidden + min-h-0 constrains SymbolList to the remaining height */}
             <div className="flex-1 min-h-0 overflow-hidden">
               <SymbolList />
             </div>
-            {whaleActive && <WhaleTicker />}
-          </aside>
-        )}
-        {SHOW_DOM_PANEL && domOpen && (
-          <aside className="w-56 flex flex-col flex-shrink-0 border-l border-[var(--border-color)]">
-            <DOMPanel />
-          </aside>
-        )}
-        {SHOW_TAPE_PANEL && tapeOpen && (
-          <aside className="w-56 flex flex-col flex-shrink-0 border-l border-[var(--border-color)]">
-            <TapePanel />
           </aside>
         )}
         <SidebarRail
           open={watchlistOpen}
           onToggle={() => setWatchlistOpen((v) => !v)}
-          domOpen={domOpen}
-          onToggleDom={() => setDomOpen((v) => !v)}
-          tapeOpen={tapeOpen}
-          onToggleTape={() => setTapeOpen((v) => !v)}
         />
       </div>
       <StatusBar />

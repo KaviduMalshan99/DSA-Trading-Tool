@@ -9,26 +9,6 @@ export interface Candle {
   interval: string;
 }
 
-export interface Trade {
-  symbol: string;
-  t: number;
-  p: number;      // price
-  q: number;      // quantity
-  m: boolean;     // is_buyer_maker
-}
-
-export interface OrderBookLevel {
-  price: number;
-  quantity: number;
-}
-
-export interface OrderBookDepth {
-  symbol: string;
-  t: number;
-  bids: [number, number][];
-  asks: [number, number][];
-}
-
 export type MarketType = 'crypto' | 'forex' | 'stocks';
 
 export type CandleInterval =

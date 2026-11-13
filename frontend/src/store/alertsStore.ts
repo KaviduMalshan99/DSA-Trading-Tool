@@ -1,17 +1,13 @@
 import { create } from 'zustand';
 import { saveLocal } from '../services/persist';
 
-export type AlertType = 'price' | 'whale' | 'absorption' | 'delta' | 'level';
-export type AlertSideFilter = 'any' | 'buy' | 'sell';
-export type LevelKind = 'pdh' | 'pdl' | 'daily_open';
-
 interface AlertBase {
   id: string;
   symbol: string;
   enabled: boolean;
   // false (default) = one-shot: fires once, then auto-disables (enabled -> false).
   // true = re-arm: stays enabled and can fire again once the condition
-  // resets (e.g. price crosses back, delta drops below threshold again).
+  // resets (price crosses back, then re-crosses).
   rearm: boolean;
   triggered: boolean;
   lastFiredAt: number | null;
@@ -24,39 +20,13 @@ export interface PriceAlert extends AlertBase {
   targetPrice: number;
 }
 
-export interface WhaleAlert extends AlertBase {
-  type: 'whale';
-  minNotional: number;
-  side: AlertSideFilter;
-}
-
-export interface AbsorptionAlert extends AlertBase {
-  type: 'absorption';
-  side: AlertSideFilter;
-}
-
-export interface DeltaAlert extends AlertBase {
-  type: 'delta';
-  side: AlertSideFilter;
-}
-
-export interface LevelAlert extends AlertBase {
-  type: 'level';
-  level: LevelKind;
-}
-
-export type Alert = PriceAlert | WhaleAlert | AbsorptionAlert | DeltaAlert | LevelAlert;
+export type Alert = PriceAlert;
 
 // Everything the caller supplies: the type-specific fields, plus rearm (the
 // caller's choice) — id/symbol/enabled/triggered/lastFiredAt/createdAt are
 // always generated here.
 type Generated = 'id' | 'symbol' | 'enabled' | 'triggered' | 'lastFiredAt' | 'createdAt';
-export type NewAlertInput =
-  | Omit<PriceAlert, Generated>
-  | Omit<WhaleAlert, Generated>
-  | Omit<AbsorptionAlert, Generated>
-  | Omit<DeltaAlert, Generated>
-  | Omit<LevelAlert, Generated>;
+export type NewAlertInput = Omit<PriceAlert, Generated>;
 
 interface Persisted {
   alerts: Alert[];
@@ -65,12 +35,22 @@ interface Persisted {
 
 const STORAGE_KEY = 'dsa-alerts';
 
+function isPriceAlert(a: unknown): a is PriceAlert {
+  return !!a && typeof a === 'object' && (a as { type?: unknown }).type === 'price';
+}
+
 function loadInitial(): Persisted {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      return { alerts: Array.isArray(parsed.alerts) ? parsed.alerts : [], soundEnabled: !!parsed.soundEnabled };
+      // Only price alerts exist now. Older saves (and account-sync data, which
+      // lands in localStorage before a reload) may still hold whale / delta /
+      // absorption / level alerts — drop them here.
+      const alerts: Alert[] = Array.isArray(parsed.alerts)
+        ? parsed.alerts.filter((a: unknown) => isPriceAlert(a))
+        : [];
+      return { alerts, soundEnabled: !!parsed.soundEnabled };
     }
   } catch { /* ignore malformed/blocked storage */ }
   return { alerts: [], soundEnabled: false };

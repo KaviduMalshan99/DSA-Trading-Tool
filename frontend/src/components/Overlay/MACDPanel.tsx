@@ -22,7 +22,7 @@ import { useIndicatorConfigStore, type LineStyle as LineStyleCfg } from '../../s
 import { toChartTime } from '../../utils/chartTime';
 import { decimalsForPrice } from '../../utils/priceFormat';
 import { computeMACD, type EMAPoint } from '../../utils/klineAnalytics';
-import { subChartThemeOptions } from './DeltaPanel';
+import { subChartThemeOptions } from './subChartTheme';
 import { linkSubPanel, SUB_PANEL_INTERACTION } from './subPanelSync';
 import { SubPanelDrawingPane } from './SubPanelDrawingPane';
 import { AXIS_MIN_WIDTH, refLineColors } from './RSIPanel';

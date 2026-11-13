@@ -19,7 +19,7 @@ import { useThemeStore } from '../../store/themeStore';
 import { useIndicatorConfigStore, type LineStyle as LineStyleCfg } from '../../store/indicatorConfigStore';
 import { toChartTime } from '../../utils/chartTime';
 import { computeStochRSI, type RSIPoint } from '../../utils/klineAnalytics';
-import { subChartThemeOptions } from './DeltaPanel';
+import { subChartThemeOptions } from './subChartTheme';
 import { linkSubPanel, SUB_PANEL_INTERACTION } from './subPanelSync';
 import { SubPanelDrawingPane } from './SubPanelDrawingPane';
 import { AXIS_MIN_WIDTH, refLineColors } from './RSIPanel';

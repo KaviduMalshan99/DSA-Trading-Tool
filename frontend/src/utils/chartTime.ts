@@ -8,8 +8,7 @@ import { useTimezoneStore, zoneOffsetSeconds } from '../store/timezoneStore';
  * browser/OS timezone, every raw epoch-ms timestamp coming off the backend is
  * shifted by that zone's offset before being handed to the library as a "UTC"
  * time. All series/overlays must go through this same offset to stay aligned
- * with each other (candles, delta, footprint, heatmap, whale markers, SMC
- * zones, drawings).
+ * with each other (candles, indicators, sub-panels, drawings).
  *
  * The offset is read fresh on every call; ChartContainer remounts the chart
  * subtree (key={timezone}) on zone change so everything recomputes with it.
@@ -53,14 +52,9 @@ export function toChartTimeSeconds(epochMs: number): number {
   return Math.floor(epochMs / 1000) + getChartTzOffsetSeconds();
 }
 
-/** For sources that already report epoch seconds (not ms), e.g. the heatmap snapshot stream. */
-export function shiftEpochSeconds(epochSec: number): number {
-  return epochSec + getChartTzOffsetSeconds();
-}
-
 /**
  * Raw epoch-ms → "HH:MM:SS" in the chart's zone, for UI readouts outside the
- * chart (tape, alerts) so they match the axis. Shifted then read back as UTC —
+ * chart (e.g. alerts) so they match the axis. Shifted then read back as UTC —
  * the same trick the chart itself uses — so the browser's own zone never applies.
  */
 export function formatChartClock(epochMs: number): string {

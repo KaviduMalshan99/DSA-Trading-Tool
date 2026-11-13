@@ -931,17 +931,6 @@ function TrashIcon() {
   );
 }
 
-// Neutral placeholder glyph for not-yet-built tools (see ComingSoonItem below)
-// — a dashed box, deliberately generic since these rows have no real tool
-// behind them yet.
-function ComingSoonIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5" fill="none" strokeDasharray="3 2">
-      <rect x="4" y="4" width="16" height="16" rx="2" />
-    </svg>
-  );
-}
-
 // Shared flyout panel className/style — overflow-y-auto so a tall group
 // (e.g. Shapes' Arrows section) scrolls instead of clipping. FLYOUT_CLASS_BOTTOM
 // is for the Delete menu, which anchors its panel from the bottom instead of
@@ -1141,10 +1130,6 @@ const ANNOTATION_ITEMS: { tool: AnnotationTool; label: string }[] = [
   ...ANNOTATION_MARKER_ITEMS, ...ANNOTATION_NOTE_ITEMS,
 ];
 
-// Display-only placeholder for a tool that isn't built yet — NOT a DrawingTool
-// and never wired to setTool. Rendered as a disabled row via ComingSoonMenuItem.
-type ComingSoonItem = { label: string; icon: React.ReactNode };
-
 const POSITION_RANGE_ICON: Record<PositionRangeTool, React.ReactNode> = {
   longPosition: <LongPositionIcon />,
   shortPosition: <ShortPositionIcon />,
@@ -1159,7 +1144,7 @@ const POSITION_RANGE_ICON: Record<PositionRangeTool, React.ReactNode> = {
 };
 
 // The flyout's three labeled sections — "Forecasting" (position projections),
-// "Volume Based" (anchored volume tools), and "Measures" (price/date
+// "Volume Based" (Anchored VWAP), and "Measures" (price/date
 // brackets). POSITION_RANGE_ITEMS below is the flat concatenation, kept for
 // ALL_TOOL_ICON/ALL_TOOL_LABEL/Favorites (same pattern as TREND_ITEMS).
 const POSITION_RANGE_FORECASTING_ITEMS: { tool: PositionRangeTool; label: string }[] = [
@@ -1183,15 +1168,6 @@ const POSITION_RANGE_MEASURES_ITEMS: { tool: PositionRangeTool; label: string }[
 
 const POSITION_RANGE_ITEMS: { tool: PositionRangeTool; label: string }[] = [
   ...POSITION_RANGE_FORECASTING_ITEMS, ...POSITION_RANGE_VOLUME_ITEMS, ...POSITION_RANGE_MEASURES_ITEMS,
-];
-
-// every Forecasting entry is built now; kept (empty) so the section's
-// coming-soon slot stays wired for future additions
-const FORECASTING_COMING_SOON: ComingSoonItem[] = [];
-
-const VOLUME_COMING_SOON: ComingSoonItem[] = [
-  { label: 'Fixed Range Volume Profile', icon: <ComingSoonIcon /> },
-  { label: 'Anchored Volume Profile', icon: <ComingSoonIcon /> },
 ];
 
 const FIB_ICON: Record<FibTool, React.ReactNode> = {
@@ -1343,23 +1319,6 @@ function FavoritableMenuItem({
         {active && <span className="text-xs">✓</span>}
       </button>
       <FavoriteStarButton favorite={favorite} onToggle={onToggleFavorite} className="group-hover/item:text-white" />
-    </div>
-  );
-}
-
-// A disabled, non-interactive row for a tool that isn't built yet — parallel
-// to FavoritableMenuItem but with no onClick, no star, and no active state,
-// so it can never select a tool or appear in Favorites.
-function ComingSoonMenuItem({ label, icon }: ComingSoonItem) {
-  return (
-    <div
-      title="Coming soon"
-      className="w-full flex items-center gap-2 pl-3 pr-3 py-2 text-sm opacity-40 select-none"
-      style={{ color: 'var(--text-muted)', cursor: 'not-allowed' }}
-    >
-      <span className="flex-shrink-0">{icon}</span>
-      <span className="flex-1">{label}</span>
-      <span className="text-[9px] uppercase tracking-wide flex-shrink-0">Soon</span>
     </div>
   );
 }
@@ -1844,9 +1803,6 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
                 onSelect={() => { setTool(tool); setPositionRangeDropdownOpen(false); }}
               />
             ))}
-            {FORECASTING_COMING_SOON.map((item) => (
-              <ComingSoonMenuItem key={item.label} {...item} />
-            ))}
             <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)] select-none">
               Volume Based
             </div>
@@ -1861,9 +1817,6 @@ export const DrawingToolbar = memo(function DrawingToolbar() {
                 onToggleFavorite={() => toggleFavorite(tool)}
                 onSelect={() => { setTool(tool); setPositionRangeDropdownOpen(false); }}
               />
-            ))}
-            {VOLUME_COMING_SOON.map((item) => (
-              <ComingSoonMenuItem key={item.label} {...item} />
             ))}
             <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)] select-none">
               Measures

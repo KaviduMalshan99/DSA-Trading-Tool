@@ -3,10 +3,10 @@
  * its moving average, in its own chart below the main chart, the
  * first of the single-slot sub-panel indicators (indicatorStore.activeSubPanel).
  *
- * Same chart-instance pattern as DeltaPanel (two-way synced, see subPanelSync), but no WebSocket:
- * like EMAOverlay, the RSI is computed client-side from marketStore's candles
- * (utils/klineAnalytics.computeRSI), so it recomputes whenever they change and
- * follows replay's cursor for free.
+ * Its own lightweight-charts instance, two-way synced with the main chart (see
+ * subPanelSync). No WebSocket: like EMAOverlay, the RSI is computed
+ * client-side from marketStore's candles (utils/klineAnalytics.computeRSI), so
+ * it recomputes whenever they change and follows replay's cursor for free.
  */
 
 import { useEffect, useRef, useState } from 'react';
@@ -21,7 +21,7 @@ import { useThemeStore, type Theme } from '../../store/themeStore';
 import { toChartTime } from '../../utils/chartTime';
 import { computeRSI, computeRSIMA, type RSIPoint } from '../../utils/klineAnalytics';
 import type { Candle } from '../../types/market';
-import { subChartThemeOptions } from './DeltaPanel';
+import { subChartThemeOptions } from './subChartTheme';
 import { linkSubPanel, SUB_PANEL_INTERACTION } from './subPanelSync';
 import { SubPanelDrawingPane } from './SubPanelDrawingPane';
 
@@ -199,9 +199,8 @@ export function RSIPanel({ sharedChartRef }: RSIPanelProps) {
     obFillRef.current = obFill;
     osFillRef.current = osFill;
 
-    // Two-way sync (subPanelSync guards the feedback loop that keeps
-    // DeltaPanel one-way). Unlike DeltaPanel this syncs by *logical* (bar
-    // index) range: the RSI is computed from the very same candles the main
+    // Two-way sync (subPanelSync guards the range-change feedback loop).
+    // Syncs by *logical* (bar index) range rather than time range: the RSI is computed from the very same candles the main
     // chart holds, and the data effect pads the warm-up with whitespace, so
     // index N is the same bar on both charts. That also carries over the
     // main chart's right-edge offset, which a time range can't express.
