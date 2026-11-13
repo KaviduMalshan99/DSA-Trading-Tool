@@ -2,8 +2,8 @@
  * Pure client-side analytics over an OHLCV candle list — no trade/order-book
  * data, no requests.
  *
- * computeSessionVWAPFromCandles is a port of the backend's session VWAP
- * (backend/app/analytics/vwap.py), used by the anchored VWAP drawing.
+ * computeSessionVWAPFromCandles is a port of the former backend session VWAP
+ * (since removed from the backend), used by the anchored VWAP drawing.
  * computeEMA, computeBollinger, computeRSI, computeRSIMA, computeStochRSI and
  * computeMACD are client-only indicators that run live as well as in replay.
  */

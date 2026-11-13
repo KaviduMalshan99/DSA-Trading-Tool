@@ -10,12 +10,11 @@
   - A token is valid only while `ver` matches `token_version`.
   - The cookie is host-only, `lax`, httpOnly (`config.py:40-43`).
 - **Auth routes** `api/auth.py`: signup creates the user at :237, Google-create at :452-460, `/me` at :269-271, `UserOut` at :88-119. `_NoStoreRoute` at :51-70 is reused by sync.
-- **Mounting** `main.py:83-96`: auth, candles, symbols, indicators and sync are under `/api/v1`. **None of the data routers have any auth dependency.** The 9 WS routers have no prefix.
-- **WebSockets**: every endpoint calls `ws.accept()` with no auth at all (`candle_stream.py:42`, `delta_stream.py:46`, `dom_stream.py:85`, `footprint_stream.py:172`, `heatmap_stream.py:77`, `tape_stream.py:93`, `volume_profile_stream.py:24`, `whale_stream.py:131`, generic `routes.py:14`).
-  - The frontend never uses the generic `/ws/{channel}`, but it is reachable, so it must be gated too.
+- **Mounting** `main.py`: auth, symbols and sync are under `/api/v1`. **The symbols router has no auth dependency.** The one WS router (`candle_stream`) has no prefix. _(Nov 2026: the candles REST, indicators, order-flow WS routers and the generic `/ws/{channel}` catch-all were removed.)_
+- **WebSockets**: the only endpoint is `/ws/candles/{symbol}/{interval}` in `candle_stream.py`, and it calls `ws.accept()` with no auth at all.
 - **Can WS upgrades read the cookie? Yes, in both environments.**
   - Prod is same-origin.
-  - Dev: the frontend calls `http://localhost:8000` directly (`api.ts:6`, `WS_BASE` in 8 components), not through the Vite proxy. Ports don't affect cookies, and localhost:5173 → localhost:8000 is same-site, so the Lax cookie is sent on the WS handshake.
+  - Dev: the frontend calls `http://localhost:8000` directly (`api.ts:6`, `WS_BASE` in `TradingChart.tsx`), not through the Vite proxy. Ports don't affect cookies, and localhost:5173 → localhost:8000 is same-site, so the Lax cookie is sent on the WS handshake.
   - Starlette exposes it as `ws.cookies`.
 - **Origin middleware** `main.py:66-72`: it only checks unsafe methods on `/api/`, and **a missing Origin passes**, so OnePay's server-to-server callback is fine. **The catch:** if the gateway sends the browser back with a form POST, that request carries a foreign Origin and gets a 403. The return path therefore needs an exemption (see §3).
 - **Sync** `api/sync.py:144-219` requires authentication only.
@@ -35,7 +34,7 @@
 - **`Toolbar.tsx:203-227`** `AuthControls`.
 - **`ProfileModal.tsx`**: `TABS` at :67-70; the tab keyboard handler at :79-85 assumes exactly 2 tabs; panels at :127-132.
 - **`AccountMenu.tsx:31-32`**: menu items.
-- **WS reconnects** unconditionally every 2s. The `onclose` handlers are at `TradingChart.tsx:407`, `DeltaPanel.tsx:321`, `DOMPanel.tsx:75`, `FootprintCanvas.tsx:536`, `HeatmapCanvas.tsx:253`, `TapePanel.tsx:69`, `VolumeProfile.tsx:199`, `WhaleMarkers.tsx:214`.
+- **WS reconnects** unconditionally every 2s. The only `onclose` handler is in `TradingChart.tsx` (the candle socket).
 
 **Other**
 - No OnePay or subscription code exists yet.
@@ -165,16 +164,16 @@ New `backend/app/api/payments.py` uses `APIRouter(prefix="/payments", route_clas
 **REST.** Add `require_entitlement` to `core/entitlement.py`:
 - It runs `get_current_user`, giving 401 when there's no session.
 - If the plan is expired it raises **402** `{"detail":"subscription_required"}` with no-store headers.
-- Apply it at mount time in `main.py:84-86`: `app.include_router(candles_router, prefix="/api/v1", dependencies=[Depends(require_entitlement)])`, and the same for symbols and indicators. The router files don't change.
+- Apply it at mount time in `main.py`: `app.include_router(symbols_router, prefix="/api/v1", dependencies=[Depends(require_entitlement)])`. The router file doesn't change. (Symbols is the only REST data router left.)
 
-**WebSockets.** Add a pure ASGI middleware, `WSEntitlementMiddleware` in `core/entitlement.py`, registered in `main.py` next to CORS. It covers all 9 endpoints and any future ones in one place:
+**WebSockets.** Add a pure ASGI middleware, `WSEntitlementMiddleware` in `core/entitlement.py`, registered in `main.py` next to CORS. It covers the candles WS (`/ws/candles/{symbol}/{interval}`) and any future `/ws/` endpoints in one place:
 1. For a `websocket` scope with a `/ws/` path, check `Origin` against `settings.cors_origins`. This blocks cross-site WS hijacking, which becomes relevant once the cookie carries entitlement.
 2. Parse the cookie from the scope headers, then `decode_token`, load the user, and check `ver`, `is_active` and the plan.
 3. To deny, the middleware itself sends `websocket.accept` followed by `websocket.close` with code **4401** (no session) or **4402** (expired). It accepts first because a close before accept reaches the browser as an opaque 1006.
 
 **Mid-session expiry on WS** (decision for you):
 - **(a) Recommended:** check at connect time plus a frontend timer (§5). Honest users see the paywall at the exact moment access ends, and the unmount closes all sockets.
-- **(b) Hardening:** the middleware also wraps `receive` and injects `websocket.disconnect` at `access_until`. It's riskier because the relay loops in the stream files only send and never receive.
+- **(b) Hardening:** the middleware also wraps `receive` and injects `websocket.disconnect` at `access_until`. It's riskier because the relay loop in `candle_stream.py` mostly sends and only receives `loadMore` requests.
 
 **Sync** stays auth-only, not entitlement-gated. Expired users must still be able to flush and pull their settings and drawings, and it's not market data.
 
@@ -190,7 +189,7 @@ New `backend/app/api/payments.py` uses `APIRouter(prefix="/payments", route_clas
 
 **`services/api.ts`**
 - Extend `AuthUser` (:26-43) with the new `/me` fields.
-- Add `registerEntitlementHandler`. In `request()` at :119, also route **402** to it, for every request and not just `authRequired` ones. This matters because callers like `useCandles.ts:16` and the overlays swallow errors.
+- Add `registerEntitlementHandler`. In `request()` at :119, also route **402** to it, for every request and not just `authRequired` ones. This matters because callers like the symbol search in `SymbolList.tsx` swallow errors.
 - Add `paymentsCheckout`, `paymentStatus(ref)` and `paymentsList`.
 
 **`store/authStore.ts`**
@@ -212,7 +211,7 @@ New `backend/app/api/payments.py` uses `APIRouter(prefix="/payments", route_clas
   - Buttons: Subscribe, Account (opens the profile on the subscription tab), Log out.
 - Otherwise: the current app plus `<SubscriptionBanner/>` above the Toolbar.
 - Keep `AuthModal`, `ProfileModal` and `ToastStack` **outside** the gate.
-- `AlertsEngine` goes **inside** it, because it polls gated endpoints.
+- `AlertsEngine` goes **inside** it, because it reads the gated live candle feed.
 - Unmounting the app on expiry closes every socket and stops all polling.
 
 **`?payment=` handling**: add it next to `auth_error` at :52-60.
@@ -222,7 +221,7 @@ New `backend/app/api/payments.py` uses `APIRouter(prefix="/payments", route_clas
 - When it's paid: `refreshMe()` and a success toast.
 - If it times out: "Still processing. We'll update automatically. Contact support with ref XYZ."
 
-**WS close handling** in the 8 `onclose` handlers listed in §1:
+**WS close handling** in the candle socket's `onclose` handler in `TradingChart.tsx`:
 - If `ev.code === 4401 || 4402`, don't reconnect.
 - Call `useAuthStore.getState().entitlementLost()` (4401 goes to `handleSessionExpired`).
 - Put this in a tiny shared helper, `utils/wsAccess.ts`.
@@ -302,15 +301,16 @@ Smoke test: `curl -X POST <tunnel>/api/v1/payments/onepay/callback -d '{}'` shou
 
 **P3: Enforcement, login wall, paywall and mid-session handling**
 - **Files:**
-  - backend: `core/entitlement.py` (`require_entitlement` plus the WS middleware), `main.py:84-86` plus middleware registration
-  - frontend: `App.tsx`, `LoginWall.tsx`, `Paywall.tsx`, `AuthModal` embedded variant, `api.ts` 402 handler, 8 `onclose` handlers plus `utils/wsAccess.ts`
+  - backend: `core/entitlement.py` (`require_entitlement` plus the WS middleware), `main.py` symbols mount plus middleware registration
+  - frontend: `App.tsx`, `LoginWall.tsx`, `Paywall.tsx`, `AuthModal` embedded variant, `api.ts` 402 handler, the `TradingChart.tsx` `onclose` handler plus `utils/wsAccess.ts`
+- **Gated surface:** the candles WS (`/ws/candles/{symbol}/{interval}`) and `/api/v1/symbols/*`. There are no indicator endpoints any more.
 - **Risks:**
   - An extra DB query on every data call. That's acceptable; add caching later if needed.
   - A DB outage now blocks everything.
   - `dist`-built clients already open in browsers won't understand 402 or 4402 until they reload, though their sockets will just fail to connect.
 - **Test:**
-  - Anonymous `curl` to `/api/v1/candles/BTCUSDT` gives 401. With an expired user's cookie it gives 402.
-  - The `websocat` WS handshake closes with 4401 and 4402 respectively. A foreign Origin is rejected.
+  - Anonymous `curl` to `/api/v1/symbols/search?q=BTC` gives 401. With an expired user's cookie it gives 402.
+  - The `websocat` handshake to `/ws/candles/BTCUSDT/1m` closes with 4401 and 4402 respectively. A foreign Origin is rejected.
   - Sync still works for an expired user.
   - Logged out, you see the login wall, and Google `auth_error` still shows on it.
   - With an expired plan, the paywall works, and you can still open Account and log out.
