@@ -1,14 +1,10 @@
-import { StrictMode } from 'react';
-import { createRoot } from 'react-dom/client';
-import './index.css';
-import App from './App';
+// Site switch (build-time): VITE_SITE_MODE = "course" | "chart" (default "chart").
+// Vite replaces import.meta.env.VITE_SITE_MODE statically, so the unused branch
+// (and its whole dynamic chunk) is dropped from the build.
+const root = document.getElementById('root')!;
 
-// One-time cleanup: the Trade Checklist panel was removed; drop its leftover
-// saved state. Harmless no-op once the key is gone.
-try { localStorage.removeItem('dsa-trade-checklist'); } catch { /* storage blocked */ }
-
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>
-);
+if (import.meta.env.VITE_SITE_MODE === 'course') {
+  import('./course/mount').then((m) => m.mount(root));
+} else {
+  import('./chartMount').then((m) => m.mount(root));
+}
